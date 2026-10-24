@@ -37,4 +37,21 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
 
+## Optional CD audio clock probe
+
+The CD audio probe builds a separate disc image with a 12-second synthetic click track. It displays CD-DA track position read from the drive's Subchannel Q data and derives a 120 BPM visual pulse from that position. It does not use a video-frame counter as its music clock. The generated audio is only a timing fixture; it contains no FNF music.
+
+Generate the WAV outside the repository, then configure and build the audio image:
+
+```powershell
+$testDir = Join-Path $env:TEMP 'fnf-ps1-audio-probe'
+python .\generate_click_track.py (Join-Path $testDir 'audio-probe.wav')
+cmake --preset default "-DFUNKIN_PS1_AUDIO_WAV=$(Join-Path $testDir 'audio-probe.wav')"
+cmake --build --preset default --target ps1-audio-disc
+```
+
+Open `build/funkin-ps1-audio-probe.cue` in DuckStation. The source WAV and generated disc image stay outside Git; `/ps1/build/` is ignored.
+
+The PSn00bSDK 0.24 installation also includes CD-DA, XA, and CD-to-SPU ADPCM streaming examples. The current probe uses CD-DA because its Subchannel Q position directly follows the playing track. This test does not settle the game's final format: CD-DA is a single stereo mix, while player vocals must be independently attenuated after misses. See the French port-scope document for the options and the exact official Bopeebo assets selected for a later local-only test.
+
 

@@ -20,9 +20,15 @@ typedef struct {
 
 typedef struct {
 	uint16_t buttons;
+	uint16_t previous_buttons;
+	uint16_t pressed_edges;
+	uint16_t released_edges;
+	uint16_t held_frames;
+	uint16_t last_hold_frames;
 	uint8_t status;
 	uint8_t type;
 	uint8_t connected;
+	uint8_t was_connected;
 } PlayerInput;
 
 static Frame frames[2];
@@ -77,7 +83,35 @@ static void poll_player_inputs(PlayerInput players[2])
 	players[0].status = pad->stat;
 	players[0].type = pad->type;
 	players[0].connected = (pad->stat == 0);
-	players[0].buttons = players[0].connected ? (uint16_t)pad->btn : 0xFFFF;
+	if (players[0].connected) {
+		players[0].buttons = (uint16_t)pad->btn;
+		if (!players[0].was_connected) {
+			players[0].previous_buttons = players[0].buttons;
+			players[0].pressed_edges = 0;
+			players[0].released_edges = 0;
+			players[0].held_frames = 0;
+		} else {
+			players[0].pressed_edges = players[0].previous_buttons & ~players[0].buttons;
+			players[0].released_edges = ~players[0].previous_buttons & players[0].buttons;
+			if (players[0].buttons != 0xFFFF) {
+				if (players[0].held_frames < 0xFFFF)
+					players[0].held_frames++;
+			} else {
+				if (players[0].released_edges)
+					players[0].last_hold_frames = players[0].held_frames;
+				players[0].held_frames = 0;
+			}
+			players[0].previous_buttons = players[0].buttons;
+		}
+		players[0].was_connected = 1;
+	} else {
+		players[0].buttons = 0xFFFF;
+		players[0].previous_buttons = 0xFFFF;
+		players[0].pressed_edges = 0;
+		players[0].released_edges = 0;
+		players[0].held_frames = 0;
+		players[0].was_connected = 0;
+	}
 
 	/* Keep player 2's input state separate for the planned local multiplayer. */
 	players[1].status = 0xFF;
@@ -96,6 +130,8 @@ int main(void)
 	PlayerInput players[2] = {0};
 	char status[64];
 	char controls[256];
+	char input_debug[96];
+	char edge_debug[96];
 
 	init_video();
 	InitPAD(&pad_buffers[0][0], PAD_BYTES,
@@ -136,7 +172,16 @@ int main(void)
 			button_state(&players[0], PAD_R1),
 			button_state(&players[0], PAD_R2));
 		draw_text(16, 96, controls);
-		draw_text(16, 206, "P1/P2 INPUT STATES ARE SEPARATE");
+		unsigned active_buttons = 0;
+		for (unsigned bit = 0; bit < 16; bit++)
+			active_buttons += !(players[0].buttons & (1u << bit));
+		sprintf(input_debug, "ACTIVE: %u   HOLD: %u FRAMES   LAST: %u",
+			active_buttons, players[0].held_frames, players[0].last_hold_frames);
+		sprintf(edge_debug, "PRESSED: %04X   RELEASED: %04X",
+			(unsigned)players[0].pressed_edges, (unsigned)players[0].released_edges);
+		draw_text(16, 176, input_debug);
+		draw_text(16, 190, edge_debug);
+		draw_text(16, 218, "P1/P2 INPUT STATES ARE SEPARATE");
 
 		end_frame();
 	}
