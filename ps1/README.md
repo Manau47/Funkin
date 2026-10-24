@@ -88,4 +88,12 @@ Input buttons also remain unvalidated under active play. Boot `build/funkin-ps1-
 
 The four-channel attenuation test is intentionally deferred until stereo playback passes. The planned shared interleaved stream puts instrumental L/R and voice L/R in one file, and mutes voices by setting only those SPU channel volumes to zero while the stream continues. For 4,096-byte interleave at 43,008 Hz, the SDK formulas imply 7,168 samples per channel per chunk; a four-channel chunk is 16 KiB and its SPU double buffer is 32 KiB, occupying `0x1010–0x9010` (4 of 24 SPU voices). The 96 KiB main-RAM ring buffer holds about 1.0 second of four-channel ADPCM at this rate; the 24-sector refill threshold is 48 KiB. Encoded payload throughput is about 98.3 kB/s (48 CD sectors/s), leaving 20 SPU voices for effects. These are formula-based estimates, not console measurements; CD seek/read jitter, CPU/GPU/RAM headroom, channel volumes and voice-only mute behavior still need emulator and hardware testing. No four-channel fixture has been built or tested in this milestone.
 
+### Retry after preload timeout
+
+The first manual DuckStation run displayed error code 6 with zero CD errors and zero underruns. The cause was that `CdReadCallback(0)` used for the header read was never followed by reinstalling the streaming completion callback. The stream read now registers its callback before `CdRead`; only `CdlComplete` credits received sectors and feeds the ring buffer. CD errors, immediate read-start failures, and `CdReadSync` failures release `read_pending`; timeout cancellation is bounded. The error screen now shows buffer fill, pending state, requested/received sectors, and callback totals.
+
+The 57,344-byte preload requirement (24 sectors plus one 8,192-byte stereo chunk) fits in the 98,304-byte ring buffer. Its initial read can request 48 sectors, which supplies 98,304 bytes on successful completion. This proves the prefill condition is reachable by calculation; the corrected image still needs a manual run to verify the actual callback and CD path. It has not yet been executed, and the stereo test is still unvalidated.
+
+The rebuilt image is in `build/spu-retry/funkin-ps1-spu-probe.cue` and `.bin` (860,832 bytes). It was built in a separate ignored folder because the prior image was locked by the active DuckStation session. No four-channel test should begin until this stereo retry passes.
+
 
