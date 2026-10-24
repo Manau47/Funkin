@@ -33,7 +33,8 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 - The generated cue/bin image booted and ran in DuckStation 0.1-8675. The probe rendered at 320×240 and the emulator reported 60 game/video FPS.
 - The probe detected controller port 1 as digital pad type `0x04` and displayed the idle button states. A held-button value was not confirmed during this check.
 - The on-screen footer was shortened after the first emulator view showed it clipped; the rebuilt image displayed the full footer.
-- No real console run, audio playback, song, or gameplay was tested.
+- The user reports a manual DuckStation pass of the four-channel synthetic stream: 3 min 08 s, 0 CD errors, 0 underruns, and Circle voice mute/restore worked. Precise drift and real-console behavior remain unmeasured.
+- A full-length, six-channel classic Bopeebo audio-only image built and reached `FINISHED (NO LOOP)` in DuckStation, with 0 underruns and 0 CD errors. Circle mute was not validated because the active keyboard mapping did not change the displayed state; there was no physical controller or console test.
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
 

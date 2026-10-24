@@ -25,8 +25,15 @@
 #ifndef TEST_CHANNELS
 #define TEST_CHANNELS 2u
 #endif
+#ifndef TEST_NO_LOOP
+#define TEST_NO_LOOP 0
+#endif
+#ifndef TEST_TOTAL_SAMPLES
+#define TEST_TOTAL_SAMPLES 0u
+#endif
 #define TEST_VOICE_VOLUME 0x2fffu
 #define TEST_INSTRUMENT_VOLUME 0x2fffu
+#define SONG_MIX_VOLUME 0x2800u
 
 typedef struct {
 	uint32_t magic;
@@ -72,13 +79,16 @@ static StreamReadContext read_ctx;
 static volatile unsigned underruns;
 static volatile unsigned read_errors;
 static int failure_code;
-#if TEST_CHANNELS == 4
+#if TEST_CHANNELS >= 4
 #define PAD_BYTES 34
 static uint8_t pad_buffers[2][PAD_BYTES];
 static uint16_t previous_pad_buttons = 0xffff;
 static bool pad_was_connected;
 static bool voices_muted;
 static bool circle_down;
+#endif
+#if TEST_NO_LOOP
+static bool song_finished;
 #endif
 
 static void abort_cd_read(void);
@@ -232,7 +242,7 @@ static void stream_underrun_handler(void)
 	underruns++;
 }
 
-#if TEST_CHANNELS == 4
+#if TEST_CHANNELS >= 4
 static bool poll_voice_toggle(void)
 {
 	PADTYPE *pad = (PADTYPE *)&pad_buffers[0][0];
@@ -257,10 +267,20 @@ static bool poll_voice_toggle(void)
 		previous_pad_buttons = buttons;
 	}
 
-	SPU_CH_VOL_L(2) = voices_muted ? 0 : TEST_VOICE_VOLUME;
+	SPU_CH_VOL_L(2) = voices_muted ? 0 :
+#if TEST_CHANNELS == 4
+		TEST_VOICE_VOLUME;
+#else
+		SONG_MIX_VOLUME;
+#endif
 	SPU_CH_VOL_R(2) = 0;
 	SPU_CH_VOL_L(3) = 0;
-	SPU_CH_VOL_R(3) = voices_muted ? 0 : TEST_VOICE_VOLUME;
+	SPU_CH_VOL_R(3) = voices_muted ? 0 :
+#if TEST_CHANNELS == 4
+		TEST_VOICE_VOLUME;
+#else
+		SONG_MIX_VOLUME;
+#endif
 	return true;
 }
 #endif
@@ -337,8 +357,12 @@ static bool feed_stream(void)
 	int next_sector = read_ctx.next_sector;
 	int max_length = read_ctx.stream_length - next_sector;
 	if (max_length <= 0) {
+#if TEST_NO_LOOP
+		return false;
+#else
 		next_sector = 0;
 		max_length = read_ctx.stream_length;
+#endif
 	}
 	if (sectors > (size_t)max_length)
 		sectors = (size_t)max_length;
@@ -458,6 +482,16 @@ static bool start_stream_from_disc(void)
 	SPU_CH_VOL_L(3) = 0;
 	SPU_CH_VOL_R(3) = TEST_VOICE_VOLUME;
 #endif
+#if TEST_CHANNELS == 6
+	/* Apply one common attenuation to preserve stem balance. */
+	for (int channel = 0; channel < 6; channel++) {
+		SPU_CH_VOL_L(channel) = SONG_MIX_VOLUME;
+		SPU_CH_VOL_R(channel) = 0;
+	}
+	SPU_CH_VOL_R(1) = SONG_MIX_VOLUME;
+	SPU_CH_VOL_R(3) = SONG_MIX_VOLUME;
+	SPU_CH_VOL_R(5) = SONG_MIX_VOLUME;
+#endif
 
 	read_ctx.start_lba = CdPosToInt(&file.pos) + 1;
 	read_ctx.stream_length = (int)(((uint64_t)channels * chunks * interleave +
@@ -519,7 +553,7 @@ int main(void)
 	SpuInit();
 	reset_spu_channels();
 	CdInit();
-#if TEST_CHANNELS == 4
+#if TEST_CHANNELS >= 4
 	InitPAD(pad_buffers[0], PAD_BYTES, pad_buffers[1], PAD_BYTES);
 	StartPAD();
 	ChangeClearPAD(0);
@@ -534,11 +568,21 @@ int main(void)
 		(void)feed_stream();
 		if (read_ctx.read_error || underruns)
 			show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
-#if TEST_CHANNELS == 4
+#if TEST_CHANNELS >= 4
 		bool pad_connected = poll_voice_toggle();
 #endif
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
 		unsigned rate = (unsigned)stream.config.sample_rate;
+#if TEST_NO_LOOP
+		uint32_t song_end_samples = TEST_TOTAL_SAMPLES +
+			(uint32_t)(2u * (stream.config.interleave / 16u * 28u));
+		if (!song_finished && samples >= song_end_samples) {
+			Stream_Stop();
+			song_finished = true;
+		}
+		if (samples > TEST_TOTAL_SAMPLES)
+			samples = TEST_TOTAL_SAMPLES;
+#endif
 		uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
 		unsigned beat_period_samples = rate * 60u / TEST_BPM;
 		unsigned beat_phase_samples = beat_period_samples ? samples % beat_period_samples : 0;
@@ -556,6 +600,13 @@ int main(void)
 			circle_down ? "DOWN" : "UP");
 		FntPrint(-1, "VOICES: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
 		FntPrint(-1, "VOICE CHANNELS KEEP PLAYING\n");
+#elif TEST_CHANNELS == 6
+		FntPrint(-1, "6CH: INST / BF VOICE / DAD VOICE\n");
+		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
+			circle_down ? "DOWN" : "UP");
+		FntPrint(-1, "BF VOICE: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
+		FntPrint(-1, "DAD VOICE: AUDIBLE / UNCHANGED\n");
+		FntPrint(-1, "PLAYBACK: %s (NO LOOP)\n", song_finished ? "FINISHED" : "PLAYING");
 #else
 		FntPrint(-1, "STEREO SPU / 120 BPM TEST\n");
 #endif

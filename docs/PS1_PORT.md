@@ -159,3 +159,51 @@ Résultats de construction du prototype : la fixture 4ch générée hors dépôt
 
 Le chemin stéréo reste reproductible : la fixture stéréo régénérée a correspondu octet pour octet au VAGi de l'image de référence (SHA-256 `70F5E6818CEDABFC6A05CECD6C3AF00144D8B4F85CB2975C842D07E095B9DFD6`). La cible existante `ps1-spu-disc` a été reconfigurée et recompilée dans `build/spu-stereo-recheck/`; elle produit toujours une image de 863 184 octets. Ce re-build n'est pas une seconde observation d'exécution; la validation manuelle de 4 min 02 s rapportée plus haut est le résultat d'écoute stéréo.
 
+### Résultat quatre canaux confirmé et premier morceau officiel
+
+L'utilisateur a ensuite confirmé le test synthétique quatre canaux du commit `c89d519` dans DuckStation : 3 min 08 s, aucun underrun, aucune erreur CD, coupure et rétablissement des voix avec Circle fonctionnels. La dérive précise n'a pas été mesurée; aucune console réelle n'a été testée.
+
+#### Fichiers et organisation Bopeebo
+
+Le test utilise exclusivement la version classique des stems de Bopeebo présents dans le sous-module `assets` épinglé à `724eba9de9e76761d9cefd52169926bc51c760a5`. Les chemins sont `songs/bopeebo/Inst.ogg`, `Voices-bf.ogg` et `Voices-dad.ogg`; leurs blobs Git sont respectivement `593052bfcf9f4931d597cd912c96716581af5c29`, `5394f467230fada6114753615f79d2280f0e0f00` et `bfd1edf25670d418e8e633aaf1cb7c7f4edb9770`. Les trois sont des Vorbis stéréo, 44 100 Hz, 81,6 s. Le jeu lui-même résout les voix séparément pour le personnage joueur et l'adversaire dans [`Song.hx`](../source/funkin/play/song/Song.hx) (`buildPlayerVoiceList()` / `buildOpponentVoiceList()`). Ici, BF est le stem joueur et Dad celui de l'adversaire. Circle atténue BF uniquement; Dad continue à jouer. Ce test n'émule donc pas encore le mixage par note ou le comportement du gameplay.
+
+La licence des ressources à cette révision indique « All rights reserved » et interdit leur redistribution publique sans autorisation. Seuls le code du convertisseur et les références de provenance sont suivis par Git : OGG, WAV PCM, VAGi, EXE, BIN et CUE demeurent hors du dépôt, dans `%TEMP%` ou dans un répertoire de build ignoré. La licence Apache-2.0 du code du jeu ne couvre pas ces ressources audio.
+
+Les WAV de conversion sont décodés par FFmpeg depuis les OGG à 22 050 Hz, PCM signé 16 bits, stéréo. Les trois fichiers ont été contrôlés : origine à 0, même durée et exactement 1 799 280 images-échantillons par canal (81,6 s). Le convertisseur refuse une fréquence, une profondeur, un nombre de canaux ou une longueur différente. Il ne normalise ni ne modifie indépendamment les stems. Le flux VAGi commun ordonne les canaux comme instrumental L/R, BF L/R, Dad L/R. Un seul feeder et un seul compteur audio gardent la lecture entrelacée. Le probe applique un gain SPU identique aux six canaux (`0x2800`) et Circle met à zéro/restaure uniquement les volumes des canaux BF, sans arrêter leur lecture ni déplacer leur position.
+
+Le pic instantané maximal calculé de la somme PCM des trois stems décodés est 42 131 sur 32 767, avant atténuation. Le gain commun de 62,5 % donne une borne de 26 332, en laissant environ 6 435 unités (1,9 dB) avant pleine échelle; il conserve les ratios de stems sans normalisation indépendante. Cette estimation ne mesure pas le niveau analogique et le rendu ADPCM doit être écouté en émulateur.
+
+À 22 050 Hz et 4096 octets d'interleave par canal, un chunk couvre 7 168 échantillons, soit 325,1 ms. Six canaux occupent 49 152 octets de double-buffer SPU (48 Kio, adresses `0x1010–0xD010`) et utilisent 6 des 24 voix; 18 restent disponibles pour les effets. Le ring buffer principal demeure à 96 Kio, dont le seuil de refill vaut 48 Kio; le préchargement seuil + un chunk est 72 Kio. Le débit du flux est calculé à 75 600 octets/s, soit 36,9 secteurs de 2048 octets/s, sous le plafond nominal de 75 secteurs/s du CD 1x. Ces calculs laissent une marge théorique, mais ne mesurent pas les seeks, les lectures réelles, les interruptions ni les marges CPU/RAM sur console.
+
+L'encodeur padde chaque stem jusqu'à une frontière commune de chunk puis ajoute trois chunks silencieux. Le lecteur VAGi désactive la boucle logicielle uniquement pour cette cible : arrivée au bout du fichier, il ne redemande pas le LBA initial. L'écran affiche le compteur SPU, un indicateur de battement dérivé de ce compteur, le tampon, les erreurs CD/underruns, l'état de la manette, l'état de Circle, BF muet/audible, Dad audible et `FINISHED`. Après 81,6 s, le compteur musical est plafonné et le lecteur arrête le SPU après deux chunks de garde, pendant la queue silencieuse; cela évite de vider le ring buffer à la dernière interruption. Le test reste un essai audio seulement : aucun chart, jugement, score, dialogue ou graphisme du jeu n'est intégré.
+
+#### Reproduire le test
+
+Depuis `ps1/`, avec PSn00bSDK 0.24, CMake, Ninja, Python 3 et FFmpeg installés comme dans la section Toolchain de [`README.md`](../ps1/README.md) :
+
+```powershell
+git submodule update --init assets
+$song = '..\assets\songs\bopeebo'
+$work = Join-Path $env:TEMP 'fnf-bopeebo-724eba9'
+New-Item -ItemType Directory -Force $work | Out-Null
+foreach ($stem in 'Inst', 'Voices-bf', 'Voices-dad') {
+  ffmpeg -hide_banner -y -i "$song\$stem.ogg" -map 0:a:0 -ac 2 -ar 22050 -c:a pcm_s16le "$work\$stem-22050.wav"
+}
+python .\convert_bopeebo_to_vagi.py "$work\bopeebo.vag" `
+  --instrumental "$work\Inst-22050.wav" `
+  --player-voice "$work\Voices-bf-22050.wav" `
+  --opponent-voice "$work\Voices-dad-22050.wav"
+cmake --preset default -B .\build\bopeebo-audio-final "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO=$work\bopeebo.vag"
+cmake --build .\build\bopeebo-audio-final --target ps1-bopeebo-audio-disc
+```
+
+Ouvrir `build/bopeebo-audio-final/funkin-ps1-bopeebo-audio.cue` dans DuckStation. Vérifier le son instrumental et les voix BF/Dad; appuyer sur Circle et confirmer que BF se tait/revient, que Dad et l'instrumental continuent et que `SAMPLES` avance. Laisser finir environ 82 s; l'écran doit afficher `FINISHED`, rester au même temps et ne pas reboucler. Surveiller `UNDERRUNS` et `CD ERRORS` pendant toute la lecture. Une compilation ne valide ni l'écoute ni la fin sans rebouclage. La dérive, la stabilité de timing sur ce nouveau flux et le fonctionnement sur console réelle restent à vérifier après observation.
+
+#### Résultat de compilation et exécution de cet essai
+
+Le convertisseur a généré hors Git un VAGi de 6 268 928 octets, six canaux, 22 050 Hz, 255 chunks et queue silencieuse. La cible `ps1-bopeebo-audio-disc` a compilé avec PSn00bSDK 0.24 / GCC 12.3.0; l'image BIN fait 7 608 720 octets (3 235 secteurs bruts) et son CUE 90 octets. Les seuls avertissements sont les deux suppressions de `volatile` dans `stream.c` fourni par le SDK.
+
+L'image finale a été démarrée et observée dans DuckStation 0.1-8675. Pendant la lecture, l'écran a montré une progression jusqu'à `AUDIO 01:09.716`, `SAMPLES 1537259`, avec `UNDERRUNS 0` et `CD ERRORS 0`. À la fin, l'écran affichait `AUDIO 01:21.600`, `SAMPLES 1799280`, `BUFFER 73728 / 98304`, `UNDERRUNS 0`, `CD ERRORS 0` et `PLAYBACK: FINISHED (NO LOOP)`. La fin et l'absence de rebouclage ont donc été observées dans l'émulateur pour la totalité des 81,6 s sources. La dérive par rapport à une horloge externe n'a pas été mesurée; je n'ai pas réalisé d'écoute acoustique contrôlée.
+
+Circle n'a pas été validé pendant cette exécution. Les périphériques actifs dans les paramètres DuckStation étaient Keyboard et Mouse, sans manette physique; le raccourci clavier testé n'a pas modifié l'état affiché. `PAD CONNECTED` signifie uniquement que le port virtuel expose une manette. Le code et le prototype quatre canaux précédemment confirmé par l'utilisateur indiquent le chemin de volume prévu, mais Bopeebo doit encore être testé avec une entrée Circle fonctionnelle pour vérifier BF seul, Dad/instrumental inchangés et poursuite de `SAMPLES`. Le compteur qui progresse et les compteurs d'erreurs à zéro prouvent ici l'exécution et le transport audio, pas une écoute acoustique qualitative. Aucun test console réelle n'a été fait.
+

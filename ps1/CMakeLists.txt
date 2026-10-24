@@ -88,3 +88,38 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_4CH}")
 elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_4CH)
 	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_4CH does not name an existing VAGi file")
 endif()
+
+# Full-length classic Bopeebo playback check. Its source OGGs are decoded and
+# encoded to a six-channel VAGi outside the repository; no game assets are
+# copied into Git. Circle mutes BF's player-voice pair while Dad remains live.
+if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO}")
+	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
+	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
+	set(_psn00bsdk_cdstream_dir
+		"${_psn00bsdk_root}/share/psn00bsdk/examples/sound/cdstream")
+	if(NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.c" OR
+	   NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.h")
+		message(FATAL_ERROR
+			"PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
+	endif()
+	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO}"
+		"${CMAKE_CURRENT_BINARY_DIR}/bopeebo.vag" COPYONLY)
+	psn00bsdk_add_executable(funkin-ps1-bopeebo-audio GPREL
+		spu_probe.c
+		"${_psn00bsdk_cdstream_dir}/stream.c")
+	target_compile_definitions(funkin-ps1-bopeebo-audio PRIVATE
+		TEST_CHANNELS=6
+		TEST_NO_LOOP=1
+		TEST_TOTAL_SAMPLES=1799280u)
+	target_include_directories(funkin-ps1-bopeebo-audio PRIVATE
+		"${_psn00bsdk_cdstream_dir}")
+	psn00bsdk_add_cd_image(
+		ps1-bopeebo-audio-disc
+		funkin-ps1-bopeebo-audio
+		bopeebo_audio_iso.xml
+		DEPENDS funkin-ps1-bopeebo-audio system.cnf
+			"${CMAKE_CURRENT_BINARY_DIR}/bopeebo.vag"
+	)
+elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO)
+	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_BOPEEBO does not name an existing VAGi file")
+endif()
