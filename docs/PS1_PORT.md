@@ -130,3 +130,32 @@ L'ancienne image rapportée lors de l'essai avait `STREAM.VAG` à l'extent LBA 4
 
 La nouvelle source est compilée séparément sous `ps1/build/spu-contract-fix/`; le BIN produit fait 863 184 octets (367 secteurs bruts) et le CUE 86 octets. La compilation GCC 12.3.0 / PSn00bSDK 0.24 a réussi; les deux seuls avertissements sont des suppressions de `volatile` dans le `stream.c` externe du SDK. Cette image n'a pas été relancée dans DuckStation après la correction. Le décalage de contrat callback est corrigé dans le code, mais le préchargement, la lecture SPU, la boucle et la synchronisation attendent encore une observation manuelle. Ce jalon reste stéréo; aucun test quatre canaux n'a commencé.
 
+### Résultat stéréo observé par l'utilisateur
+
+L'utilisateur a ensuite confirmé un essai manuel DuckStation de 4 min 02 s sur l'image stéréo du commit `46dbb5d`: 0 underrun, 0 erreur CD et aucun problème signalé à l'écoute. Cela valide le test stéréo dans DuckStation pour cette durée. La dérive précise n'a pas été mesurée et aucune console réelle n'a été testée. Le test quatre canaux qui suit reste distinct et non validé.
+
+### Prototype VAGi quatre canaux
+
+Le lecteur [`stream.c`/`stream.h` de `sound/cdstream` PSn00bSDK 0.24](https://github.com/Lameguy64/PSn00bSDK/tree/v0.24/examples/sound/cdstream) prend réellement en charge un nombre configurable de canaux : `Stream_Init()` compte les bits de `channel_mask`, fixe `chunk_size = interleave × num_channels`, puis ses IRQ parcourent les canaux activés et transfèrent le bloc entrelacé. Le VAGi décrit le nombre de canaux et la taille d'interleave par canal. Le prototype utilise les canaux 0–3 du masque `0x0f`, ordonnés instrumental gauche, instrumental droite, voix gauche, voix droite. Il conserve un seul callback/flux de lecture CD et une seule horloge SPU pour les quatre canaux.
+
+La nouvelle cible et le nouveau disque sont indépendants du test stéréo. Le fixture synthétique garde le clic/basse instrumental sur les canaux 0/1 et ajoute un motif tonal distinct sur 2/3, décalé d'un demi-temps. `CIRCLE` est le bouton de bascule; le probe ne touche qu'aux registres de volume des canaux voix (2/3), sans modifier leurs clés, l'adresse ou la position du flux. L'écran affiche la connexion, l'état appuyé/relâché de Circle, l'état des voix, la position audio, le tampon, les erreurs CD et les underruns.
+
+La marge de mixage du fixture quatre canaux est volontaire : amplitude maximale instrumentale bornée à 0,42 pleine échelle par côté et voix à 0,14/0,12; borne conservatrice de la somme d'entrée d'environ 0,56 avant atténuation. Le volume initial des quatre voix est `0x2fff` (75 % de `0x3fff` nominal), avec les voix commutées entre ce niveau et zéro. Ce calcul de crête est un budget numérique conservateur, pas une mesure de sortie analogique ni une validation de clipping sur console.
+
+Budgets pour 4 096 octets d'interleave, 43 008 Hz et 4 canaux : un chunk contient 16 384 octets et 7 168 échantillons par canal, soit 1/6 seconde; le double-buffer SPU prend 32 Kio, de `0x1010` à `0x9010`, et utilise 4 des 24 voix. Le ring buffer en RAM principale reste 96 Kio, soit environ une seconde à 98 304 octets/s; le seuil de remplissage de 24 secteurs vaut 48 Kio et le préchargement minimal seuil + un chunk vaut 64 Kio. Le lecteur peut demander jusqu'à 48 secteurs / 96 Kio en un read initial. Le débit encodé du stream est 98 304 octets/s, soit 48 secteurs de données/s; ces chiffres ne mesurent ni les seeks, ni la marge réelle du lecteur CD, ni le temps CPU. La fixture de 8 secondes attendue contient 48 chunks, 384 secteurs payload et 788 480 octets avec son secteur d'en-tête.
+
+Le générateur préserve les niveaux et la sortie binaire du fixture stéréo; l'atténuation des niveaux ne s'applique qu'à la variante quatre canaux. Build depuis `ps1/` avec l'installation PSn00bSDK déjà décrite plus haut :
+
+```powershell
+$fixture4 = Join-Path $env:TEMP 'fnf-spu-4ch.vag'
+python .\generate_spu_fixture.py $fixture4 --channels 4 --loop-beats 16
+cmake --preset default -B .\build\spu-four-channel "-DFUNKIN_PS1_AUDIO_VAGI_4CH=$fixture4"
+cmake --build .\build\spu-four-channel --target ps1-spu-4ch-disc
+```
+
+Test manuel court : ouvrir `build/spu-four-channel/funkin-ps1-spu-4ch-probe.cue` dans DuckStation. Vérifier le clic/basse instrumental et le motif vocal distinct; appuyer plusieurs fois sur Circle et confirmer que seules les voix se coupent/reviennent alors que le compteur `SAMPLES` continue. Laisser tourner plusieurs minutes et contrôler `CD ERRORS` et `UNDERRUNS` à zéro. Le résultat d'exécution doit être noté après observation; compilation seule ne valide pas la lecture quatre canaux. Aucun essai console réelle n'est effectué dans ce jalon.
+
+Résultats de construction du prototype : la fixture 4ch générée hors dépôt fait 788 480 octets, 43 008 Hz, 4096 octets d'interleave, 48 chunks et 8 secondes (SHA-256 `97AD644498C8BEED1FC9C55B5A31A036CE88E11DF1237D3854409326F2A6E131`). L'image `build/spu-four-channel/` a été compilée avec GCC 12.3.0 / PSn00bSDK 0.24 : EXE 45 056 octets, BIN 1 314 768 octets (559 secteurs bruts), CUE 90 octets. Dans l'ISO, `STREAM.VAG` commence au LBA 46 (en-tête); le payload est LBA 47–430 et le premier read de 48 secteurs est LBA 47–94. Seuls les deux avertissements `-Wdiscarded-qualifiers` de `stream.c` externe apparaissent. Le code a été compilé, mais l'image quatre canaux n'a pas été exécutée.
+
+Le chemin stéréo reste reproductible : la fixture stéréo régénérée a correspondu octet pour octet au VAGi de l'image de référence (SHA-256 `70F5E6818CEDABFC6A05CECD6C3AF00144D8B4F85CB2975C842D07E095B9DFD6`). La cible existante `ps1-spu-disc` a été reconfigurée et recompilée dans `build/spu-stereo-recheck/`; elle produit toujours une image de 863 184 octets. Ce re-build n'est pas une seconde observation d'exécution; la validation manuelle de 4 min 02 s rapportée plus haut est le résultat d'écoute stéréo.
+

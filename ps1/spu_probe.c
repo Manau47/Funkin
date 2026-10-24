@@ -6,6 +6,7 @@
 #include <psxapi.h>
 #include <psxetc.h>
 #include <psxgpu.h>
+#include <psxpad.h>
 #include <psxspu.h>
 #include <psxcd.h>
 
@@ -21,7 +22,11 @@
 #define CD_SECTOR_SIZE 2048u
 #define MAX_WAIT_FRAMES 600u
 #define TEST_BPM 120u
+#ifndef TEST_CHANNELS
 #define TEST_CHANNELS 2u
+#endif
+#define TEST_VOICE_VOLUME 0x2fffu
+#define TEST_INSTRUMENT_VOLUME 0x2fffu
 
 typedef struct {
 	uint32_t magic;
@@ -67,6 +72,14 @@ static StreamReadContext read_ctx;
 static volatile unsigned underruns;
 static volatile unsigned read_errors;
 static int failure_code;
+#if TEST_CHANNELS == 4
+#define PAD_BYTES 34
+static uint8_t pad_buffers[2][PAD_BYTES];
+static uint16_t previous_pad_buttons = 0xffff;
+static bool pad_was_connected;
+static bool voices_muted;
+static bool circle_down;
+#endif
 
 static void abort_cd_read(void);
 
@@ -218,6 +231,39 @@ static void stream_underrun_handler(void)
 {
 	underruns++;
 }
+
+#if TEST_CHANNELS == 4
+static bool poll_voice_toggle(void)
+{
+	PADTYPE *pad = (PADTYPE *)&pad_buffers[0][0];
+	bool connected = pad->stat == 0 &&
+		(pad->type == PAD_ID_DIGITAL || pad->type == PAD_ID_ANALOG_STICK ||
+		 pad->type == PAD_ID_ANALOG);
+	if (!connected) {
+		previous_pad_buttons = 0xffff;
+		pad_was_connected = false;
+		circle_down = false;
+		return false;
+	}
+
+	uint16_t buttons = (uint16_t)pad->btn;
+	circle_down = !(buttons & PAD_CIRCLE);
+	if (!pad_was_connected) {
+		previous_pad_buttons = buttons;
+		pad_was_connected = true;
+	} else {
+		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
+			voices_muted = !voices_muted;
+		previous_pad_buttons = buttons;
+	}
+
+	SPU_CH_VOL_L(2) = voices_muted ? 0 : TEST_VOICE_VOLUME;
+	SPU_CH_VOL_R(2) = 0;
+	SPU_CH_VOL_L(3) = 0;
+	SPU_CH_VOL_R(3) = voices_muted ? 0 : TEST_VOICE_VOLUME;
+	return true;
+}
+#endif
 
 static void reset_spu_channels(void)
 {
@@ -390,17 +436,28 @@ static bool start_stream_from_disc(void)
 
 	Stream_Config config = {0};
 	config.spu_address = STREAM_BUFFER_ADDR;
-	config.channel_mask = 3u;
+	config.channel_mask = (1u << TEST_CHANNELS) - 1u;
 	config.interleave = interleave;
 	config.buffer_size = RAM_BUFFER_SIZE;
 	config.refill_threshold = REFILL_THRESHOLD;
 	config.sample_rate = (int)sample_rate;
 	config.underrun_callback = stream_underrun_handler;
 	Stream_Init(&stream, &config);
+#if TEST_CHANNELS == 2
 	SPU_CH_VOL_L(0) = 0x3fff;
 	SPU_CH_VOL_R(0) = 0;
 	SPU_CH_VOL_L(1) = 0;
 	SPU_CH_VOL_R(1) = 0x3fff;
+#else
+	SPU_CH_VOL_L(0) = TEST_INSTRUMENT_VOLUME;
+	SPU_CH_VOL_R(0) = 0;
+	SPU_CH_VOL_L(1) = 0;
+	SPU_CH_VOL_R(1) = TEST_INSTRUMENT_VOLUME;
+	SPU_CH_VOL_L(2) = TEST_VOICE_VOLUME;
+	SPU_CH_VOL_R(2) = 0;
+	SPU_CH_VOL_L(3) = 0;
+	SPU_CH_VOL_R(3) = TEST_VOICE_VOLUME;
+#endif
 
 	read_ctx.start_lba = CdPosToInt(&file.pos) + 1;
 	read_ctx.stream_length = (int)(((uint64_t)channels * chunks * interleave +
@@ -462,6 +519,11 @@ int main(void)
 	SpuInit();
 	reset_spu_channels();
 	CdInit();
+#if TEST_CHANNELS == 4
+	InitPAD(pad_buffers[0], PAD_BYTES, pad_buffers[1], PAD_BYTES);
+	StartPAD();
+	ChangeClearPAD(0);
+#endif
 	if (CdControlB(CdlPause, 0, 0) != 1)
 		show_error(FAIL_CD_COMMAND);
 
@@ -472,6 +534,9 @@ int main(void)
 		(void)feed_stream();
 		if (read_ctx.read_error || underruns)
 			show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
+#if TEST_CHANNELS == 4
+		bool pad_connected = poll_voice_toggle();
+#endif
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
 		unsigned rate = (unsigned)stream.config.sample_rate;
 		uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
@@ -485,7 +550,15 @@ int main(void)
 		FntPrint(-1, "BUFFER %u / %u\n", (unsigned)stream.buffer.length,
 			(unsigned)stream.config.buffer_size);
 		FntPrint(-1, "UNDERRUNS %u  CD ERRORS %u\n", (unsigned)underruns, (unsigned)read_errors);
+#if TEST_CHANNELS == 4
+		FntPrint(-1, "4CH: INST L/R + VOICES L/R\n");
+		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
+			circle_down ? "DOWN" : "UP");
+		FntPrint(-1, "VOICES: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
+		FntPrint(-1, "VOICE CHANNELS KEEP PLAYING\n");
+#else
 		FntPrint(-1, "STEREO SPU / 120 BPM TEST\n");
+#endif
 		FntFlush(-1);
 		display_frame();
 	}

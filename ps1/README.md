@@ -102,4 +102,21 @@ PSn00bSDK 0.24's `CdRead()` completion callback receives `CdlDataReady` (1) afte
 
 The refreshed image is in `build/spu-contract-fix/funkin-ps1-spu-probe.cue` and `.bin`. It is compiled but not yet run in DuckStation; the stereo stream is not validated.
 
+### Stereo result and four-channel prototype
+
+The user manually validated the stereo image in DuckStation for 4 min 02 s: zero underruns, zero CD errors, and no listening problems reported. Precise drift was not measured, and no real-console test was done.
+
+The independent four-channel target uses one interleaved VAGi stream for instrumental L/R then voice L/R. PSn00bSDK 0.24's `cdstream` counts enabled `channel_mask` bits, sizes each chunk as `interleave × channel_count`, and transfers each channel's interleaved data to its own SPU voice. The four-channel probe pans channels 0/1 left/right and 2/3 left/right. Circle toggles only voice-channel volume between zero and `0x2fff`; playback keys and stream position continue. On-screen text shows pad connection, Circle state, voice mute state, audio position, buffer, CD errors, and underruns.
+
+Generate and build in a separate folder (fixture remains in `%TEMP%`):
+
+```powershell
+$fixture4 = Join-Path $env:TEMP 'fnf-spu-4ch.vag'
+python .\generate_spu_fixture.py $fixture4 --channels 4 --loop-beats 16
+cmake --preset default -B .\build\spu-four-channel "-DFUNKIN_PS1_AUDIO_VAGI_4CH=$fixture4"
+cmake --build .\build\spu-four-channel --target ps1-spu-4ch-disc
+```
+
+Open `build/spu-four-channel/funkin-ps1-spu-4ch-probe.cue` in DuckStation. Confirm both signal groups are distinct, toggle Circle and check that only voice audio mutes while `SAMPLES` continues, then watch CD errors and underruns over several minutes. The four-channel image is not validated until this run is observed. See [PS1_PORT.md](../docs/PS1_PORT.md) for the format checks, mix headroom, and RAM/SPU/CD calculations.
+
 

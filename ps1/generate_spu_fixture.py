@@ -69,13 +69,24 @@ def make_pcm(channel_count: int, sample_count: int) -> list[list[int]]:
         phase = sample % BEAT_SAMPLES
         time = sample / RATE
 
+        # Keep the stereo fixture unchanged. In four-channel mode, lower the
+        # instrumental level to leave room for the separately mixed voice pair.
+        if channel_count == 4:
+            click_level = 0.34
+            bass_level = 0.08
+            right_click_level = 0.30
+        else:
+            click_level = 0.78
+            bass_level = 0.16
+            right_click_level = 0.88
+
         # Each beat has a short 1.2 kHz transient at its exact sample boundary.
         click = 0.0
         if phase < RATE // 20:
-            click = math.sin(2 * math.pi * 1200 * time) * math.exp(-phase / (RATE * 0.018)) * 0.78
-        bass = math.sin(2 * math.pi * 110 * time) * 0.16
+            click = math.sin(2 * math.pi * 1200 * time) * math.exp(-phase / (RATE * 0.018)) * click_level
+        bass = math.sin(2 * math.pi * 110 * time) * bass_level
         left = max(-1.0, min(1.0, click + bass))
-        right = max(-1.0, min(1.0, click * 0.88 + math.sin(2 * math.pi * 110 * time + 0.2) * 0.16))
+        right = max(-1.0, min(1.0, click * right_click_level + math.sin(2 * math.pi * 110 * time + 0.2) * bass_level))
         channels[0].append(round(left * 32767))
         channels[1].append(round(right * 32767))
 
@@ -83,8 +94,8 @@ def make_pcm(channel_count: int, sample_count: int) -> list[list[int]]:
             # A distinct two-note voice motif, half a beat after each beat.
             voice_phase = (phase - BEAT_SAMPLES // 2) % BEAT_SAMPLES
             voice_env = math.exp(-voice_phase / (RATE * 0.12)) if voice_phase < RATE // 4 else 0.0
-            voice_left = math.sin(2 * math.pi * 660 * time) * voice_env * 0.36
-            voice_right = math.sin(2 * math.pi * 880 * time) * voice_env * 0.30
+            voice_left = math.sin(2 * math.pi * 660 * time) * voice_env * 0.14
+            voice_right = math.sin(2 * math.pi * 880 * time) * voice_env * 0.12
             channels[2].append(round(voice_left * 32767))
             channels[3].append(round(voice_right * 32767))
 

@@ -44,6 +44,7 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI}")
 	psn00bsdk_add_executable(funkin-ps1-spu-probe GPREL
 		spu_probe.c
 		"${_psn00bsdk_cdstream_dir}/stream.c")
+	target_compile_definitions(funkin-ps1-spu-probe PRIVATE TEST_CHANNELS=2)
 	target_include_directories(funkin-ps1-spu-probe PRIVATE
 		"${_psn00bsdk_cdstream_dir}")
 	psn00bsdk_add_cd_image(
@@ -55,4 +56,35 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI}")
 	)
 elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI)
 	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI does not name an existing VAGi file")
+endif()
+
+# Separate four-channel instrumental L/R + voice L/R stream probe. Keeping this
+# as a distinct image preserves the stereo baseline and its fixture workflow.
+if(DEFINED FUNKIN_PS1_AUDIO_VAGI_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_4CH}")
+	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
+	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
+	set(_psn00bsdk_cdstream_dir
+		"${_psn00bsdk_root}/share/psn00bsdk/examples/sound/cdstream")
+	if(NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.c" OR
+	   NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.h")
+		message(FATAL_ERROR
+			"PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
+	endif()
+	configure_file("${FUNKIN_PS1_AUDIO_VAGI_4CH}"
+		"${CMAKE_CURRENT_BINARY_DIR}/stream-4ch.vag" COPYONLY)
+	psn00bsdk_add_executable(funkin-ps1-spu-4ch-probe GPREL
+		spu_probe.c
+		"${_psn00bsdk_cdstream_dir}/stream.c")
+	target_compile_definitions(funkin-ps1-spu-4ch-probe PRIVATE TEST_CHANNELS=4)
+	target_include_directories(funkin-ps1-spu-4ch-probe PRIVATE
+		"${_psn00bsdk_cdstream_dir}")
+	psn00bsdk_add_cd_image(
+		ps1-spu-4ch-disc
+		funkin-ps1-spu-4ch-probe
+		spu_4ch_iso.xml
+		DEPENDS funkin-ps1-spu-4ch-probe system.cnf
+			"${CMAKE_CURRENT_BINARY_DIR}/stream-4ch.vag"
+	)
+elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_4CH)
+	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_4CH does not name an existing VAGi file")
 endif()
