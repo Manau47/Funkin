@@ -1,6 +1,7 @@
 /* Minimal PS1 video and controller probe for the unofficial FNF port. */
 #include <stdint.h>
 #include <stdio.h>
+#include <psxapi.h>
 #include <psxgpu.h>
 #include <psxpad.h>
 

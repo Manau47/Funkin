@@ -6,12 +6,14 @@ This directory is a small, native PlayStation 1 program kept separate from the H
 
 The project targets [PSn00bSDK](https://github.com/Lameguy64/PSn00bSDK), an open source C/C++ toolchain with CMake integration. Its official installation guide recommends a prebuilt release and CMake 3.21 or newer. This preset also uses the Ninja generator. PsyQ 4.6 and CodeWarrior are present in the supplied `Psxdev.zip`, but are proprietary legacy tools; CodeWarrior's Windows IDE is a poor fit for a reproducible modern build, and neither package is needed for this probe. The archive was inventoried only; no installer or executable was run and no SDK files were copied here.
 
-Install a PSn00bSDK release and CMake 3.21+ on the host, then set:
+The supplied PSn00bSDK 0.24 archive and CMake 4.4.4 portable ZIP are installed outside the repository under `Documents\Codex\toolchains`. PSn00bSDK includes GCC 12.3.0 and Ninja 1.11.1; the separate GCC archive is not needed. Set the SDK library path and add both tool directories to `PATH`:
 
 ```powershell
-$env:PSN00BSDK_LIBS = 'C:\PSn00bSDK\lib\libpsn00b'
-$env:Path = 'C:\PSn00bSDK\bin;' + $env:Path
+$env:PSN00BSDK_LIBS = 'C:\toolchains\PSn00bSDK-0.24-win32\lib\libpsn00b'
+$env:Path = 'C:\toolchains\PSn00bSDK-0.24-win32\bin;C:\toolchains\cmake-4.4.4-windows-x86_64\bin;' + $env:Path
 ```
+
+When using the portable CMake ZIP, set `CMAKE_ROOT` to its `share\cmake-4.4` directory if CMake reports that it cannot locate its modules. A standard CMake installation may not need this workaround.
 
 From this directory, configure and build the executable and CD image:
 
@@ -24,8 +26,9 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 
 ## Current status in this workspace
 
-- Source, CMake project, preset, and disc layout are present.
-- Build was not run: CMake, Ninja, and the PSn00bSDK toolchain are not installed in the workspace environment.
+- CMake configuration succeeded with CMake 4.4.4 and PSn00bSDK 0.24 / GCC 12.3.0 / Ninja 1.11.1.
+- `cmake --build --preset default` succeeded and produced `build/funkin-ps1-probe.exe`, `build/funkin-ps1-probe.bin` (381,024 bytes), and its cue sheet.
+- The final build completed without compiler warnings.
 - Emulator execution was not run: no PS1 emulator is available in `PATH`.
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
