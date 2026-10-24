@@ -1,5 +1,6 @@
 .DS_STORE
 .haxelib/
+/ps1/build/
 .vs/
 APIStuff.hx
 dump/
