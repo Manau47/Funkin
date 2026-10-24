@@ -66,6 +66,26 @@ cmake --build --preset default --target ps1-spu-disc
 
 Open `build/funkin-ps1-spu-probe.cue` in DuckStation. The CMake build uses `stream.c` and `stream.h` from that SDK installation directly; it does not vendor SDK files into Git. The probe requires PSn00bSDK 0.24's example sources to be installed alongside the library. Supply a local stereo VAGi file with `FUNKIN_PS1_AUDIO_VAGI` to test other material. The `FUNKIN_PS1_AUDIO_WAV` CD-DA probe remains a separate comparison target (`ps1-audio-disc`), not the selected game-audio path.
 
-This stereo fixture only exercises streaming, timing display, CD errors, and underrun reporting. The game target is a multichannel VAGi stream so player vocals can be attenuated after a miss. That four-channel encoding and the resulting RAM/CD/SPU budget still need measurement. See the French port-scope document for the exact Bopeebo stems and their distribution restrictions.
+Generate the rights-safe 8-second stereo fixture outside Git. Its 16 beats are exactly aligned to 43,008 Hz, 120 BPM, and the 4,096-byte VAGi interleave; a beat spans three stream chunks and the loop spans 48 chunks:
+
+```powershell
+$fixture = Join-Path $env:TEMP 'fnf-spu-stereo.vag'
+python .\generate_spu_fixture.py $fixture --channels 2 --loop-beats 16
+$sdk = 'C:\Users\Manau47\Documents\Codex\toolchains\PSn00bSDK-0.24-win32'
+cmake --preset default "-DFUNKIN_PS1_AUDIO_VAGI=$fixture"
+cmake --build --preset default --target ps1-spu-disc
+```
+
+`spu_probe.c` checks the VAGi signature/version, stereo channel count, sample rate, sector/block alignment, SPU double-buffer range, expected payload length against the ISO file size, command returns, read completion, and a bounded initial-buffer wait. Error codes 1–8 identify missing file, header read, header format, CD command, CD read, initial-buffer timeout, stream start, or underrun. Any runtime CD error or underrun stops the clocked test instead of displaying a misleading position.
+
+`Stream_GetSamplesPlayed()` is not a sample-accurate hardware read head. `stream.c` increments its base counter by `interleave / 16 * 28` decoded samples on each SPU block IRQ, then interpolates elapsed samples from its configured timer. The default timer is VSync at 60 Hz NTSC or 50 Hz PAL (one-frame interpolation resolution); the block IRQ anchors the estimate. The counter is monotonic across the feeder's file loop and does not wrap when sectors restart at the beginning. The SDK underrun branch invokes a callback but does not advance/re-anchor `play_time` or `last_updated`; therefore the displayed clock would no longer track playback, and this probe treats an underrun as failure.
+
+The generated stereo image builds successfully. DuckStation 0.1-8675 is available, but this session could not select the image in its native file dialog: the automation can observe the dialog but cannot target its separate window. CLI attempts while the dialog was open did not load the image. No sound, pulse, position advance, loop, error counter, or multi-minute drift was observed. **The stereo stream is not validated in an emulator.**
+
+For the requested validation, open `build/funkin-ps1-spu-probe.cue` via DuckStation **Système → Démarrer le fichier…**. Confirm audible left/right clicks, the `AUDIO` and `SAMPLES` values advancing, the visual `BEAT` marker at 120 BPM, and the sound looping at 8 seconds while the counter continues. Leave it running for at least three minutes; record the counter at start and end, count beat markers over a timed interval, and compare audio clicks to markers at the beginning and end. Report visual alignment separately from a measured drift. Any nonzero CD error or underrun fails the run. The currently built files are `build/funkin-ps1-spu-probe.bin` (858,480 bytes) and its 86-byte `.cue`; both are ignored build artifacts and are not committed.
+
+Input buttons also remain unvalidated under active play. Boot `build/funkin-ps1-probe.cue`, then test each direction, triangle/circle/cross/square, Start, press/hold/release, multiple buttons at once, and controller unplug/replug. The probe displays active button count, held frames, and pressed/released masks. A detected pad alone is not evidence that these transitions passed.
+
+The four-channel attenuation test is intentionally deferred until stereo playback passes. The planned shared interleaved stream puts instrumental L/R and voice L/R in one file, and mutes voices by setting only those SPU channel volumes to zero while the stream continues. For 4,096-byte interleave at 43,008 Hz, the SDK formulas imply 7,168 samples per channel per chunk; a four-channel chunk is 16 KiB and its SPU double buffer is 32 KiB, occupying `0x1010–0x9010` (4 of 24 SPU voices). The 96 KiB main-RAM ring buffer holds about 1.0 second of four-channel ADPCM at this rate; the 24-sector refill threshold is 48 KiB. Encoded payload throughput is about 98.3 kB/s (48 CD sectors/s), leaving 20 SPU voices for effects. These are formula-based estimates, not console measurements; CD seek/read jitter, CPU/GPU/RAM headroom, channel volumes and voice-only mute behavior still need emulator and hardware testing. No four-channel fixture has been built or tested in this milestone.
 
 

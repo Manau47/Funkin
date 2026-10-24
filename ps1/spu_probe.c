@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <psxapi.h>
 #include <psxetc.h>
 #include <psxgpu.h>
@@ -12,11 +13,15 @@
 
 #define SCREEN_W 320
 #define SCREEN_H 240
-#define RAM_BUFFER_SIZE 0x18000
-#define REFILL_THRESHOLD (24 * 2048)
-#define DUMMY_BLOCK_ADDR 0x1000
-#define STREAM_BUFFER_ADDR 0x1010
-#define TEST_BPM 120
+#define RAM_BUFFER_SIZE 0x18000u
+#define REFILL_THRESHOLD (24u * 2048u)
+#define DUMMY_BLOCK_ADDR 0x1000u
+#define STREAM_BUFFER_ADDR 0x1010u
+#define SPU_RAM_SIZE 0x80000u
+#define CD_SECTOR_SIZE 2048u
+#define MAX_WAIT_FRAMES 600u
+#define TEST_BPM 120u
+#define TEST_CHANNELS 2u
 
 typedef struct {
 	uint32_t magic;
@@ -34,6 +39,8 @@ typedef struct {
 	int stream_length;
 	int next_sector;
 	volatile size_t refill_length;
+	volatile int read_pending;
+	volatile int read_error;
 } StreamReadContext;
 
 typedef struct {
@@ -47,6 +54,18 @@ static Stream_Context stream;
 static StreamReadContext read_ctx;
 static volatile unsigned underruns;
 static volatile unsigned read_errors;
+static int failure_code;
+
+enum {
+	FAIL_NOT_FOUND = 1,
+	FAIL_HEADER_READ = 2,
+	FAIL_HEADER_FORMAT = 3,
+	FAIL_CD_COMMAND = 4,
+	FAIL_CD_READ = 5,
+	FAIL_BUFFER_TIMEOUT = 6,
+	FAIL_STREAM_START = 7,
+	FAIL_UNDERRUN = 8
+};
 
 #define SWAP_ENDIAN(x) (((x) << 24) | (((x) & 0x0000ff00u) << 8) | \
 	(((x) & 0x00ff0000u) >> 8) | ((x) >> 24))
@@ -76,19 +95,32 @@ static void display_frame(void)
 	SetDispMask(1);
 }
 
-static unsigned bcd_to_uint(uint8_t value)
+static void show_error(int code)
 {
-	return (unsigned)((value >> 4) * 10 + (value & 0x0f));
+	failure_code = code;
+	if (Stream_IsActive(&stream))
+		Stream_Stop();
+	for (;;) {
+		FntPrint(-1, "SPU STREAM ERROR\n\nCODE %d\n", code);
+		FntPrint(-1, "CD ERRORS %u\nUNDERRUNS %u\n", (unsigned)read_errors,
+			(unsigned)underruns);
+		FntPrint(-1, "CHECK DISC / STREAM.VAG\n");
+		FntFlush(-1);
+		display_frame();
+	}
 }
 
 static void cd_read_handler(CdlIntrResult event, uint8_t *payload)
 {
 	(void)payload;
+	read_ctx.read_pending = 0;
 	if (event == CdlDiskError) {
 		read_errors++;
+		read_ctx.read_error = 1;
 		return;
 	}
-	Stream_Feed(&stream, read_ctx.refill_length * 2048u);
+	if (read_ctx.refill_length)
+		Stream_Feed(&stream, read_ctx.refill_length * CD_SECTOR_SIZE);
 }
 
 static void stream_underrun_handler(void)
@@ -106,20 +138,42 @@ static void reset_spu_channels(void)
 	SpuSetKey(1, 0x00ffffff);
 }
 
+static bool wait_for_cd_read(unsigned max_frames)
+{
+	for (unsigned frame = 0; frame < max_frames; frame++) {
+		int pending = CdReadSync(1, 0);
+		if (pending < 0) {
+			read_ctx.read_pending = 0;
+			read_ctx.read_error = 1;
+			read_errors++;
+			return false;
+		}
+		if (pending == 0) {
+			read_ctx.read_pending = 0;
+			return !read_ctx.read_error;
+		}
+		VSync(0);
+	}
+	read_ctx.read_pending = 0;
+	return false;
+}
+
 static bool feed_stream(void)
 {
-	if (CdReadSync(1, 0) > 0)
+	if (read_ctx.read_error)
+		return false;
+	if (read_ctx.read_pending)
 		return true;
 	if (Stream_GetRefillLength(&stream) < REFILL_THRESHOLD)
 		return false;
 
 	uint8_t *ptr;
-	size_t sectors = Stream_GetFeedPtr(&stream, &ptr) / 2048u;
+	size_t sectors = Stream_GetFeedPtr(&stream, &ptr) / CD_SECTOR_SIZE;
 	int next_sector = read_ctx.next_sector;
 	int max_length = read_ctx.stream_length - next_sector;
-	while (max_length <= 0) {
-		next_sector -= read_ctx.stream_length;
-		max_length += read_ctx.stream_length;
+	if (max_length <= 0) {
+		next_sector = 0;
+		max_length = read_ctx.stream_length;
 	}
 	if (sectors > (size_t)max_length)
 		sectors = (size_t)max_length;
@@ -128,40 +182,84 @@ static bool feed_stream(void)
 
 	CdlLOC position;
 	CdIntToPos(read_ctx.start_lba + next_sector, &position);
-	CdControl(CdlSetloc, &position, 0);
-	CdReadCallback(cd_read_handler);
-	CdRead((int)sectors, (uint32_t *)ptr, CdlModeSpeed);
-	read_ctx.next_sector = next_sector + (int)sectors;
+	if (CdControl(CdlSetloc, &position, 0) != 1) {
+		read_ctx.read_error = 1;
+		return false;
+	}
 	read_ctx.refill_length = sectors;
+	read_ctx.next_sector = next_sector + (int)sectors;
+	read_ctx.read_pending = 1;
+	if (CdRead((int)sectors, (uint32_t *)ptr, CdlModeSpeed) <= 0) {
+		read_ctx.read_pending = 0;
+		read_ctx.read_error = 1;
+		return false;
+	}
+	return true;
+}
+
+static bool valid_header(const VAG_Header *header, unsigned *channels_out,
+	unsigned *interleave_out, unsigned *sample_rate_out, unsigned *chunks_out,
+	int file_size)
+{
+	if (memcmp(&header->magic, "VAGi", 4) != 0)
+		return false;
+	unsigned interleave = header->interleave;
+	unsigned channels = header->channels ? header->channels : 2u;
+	unsigned bytes_per_channel = SWAP_ENDIAN(header->size);
+	unsigned sample_rate = SWAP_ENDIAN(header->sample_rate);
+	if (header->version != 0x20000000u || channels != TEST_CHANNELS ||
+		interleave < 2048u || interleave > 8192u ||
+		(interleave % CD_SECTOR_SIZE) != 0 || (interleave % 16u) != 0 ||
+		bytes_per_channel == 0 || (bytes_per_channel % 16u) != 0 ||
+		sample_rate < 4000u || sample_rate > 44100u)
+		return false;
+	unsigned chunks = (bytes_per_channel + interleave - 1u) / interleave;
+	uint64_t file_bytes = 2048u + (uint64_t)channels * chunks * interleave;
+	uint64_t spu_bytes = (uint64_t)interleave * channels * 2u;
+	if (!chunks || file_size < 2048 || file_bytes > (uint64_t)file_size ||
+		file_bytes > 0x7fffffffu ||
+		RAM_BUFFER_SIZE < REFILL_THRESHOLD + channels * interleave ||
+		STREAM_BUFFER_ADDR + spu_bytes > SPU_RAM_SIZE)
+		return false;
+	*channels_out = channels;
+	*interleave_out = interleave;
+	*sample_rate_out = sample_rate;
+	*chunks_out = chunks;
 	return true;
 }
 
 static bool start_stream_from_disc(void)
 {
 	CdlFILE file;
-	if (!CdSearchFile(&file, "\\STREAM.VAG"))
+	if (!CdSearchFile(&file, "\\STREAM.VAG")) {
+		failure_code = FAIL_NOT_FOUND;
 		return false;
-
-	uint32_t header_sector[512];
-	CdControl(CdlSetloc, &file.pos, 0);
+	}
+	uint32_t header_sector[CD_SECTOR_SIZE / sizeof(uint32_t)];
+	if (CdControl(CdlSetloc, &file.pos, 0) != 1) {
+		failure_code = FAIL_CD_COMMAND;
+		return false;
+	}
 	CdReadCallback(0);
-	CdRead(1, header_sector, CdlModeSpeed);
-	CdReadSync(0, 0);
-	const VAG_Header *header = (const VAG_Header *)header_sector;
-	if (header->magic != 0x69474156u || header->interleave == 0)
+	read_ctx.read_pending = 1;
+	read_ctx.read_error = 0;
+	if (CdRead(1, header_sector, CdlModeSpeed) <= 0 ||
+		!wait_for_cd_read(MAX_WAIT_FRAMES)) {
+		failure_code = FAIL_HEADER_READ;
 		return false;
+	}
 
-	unsigned channels = header->channels ? header->channels : 2;
-	if (channels != 2)
+	unsigned channels, interleave, sample_rate, chunks;
+	const VAG_Header *header = (const VAG_Header *)header_sector;
+	if (!valid_header(header, &channels, &interleave, &sample_rate, &chunks,
+		file.size)) {
+		failure_code = FAIL_HEADER_FORMAT;
 		return false;
-	unsigned interleave = header->interleave;
-	unsigned bytes_per_channel = SWAP_ENDIAN(header->size);
-	unsigned sample_rate = SWAP_ENDIAN(header->sample_rate);
-	unsigned chunks = (bytes_per_channel + interleave - 1u) / interleave;
+	}
 
 	Stream_Config config = {0};
 	config.spu_address = STREAM_BUFFER_ADDR;
-	config.channel_mask = 3;
+	config.channel_mask = 3u;
 	config.interleave = interleave;
 	config.buffer_size = RAM_BUFFER_SIZE;
 	config.refill_threshold = REFILL_THRESHOLD;
@@ -174,12 +272,47 @@ static bool start_stream_from_disc(void)
 	SPU_CH_VOL_R(1) = 0x3fff;
 
 	read_ctx.start_lba = CdPosToInt(&file.pos) + 1;
-	read_ctx.stream_length = (int)((channels * chunks * interleave + 2047u) / 2048u);
+	read_ctx.stream_length = (int)(((uint64_t)channels * chunks * interleave +
+		CD_SECTOR_SIZE - 1u) / CD_SECTOR_SIZE);
 	read_ctx.next_sector = 0;
 	read_ctx.refill_length = 0;
-	while (feed_stream())
-		__asm__ volatile("");
-	return Stream_Start(&stream, false);
+	read_ctx.read_pending = 0;
+	read_ctx.read_error = 0;
+
+	unsigned frame;
+	for (frame = 0; frame < MAX_WAIT_FRAMES; frame++) {
+		if (read_ctx.read_error)
+			break;
+		(void)feed_stream();
+		if (stream.buffer.length >= REFILL_THRESHOLD + interleave * channels)
+			break;
+		if (read_ctx.read_pending) {
+			int pending = CdReadSync(1, 0);
+			if (pending < 0) {
+				read_ctx.read_error = 1;
+				read_errors++;
+				break;
+			}
+		}
+		VSync(0);
+	}
+	if (read_ctx.read_error) {
+		failure_code = FAIL_CD_READ;
+		return false;
+	}
+	if (stream.buffer.length < interleave * channels) {
+		failure_code = FAIL_BUFFER_TIMEOUT;
+		return false;
+	}
+	if (frame == MAX_WAIT_FRAMES) {
+		failure_code = FAIL_BUFFER_TIMEOUT;
+		return false;
+	}
+	if (!Stream_Start(&stream, false)) {
+		failure_code = FAIL_STREAM_START;
+		return false;
+	}
+	return true;
 }
 
 int main(void)
@@ -188,17 +321,16 @@ int main(void)
 	SpuInit();
 	reset_spu_channels();
 	CdInit();
-	CdControlB(CdlPause, 0, 0);
+	if (CdControlB(CdlPause, 0, 0) != 1)
+		show_error(FAIL_CD_COMMAND);
 
-	if (!start_stream_from_disc()) {
-		FntPrint(-1, "SPU STREAM SETUP FAILED\n\nCHECK STREAM.VAG FORMAT");
-		FntFlush(-1);
-		for (;;)
-			display_frame();
-	}
+	if (!start_stream_from_disc())
+		show_error(failure_code ? failure_code : FAIL_HEADER_FORMAT);
 
 	for (;;) {
 		(void)feed_stream();
+		if (read_ctx.read_error || underruns)
+			show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
 		unsigned rate = (unsigned)stream.config.sample_rate;
 		uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
