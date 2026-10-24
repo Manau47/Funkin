@@ -36,8 +36,8 @@ Le fichier `Psxdev.zip` fourni (environ 419 Mo) contient des installateurs fragm
 
 ## Prochaines étapes
 
-1. Installer PSn00bSDK, CMake et Ninja hors du dépôt, compiler `ps1/` et démarrer l'image cue/bin dans un émulateur.
-2. Vérifier la détection, la polarité active-bas des boutons et la fluidité vidéo dans l'émulateur, puis sur console si du matériel est disponible.
+1. Vérifier la valeur affichée pour un bouton maintenu et la polarité active-bas; la détection du port 1 et l'affichage sont déjà confirmés dans DuckStation.
+2. Répéter l'essai sur console si du matériel est disponible.
 3. Choisir un morceau et difficulté représentatifs; définir un format de chart compilé et mesurer le budget RAM, CD et audio.
 4. Implémenter un prototype jouable avec quatre voies, judgement, notes tenues, score/vie et synchronisation instrumentale/voix; comparer au jeu de référence.
 5. Évaluer les graphismes PS1, les scènes, personnages et dialogues, puis préserver progressivement semaines et modes compatibles.
@@ -48,5 +48,7 @@ Le fichier `Psxdev.zip` fourni (environ 419 Mo) contient des installateurs fragm
 - Inspecté : dépôt propre sur `main`, consignes de compilation, modules de gameplay ciblés, sous-modules et licences; contenu de l'archive inventorié sans exécution.
 - Implémenté : branche locale `ps1-port`, projet C PS1 isolé, preset CMake reproductible, configuration d'image de disque et notes de portage.
 - Compilé : `cmake --preset default` puis `cmake --build --preset default` ont réussi avec PSn00bSDK 0.24; image CD `.bin` de 381 024 octets et fichier `.cue` produits. La dernière compilation n'a émis aucun avertissement.
-- Exécuté/testé : aucun émulateur PS1 détecté; le programme n'a pas été lancé, donc l'affichage et la lecture de la manette ne sont pas validés en exécution.
-- À vérifier : démarrage de l'image et lecture des boutons en émulateur puis sur console; synchronisation audio et budget mémoire du jeu.
+- Exécuté/testé : `funkin-ps1-probe.cue` a démarré dans DuckStation 0.1-8675 (build `g3ea26cc91`). L'image du programme s'affiche en 320×240; DuckStation a rapporté 60 IPS pour le jeu et la vidéo. Le port 1 est indiqué connecté, type de pad numérique `0x04`, et l'état inactif des boutons est affiché. Une pression maintenue n'a pas été confirmée dans cette vérification.
+- Corrigé après inspection visuelle : texte de pied de page raccourci pour rester dans la zone visible; la nouvelle image compile et affiche entièrement ce texte dans l'émulateur.
+- À vérifier : état affiché pendant l'appui sur un bouton, fonctionnement sur console réelle, synchronisation audio, lecture d'une chanson et budget mémoire du jeu. La réussite dans DuckStation valide ce test technique limité, pas le jeu complet.
+

@@ -30,7 +30,11 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 - CMake configuration succeeded with CMake 4.4.4 and PSn00bSDK 0.24 / GCC 12.3.0 / Ninja 1.11.1.
 - `cmake --build --preset default` succeeded and produced `build/funkin-ps1-probe.exe`, `build/funkin-ps1-probe.bin` (381,024 bytes), and its cue sheet.
 - The final build completed without compiler warnings.
-- Emulator execution was not run: no PS1 emulator is available in `PATH`.
+- The generated cue/bin image booted and ran in DuckStation 0.1-8675. The probe rendered at 320×240 and the emulator reported 60 game/video FPS.
+- The probe detected controller port 1 as digital pad type `0x04` and displayed the idle button states. A held-button value was not confirmed during this check.
+- The on-screen footer was shortened after the first emulator view showed it clipped; the rebuilt image displayed the full footer.
+- No real console run, audio playback, song, or gameplay was tested.
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
+
 

@@ -136,10 +136,11 @@ int main(void)
 			button_state(&players[0], PAD_R1),
 			button_state(&players[0], PAD_R2));
 		draw_text(16, 96, controls);
-		draw_text(16, 206, "P1/P2 INPUT STATE IS KEPT IN SEPARATE SLOTS");
+		draw_text(16, 206, "P1/P2 INPUT STATES ARE SEPARATE");
 
 		end_frame();
 	}
 
 	return 0;
 }
+
