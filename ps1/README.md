@@ -96,4 +96,10 @@ The 57,344-byte preload requirement (24 sectors plus one 8,192-byte stereo chunk
 
 The rebuilt image is in `build/spu-retry/funkin-ps1-spu-probe.cue` and `.bin` (860,832 bytes). It was built in a separate ignored folder because the prior image was locked by the active DuckStation session. No four-channel test should begin until this stereo retry passes.
 
+### Callback contract retry
+
+PSn00bSDK 0.24's `CdRead()` completion callback receives `CdlDataReady` (1) after the final requested sector has been copied, not `CdlComplete`. The previous probe expected `CdlComplete`, matching the reported one callback, zero received sectors and an empty buffer. The probe now accepts only `CdlDataReady` to feed the received buffer; it records the callback event/payload, `CdRead`/`CdReadSync` returns, response bytes, and the specific read-error cause. See [the port notes](../docs/PS1_PORT.md) for the API contract, sector range, and test status.
+
+The refreshed image is in `build/spu-contract-fix/funkin-ps1-spu-probe.cue` and `.bin`. It is compiled but not yet run in DuckStation; the stereo stream is not validated.
+
 

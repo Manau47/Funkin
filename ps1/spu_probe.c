@@ -47,6 +47,12 @@ typedef struct {
 	volatile unsigned callbacks_received;
 	volatile unsigned callbacks_complete;
 	volatile unsigned callbacks_error;
+	volatile int last_event;
+	volatile uint8_t last_payload[4];
+	volatile uint8_t last_sync_result[4];
+	volatile int last_cdread_return;
+	volatile int last_cdsync_return;
+	volatile int error_cause;
 } StreamReadContext;
 
 typedef struct {
@@ -75,8 +81,48 @@ enum {
 	FAIL_UNDERRUN = 8
 };
 
+enum {
+	READ_ERROR_NONE = 0,
+	READ_ERROR_CALLBACK_DISK = 1,
+	READ_ERROR_CALLBACK_EVENT = 2,
+	READ_ERROR_START = 3,
+	READ_ERROR_SYNC_TIMEOUT = 4,
+	READ_ERROR_SYNC_ABORT = 5,
+	READ_ERROR_SETLOC = 6,
+	READ_ERROR_WAIT_TIMEOUT = 7
+};
+
 #define SWAP_ENDIAN(x) (((x) << 24) | (((x) & 0x0000ff00u) << 8) | \
 	(((x) & 0x00ff0000u) >> 8) | ((x) >> 24))
+
+static void set_read_error(int cause)
+{
+	if (!read_ctx.read_error) {
+		read_ctx.error_cause = cause;
+		read_errors++;
+	}
+	read_ctx.read_error = 1;
+}
+
+static void save_sync_result(const uint8_t *result)
+{
+	for (int i = 0; i < 4; i++)
+		read_ctx.last_sync_result[i] = result[i];
+}
+
+static const char *read_error_name(int cause)
+{
+	switch (cause) {
+	case READ_ERROR_CALLBACK_DISK: return "CALLBACK DISK ERROR";
+	case READ_ERROR_CALLBACK_EVENT: return "UNEXPECTED CALLBACK";
+	case READ_ERROR_START: return "CDREAD RETURNED 0";
+	case READ_ERROR_SYNC_TIMEOUT: return "CDREADSYNC -1";
+	case READ_ERROR_SYNC_ABORT: return "CDREADSYNC -2";
+	case READ_ERROR_SETLOC: return "CD SETLOC FAILED";
+	case READ_ERROR_WAIT_TIMEOUT: return "READ WAIT TIMEOUT";
+	default: return "NONE";
+	}
+}
 
 static void init_video(void)
 {
@@ -124,6 +170,17 @@ static void show_error(int code)
 			(unsigned)read_ctx.callbacks_complete,
 			(unsigned)read_ctx.callbacks_error);
 		FntPrint(-1, "SECTORS RX %lu\n", (unsigned long)read_ctx.total_received_sectors);
+		FntPrint(-1, "LAST EVT %d  DATA %02X %02X %02X %02X\n",
+			(int)read_ctx.last_event, (unsigned)read_ctx.last_payload[0],
+			(unsigned)read_ctx.last_payload[1], (unsigned)read_ctx.last_payload[2],
+			(unsigned)read_ctx.last_payload[3]);
+		FntPrint(-1, "CDREAD %d  CDSYNC %d\n", (int)read_ctx.last_cdread_return,
+			(int)read_ctx.last_cdsync_return);
+		FntPrint(-1, "SYNC DATA %02X %02X %02X %02X\n",
+			(unsigned)read_ctx.last_sync_result[0], (unsigned)read_ctx.last_sync_result[1],
+			(unsigned)read_ctx.last_sync_result[2], (unsigned)read_ctx.last_sync_result[3]);
+		FntPrint(-1, "CAUSE %d: %s\n", (int)read_ctx.error_cause,
+			read_error_name(read_ctx.error_cause));
 		FntFlush(-1);
 		display_frame();
 	}
@@ -131,18 +188,21 @@ static void show_error(int code)
 
 static void cd_read_handler(CdlIntrResult event, uint8_t *payload)
 {
-	(void)payload;
+	read_ctx.last_event = (int)event;
+	for (int i = 0; i < 4; i++)
+		read_ctx.last_payload[i] = payload ? payload[i] : 0;
 	read_ctx.callbacks_received++;
 	if (event == CdlDiskError) {
 		read_ctx.callbacks_error++;
-		read_errors++;
-		read_ctx.read_error = 1;
+		set_read_error(READ_ERROR_CALLBACK_DISK);
 		read_ctx.read_pending = 0;
 		return;
 	}
-	if (event != CdlComplete) {
-		read_ctx.read_error = 1;
-		read_errors++;
+	/* PSn00bSDK 0.24 reports the final sector as CdlDataReady (1).
+	 * CdlComplete is not the success callback for CdRead(). */
+	if (event != CdlDataReady) {
+		read_ctx.callbacks_error++;
+		set_read_error(READ_ERROR_CALLBACK_EVENT);
 		read_ctx.read_pending = 0;
 		return;
 	}
@@ -173,20 +233,23 @@ static bool wait_for_cd_read(unsigned max_frames)
 {
 	for (unsigned frame = 0; frame < max_frames; frame++) {
 		int pending = CdReadSync(1, 0);
+		read_ctx.last_cdsync_return = pending;
 		if (pending < 0) {
 			read_ctx.read_pending = 0;
-			if (!read_ctx.read_error)
-				read_errors++;
-			read_ctx.read_error = 1;
+			set_read_error(pending == -2 ? READ_ERROR_SYNC_ABORT : READ_ERROR_SYNC_TIMEOUT);
 			CdReadCallback(0);
 			return false;
 		}
 		if (pending == 0) {
+			uint8_t result[4] = {0};
+			read_ctx.last_cdsync_return = CdReadSync(0, result);
+			save_sync_result(result);
 			read_ctx.read_pending = 0;
 			return !read_ctx.read_error;
 		}
 		VSync(0);
 	}
+	set_read_error(READ_ERROR_WAIT_TIMEOUT);
 	abort_cd_read();
 	return false;
 }
@@ -198,15 +261,14 @@ static void abort_cd_read(void)
 	CdReadBreak();
 	for (unsigned frame = 0; frame < 120u; frame++) {
 		int pending = CdReadSync(1, 0);
+		read_ctx.last_cdsync_return = pending;
 		if (pending == -2 || pending == 0) {
 			read_ctx.read_pending = 0;
 			CdReadCallback(0);
 			return;
 		}
 		if (pending == -1) {
-			if (!read_ctx.read_error)
-				read_errors++;
-			read_ctx.read_error = 1;
+			set_read_error(READ_ERROR_SYNC_TIMEOUT);
 			read_ctx.read_pending = 0;
 			CdReadCallback(0);
 			return;
@@ -240,8 +302,7 @@ static bool feed_stream(void)
 	CdlLOC position;
 	CdIntToPos(read_ctx.start_lba + next_sector, &position);
 	if (CdControl(CdlSetloc, &position, 0) != 1) {
-		read_ctx.read_error = 1;
-		read_errors++;
+		set_read_error(READ_ERROR_SETLOC);
 		return false;
 	}
 	read_ctx.refill_length = sectors;
@@ -250,10 +311,10 @@ static bool feed_stream(void)
 	read_ctx.read_pending = 1;
 	read_ctx.total_requested_sectors += (unsigned)sectors;
 	CdReadCallback(cd_read_handler);
-	if (CdRead((int)sectors, (uint32_t *)ptr, CdlModeSpeed) <= 0) {
+	read_ctx.last_cdread_return = CdRead((int)sectors, (uint32_t *)ptr, CdlModeSpeed);
+	if (read_ctx.last_cdread_return <= 0) {
 		read_ctx.read_pending = 0;
-		read_ctx.read_error = 1;
-		read_errors++;
+		set_read_error(READ_ERROR_START);
 		CdReadCallback(0);
 		return false;
 	}
@@ -307,10 +368,10 @@ static bool start_stream_from_disc(void)
 	read_ctx.read_pending = 1;
 	read_ctx.read_error = 0;
 	read_ctx.last_read_sectors = 0;
-	if (CdRead(1, header_sector, CdlModeSpeed) <= 0) {
+	read_ctx.last_cdread_return = CdRead(1, header_sector, CdlModeSpeed);
+	if (read_ctx.last_cdread_return <= 0) {
 		read_ctx.read_pending = 0;
-		read_ctx.read_error = 1;
-		read_errors++;
+		set_read_error(READ_ERROR_START);
 		failure_code = FAIL_HEADER_READ;
 		return false;
 	}
@@ -354,14 +415,19 @@ static bool start_stream_from_disc(void)
 		if (read_ctx.read_error)
 			break;
 		(void)feed_stream();
+		if (!read_ctx.read_pending && read_ctx.callbacks_received &&
+		    read_ctx.last_cdsync_return == 0) {
+			uint8_t result[4] = {0};
+			read_ctx.last_cdsync_return = CdReadSync(0, result);
+			save_sync_result(result);
+		}
 		if (stream.buffer.length >= REFILL_THRESHOLD + interleave * channels)
 			break;
 		if (read_ctx.read_pending) {
 			int pending = CdReadSync(1, 0);
+			read_ctx.last_cdsync_return = pending;
 			if (pending < 0) {
-				if (!read_ctx.read_error)
-					read_errors++;
-				read_ctx.read_error = 1;
+				set_read_error(pending == -2 ? READ_ERROR_SYNC_ABORT : READ_ERROR_SYNC_TIMEOUT);
 				read_ctx.read_pending = 0;
 				CdReadCallback(0);
 				break;
