@@ -7,7 +7,7 @@
 #define SCREEN_W 320
 #define SCREEN_H 240
 #define OT_LENGTH 8
-#define PACKET_BYTES 2048
+#define PACKET_BYTES 8192
 #define PAD_BYTES 34
 
 typedef struct {
