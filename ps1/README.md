@@ -52,6 +52,20 @@ cmake --build --preset default --target ps1-audio-disc
 
 Open `build/funkin-ps1-audio-probe.cue` in DuckStation. The source WAV and generated disc image stay outside Git; `/ps1/build/` is ignored.
 
-The PSn00bSDK 0.24 installation also includes CD-DA, XA, and CD-to-SPU ADPCM streaming examples. The current probe uses CD-DA because its Subchannel Q position directly follows the playing track. This test does not settle the game's final format: CD-DA is a single stereo mix, while player vocals must be independently attenuated after misses. See the French port-scope document for the options and the exact official Bopeebo assets selected for a later local-only test.
+## Optional CD-to-SPU stream probe
+
+The selected audio direction is PSn00bSDK's CD-to-SPU ADPCM streaming driver. The probe uses its `Stream_GetSamplesPlayed()` sample clock, anchored by SPU block interrupts and interpolated between interrupts, then derives elapsed time and the 120 BPM visual pulse from that clock. The driver defaults to VSync for interpolation; the displayed position is audio-clock based rather than a frame count accumulated as music time.
+
+Build against the SDK's own VAGi fixture, which stays outside the repository:
+
+```powershell
+$sdk = 'C:\Users\Manau47\Documents\Codex\toolchains\PSn00bSDK-0.24-win32'
+cmake --preset default "-DFUNKIN_PS1_AUDIO_VAGI=$sdk\share\psn00bsdk\examples\sound\cdstream\stream.vag"
+cmake --build --preset default --target ps1-spu-disc
+```
+
+Open `build/funkin-ps1-spu-probe.cue` in DuckStation. The CMake build uses `stream.c` and `stream.h` from that SDK installation directly; it does not vendor SDK files into Git. The probe requires PSn00bSDK 0.24's example sources to be installed alongside the library. Supply a local stereo VAGi file with `FUNKIN_PS1_AUDIO_VAGI` to test other material. The `FUNKIN_PS1_AUDIO_WAV` CD-DA probe remains a separate comparison target (`ps1-audio-disc`), not the selected game-audio path.
+
+This stereo fixture only exercises streaming, timing display, CD errors, and underrun reporting. The game target is a multichannel VAGi stream so player vocals can be attenuated after a miss. That four-channel encoding and the resulting RAM/CD/SPU budget still need measurement. See the French port-scope document for the exact Bopeebo stems and their distribution restrictions.
 
 

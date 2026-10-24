@@ -23,8 +23,36 @@ if(DEFINED FUNKIN_PS1_AUDIO_WAV AND EXISTS "${FUNKIN_PS1_AUDIO_WAV}")
 		audio_iso.xml
 		DEPENDS funkin-ps1-audio-probe system.cnf "${CMAKE_CURRENT_BINARY_DIR}/audio-probe.wav"
 	)
-elseif(DEFINED FUNKIN_PS1_AUDIO_VAG)
-	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAG has been superseded; provide FUNKIN_PS1_AUDIO_WAV")
 elseif(DEFINED FUNKIN_PS1_AUDIO_WAV)
 	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_WAV does not name an existing PCM WAV file")
+endif()
+
+# Optional PSn00bSDK CD-to-SPU ADPCM streaming probe. The SDK's reusable
+# streaming implementation remains in the external SDK installation.
+if(DEFINED FUNKIN_PS1_AUDIO_VAGI AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI}")
+	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
+	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
+	set(_psn00bsdk_cdstream_dir
+		"${_psn00bsdk_root}/share/psn00bsdk/examples/sound/cdstream")
+	if(NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.c" OR
+	   NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.h")
+		message(FATAL_ERROR
+			"PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
+	endif()
+	configure_file("${FUNKIN_PS1_AUDIO_VAGI}"
+		"${CMAKE_CURRENT_BINARY_DIR}/stream.vag" COPYONLY)
+	psn00bsdk_add_executable(funkin-ps1-spu-probe GPREL
+		spu_probe.c
+		"${_psn00bsdk_cdstream_dir}/stream.c")
+	target_include_directories(funkin-ps1-spu-probe PRIVATE
+		"${_psn00bsdk_cdstream_dir}")
+	psn00bsdk_add_cd_image(
+		ps1-spu-disc
+		funkin-ps1-spu-probe
+		spu_iso.xml
+		DEPENDS funkin-ps1-spu-probe system.cnf
+			"${CMAKE_CURRENT_BINARY_DIR}/stream.vag"
+	)
+elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI)
+	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI does not name an existing VAGi file")
 endif()
