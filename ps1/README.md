@@ -11,9 +11,10 @@ The supplied PSn00bSDK 0.24 archive and CMake 4.4.4 portable ZIP are installed o
 ```powershell
 $env:PSN00BSDK_LIBS = 'C:\toolchains\PSn00bSDK-0.24-win32\lib\libpsn00b'
 $env:Path = 'C:\toolchains\PSn00bSDK-0.24-win32\bin;C:\toolchains\cmake-4.4.4-windows-x86_64\bin;' + $env:Path
+$env:CMAKE_ROOT = 'C:\toolchains\cmake-4.4.4-windows-x86_64\share\cmake-4.4'
 ```
 
-When using the portable CMake ZIP, set `CMAKE_ROOT` to its `share\cmake-4.4` directory if CMake reports that it cannot locate its modules. A standard CMake installation may not need this workaround.
+`CMAKE_ROOT` is needed for this portable CMake ZIP in the current environment; a standard CMake installation may locate its modules without it.
 
 From this directory, configure and build the executable and CD image:
 
@@ -32,3 +33,4 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 - Emulator execution was not run: no PS1 emulator is available in `PATH`.
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
+
