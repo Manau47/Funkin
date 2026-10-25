@@ -63,6 +63,9 @@ class HoldDropTests(unittest.TestCase):
         self.assertTrue(state.instrumental_audible)
 
     def test_release_at_or_inside_final_160ms_is_tolerated(self):
+        # 43 kHz represents 160 ms exactly; also check adjacent 43,008 Hz samples.
+        self.assertFalse(release_is_miss(6_880, rate=43_000))
+        self.assertTrue(release_is_miss(6_881, rate=43_000))
         threshold = RATE * 160 // 1000
         self.assertFalse(release_is_miss(threshold))
         self.assertFalse(release_is_miss(threshold - 1))
