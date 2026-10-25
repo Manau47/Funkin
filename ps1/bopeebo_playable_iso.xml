@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<iso_project>
+	<track type="data">
+		<identifiers system="PLAYSTATION" volume="FUNKIN_BOPEEBO_PLAY" volume_set="FUNKIN_BOPEEBO_PLAY" publisher="Unofficial FNF PS1 adaptation" data_preparer="PSn00bSDK" application="PLAYSTATION" copyright="SYSTEM.CNF;1" />
+		<directory_tree>
+			<file name="SYSTEM.CNF" type="data" source="${PROJECT_SOURCE_DIR}/system.cnf" />
+			<file name="FUNKIN.EXE" type="data" source="funkin-ps1-bopeebo-playable.exe" />
+			<file name="STREAM.VAG" type="data" source="${PROJECT_BINARY_DIR}/stream-playable.vag" />
+			<dummy sectors="128" />
+		</directory_tree>
+	</track>
+</iso_project>

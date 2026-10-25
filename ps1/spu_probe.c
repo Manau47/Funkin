@@ -46,6 +46,22 @@
 #if TEST_BOPEEBO_4CH
 #include "bopeebo_sfx_data.h"
 #endif
+#if TEST_PLAYABLE_BOPEEBO
+#include "bopeebo_chart.h"
+#define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
+#define GAME_MAX_PRIMS 220u
+static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
+static int16_t active_hold[4] = { -1, -1, -1, -1 };
+static uint32_t hold_last_sample[4];
+static int32_t score;
+static uint32_t combo;
+static uint32_t misses;
+static uint32_t hits;
+static uint16_t health_q8 = 256;
+static bool bf_miss_silenced;
+static POLY_F4 game_prims[GAME_MAX_PRIMS];
+static unsigned game_prim_count;
+#endif
 
 typedef struct {
 	uint32_t magic;
@@ -91,6 +107,7 @@ static StreamReadContext read_ctx;
 static volatile unsigned underruns;
 static volatile unsigned read_errors;
 static int failure_code;
+static bool stream_initialized;
 #if TEST_CHANNELS >= 4
 #define PAD_BYTES 34
 static uint8_t pad_buffers[2][PAD_BYTES];
@@ -98,6 +115,8 @@ static uint16_t previous_pad_buttons = 0xffff;
 static bool pad_was_connected;
 static bool voices_muted;
 static bool circle_down;
+static uint16_t game_buttons;
+static uint16_t game_pressed;
 #endif
 #if TEST_NO_LOOP
 static bool song_finished;
@@ -120,8 +139,8 @@ static size_t sfx_write_size;
 static int sfx_transfer_completed;
 static bool sfx_uploaded;
 #endif
-
 static void abort_cd_read(void);
+static bool start_stream_from_disc(void);
 
 enum {
 	FAIL_NOT_FOUND = 1,
@@ -291,8 +310,16 @@ static void set_voice_pan(void)
 	uint16_t right = (uint16_t)((uint32_t)MUSIC_SPAN_GAIN * pan_curve[pan_width][1] / 16383u);
 	SPU_CH_VOL_L(2) = left;
 	SPU_CH_VOL_R(2) = right;
-	SPU_CH_VOL_L(3) = voices_muted ? 0 : right;
-	SPU_CH_VOL_R(3) = voices_muted ? 0 : left;
+	SPU_CH_VOL_L(3) = (voices_muted
+#if TEST_PLAYABLE_BOPEEBO
+		|| bf_miss_silenced
+#endif
+		) ? 0 : right;
+	SPU_CH_VOL_R(3) = (voices_muted
+#if TEST_PLAYABLE_BOPEEBO
+		|| bf_miss_silenced
+#endif
+		) ? 0 : left;
 }
 
 static unsigned active_sfx_voice_count(void)
@@ -422,16 +449,21 @@ static bool poll_bopeebo4_controls(void)
 		pad_was_connected = false;
 		circle_down = false;
 		sfx_square_down = false;
+		game_buttons = 0xffff;
+		game_pressed = 0;
 		return false;
 	}
 
 	uint16_t buttons = (uint16_t)pad->btn;
+	game_buttons = buttons;
 	circle_down = !(buttons & PAD_CIRCLE);
 	sfx_square_down = !(buttons & PAD_SQUARE);
 	if (!pad_was_connected) {
 		previous_pad_buttons = buttons;
 		pad_was_connected = true;
+		game_pressed = 0;
 	} else {
+		game_pressed = (uint16_t)(previous_pad_buttons & (uint16_t)~buttons);
 		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
 			sfx_square_press_count++;
 			if (sfx_uploaded)
@@ -439,10 +471,17 @@ static bool poll_bopeebo4_controls(void)
 		}
 		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
+#if TEST_PLAYABLE_BOPEEBO
+		if ((previous_pad_buttons & PAD_L1) && !(buttons & PAD_L1) && pan_width)
+			pan_width--;
+		if ((previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
+			pan_width++;
+#else
 		if ((previous_pad_buttons & PAD_LEFT) && !(buttons & PAD_LEFT) && pan_width)
 			pan_width--;
 		if ((previous_pad_buttons & PAD_RIGHT) && !(buttons & PAD_RIGHT) && pan_width < 7u)
 			pan_width++;
+#endif
 		previous_pad_buttons = buttons;
 	}
 	maintain_sfx_pool();
@@ -491,6 +530,205 @@ static bool poll_voice_toggle(void)
 	return true;
 }
 #endif
+#endif
+
+#if TEST_PLAYABLE_BOPEEBO
+static void add_health(int amount)
+{
+	int value = (int)health_q8 + amount;
+	if (value < 0) value = 0;
+	if (value > 512) value = 512;
+	health_q8 = (uint16_t)value;
+}
+
+static int32_t pbot1_score(uint32_t delta_samples, uint32_t rate)
+{
+	uint64_t scaled = (uint64_t)delta_samples * 1000u;
+	if (scaled > (uint64_t)rate * 160u) return -100;
+	uint32_t whole_ms = (uint32_t)(scaled / rate);
+	uint32_t remainder = (uint32_t)(scaled % rate);
+	if (whole_ms >= 160u) return pbot1_score_by_ms[160];
+	int32_t a = pbot1_score_by_ms[whole_ms];
+	int32_t b = pbot1_score_by_ms[whole_ms + 1u];
+	return a + (b - a) * (int32_t)remainder / (int32_t)rate;
+}
+
+static int find_player_note(unsigned lane, uint32_t samples)
+{
+	int best = -1;
+	uint32_t best_delta = GAME_WINDOW_SAMPLES + 1u;
+	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		if (game_note_state[i] || bopeebo_notes[i].lane >= 4u ||
+		    bopeebo_notes[i].lane != lane)
+			continue;
+		uint32_t delta = samples > bopeebo_notes[i].head ?
+			samples - bopeebo_notes[i].head : bopeebo_notes[i].head - samples;
+		if ((uint64_t)delta * 1000u <= (uint64_t)rate * 160u && delta < best_delta) {
+			best = (int)i;
+			best_delta = delta;
+		}
+	}
+	return best;
+}
+
+static void game_miss(unsigned index)
+{
+	game_note_state[index] = 2;
+	misses++;
+	combo = 0;
+	score -= 100;
+	add_health(-20);
+	bf_miss_silenced = true;
+	play_resident_sfx(false);
+	set_voice_pan();
+}
+
+static void game_update(uint32_t samples)
+{
+	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	static const uint16_t masks[4] = { PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT };
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		if (bopeebo_notes[i].lane >= 4u && !game_note_state[i] && samples >= bopeebo_notes[i].head)
+			game_note_state[i] = 3; /* Dad chart lane: audio stem performs the note. */
+		if (bopeebo_notes[i].lane < 4u && !game_note_state[i] &&
+		    samples > bopeebo_notes[i].head &&
+		    (uint64_t)(samples - bopeebo_notes[i].head) * 1000u > (uint64_t)rate * 160u)
+			game_miss(i);
+	}
+
+	for (unsigned lane = 0; lane < 4; lane++) {
+		uint16_t mask = masks[lane];
+		bool down = (game_buttons & mask) == 0;
+		int16_t index = active_hold[lane];
+		if (index >= 0) {
+			uint32_t end = bopeebo_notes[index].tail;
+			uint32_t until = samples < end ? samples : end;
+			if (until > hold_last_sample[lane]) {
+				uint32_t delta = until - hold_last_sample[lane];
+				score += (uint32_t)(((uint64_t)delta * 250u) / rate);
+				add_health((int)(((uint64_t)delta * 31u) / rate));
+				hold_last_sample[lane] = until;
+			}
+			if (samples >= end) {
+				active_hold[lane] = -1;
+			} else if (!down) {
+				uint32_t remaining = end - samples;
+				if (remaining > rate * 160u / 1000u) {
+					score -= (int32_t)(((uint64_t)remaining * 125u) / rate);
+					combo = 0;
+					play_resident_sfx(false);
+				}
+				active_hold[lane] = -1;
+			}
+		}
+	}
+
+	for (unsigned lane = 0; lane < 4; lane++) {
+		uint16_t mask = masks[lane];
+		if (!(game_pressed & mask)) continue;
+		int target = find_player_note(lane, samples);
+		if (target < 0) {
+			combo = 0;
+			score -= 10;
+			add_health(-20);
+			play_resident_sfx(false);
+			continue;
+		}
+		uint32_t head = bopeebo_notes[target].head;
+		uint32_t diff = samples > head ? samples - head : head - samples;
+		game_note_state[target] = 1;
+		int32_t award = pbot1_score(diff, rate);
+		score += award;
+		uint64_t timing = (uint64_t)diff * 1000u;
+		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); }
+		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); }
+		else if (timing <= (uint64_t)rate * 135u) { combo = 0; }
+		else { combo = 0; add_health(-5); }
+		hits++;
+		bf_miss_silenced = false;
+		if (bopeebo_notes[target].tail > head && (game_buttons & mask) == 0) {
+			active_hold[lane] = (int16_t)target;
+			hold_last_sample[lane] = samples;
+		}
+	}
+	game_pressed = 0;
+	set_voice_pan();
+}
+
+static void draw_rect(int x, int y, int width, int height, uint8_t r, uint8_t g, uint8_t b)
+{
+	if (game_prim_count >= GAME_MAX_PRIMS || width <= 0 || height <= 0) return;
+	POLY_F4 *p = &game_prims[game_prim_count++];
+	setPolyF4(p);
+	setRGB0(p, r, g, b);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_gameplay(uint32_t samples)
+{
+	game_prim_count = 0;
+	for (unsigned side = 0; side < 2; side++) {
+		int origin = side ? 170 : 20;
+		for (unsigned lane = 0; lane < 4; lane++) {
+			int x = origin + (int)lane * 24;
+			draw_rect(x, 124, 20, 92, 16, 18, 31);
+			draw_rect(x, 199, 20, 3, 104, 104, 128);
+			draw_rect(x + 2, 197, 16, 7, side ? 224 : 52, side ? 118 : 198, side ? 74 : 240);
+		}
+	}
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		const BopeeboNote *note = &bopeebo_notes[i];
+		int side = note->lane >= 4u;
+		unsigned lane = note->lane & 3u;
+		int x = (side ? 170 : 20) + (int)lane * 24 + 3;
+		int y = 200 - (int)(((int64_t)note->head - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
+		int tail_y = 200 - (int)(((int64_t)note->tail - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
+		if (note->tail > note->head) {
+			int top = y < tail_y ? y : tail_y;
+			int bottom = y > tail_y ? y : tail_y;
+			if (bottom > 124 && top < 216)
+				draw_rect(x + 4, top < 124 ? 124 : top, 8, (bottom > 216 ? 216 : bottom) - (top < 124 ? 124 : top),
+					side ? 176 : 48, side ? 78 : 158, side ? 56 : 220);
+		}
+		if (game_note_state[i] == 1u || game_note_state[i] == 2u || (side && game_note_state[i] == 3u)) continue;
+		if (y >= 124 && y <= 216)
+			draw_rect(x, y - 5, 18, 10, side ? 248 : 80, side ? 145 : 220, side ? 96 : 255);
+	}
+}
+
+static void reset_game_state(void)
+{
+	memset(game_note_state, 0, sizeof(game_note_state));
+	for (unsigned lane = 0; lane < 4; lane++) active_hold[lane] = -1;
+	score = combo = misses = hits = 0;
+	health_q8 = 256;
+	bf_miss_silenced = false;
+}
+
+static bool restart_bopeebo(void)
+{
+	if (Stream_IsActive(&stream)) Stream_Stop();
+	abort_cd_read();
+	CdReadCallback(0);
+	if (stream_initialized) {
+		Stream_Destroy(&stream);
+		stream_initialized = false;
+	}
+	memset(&stream, 0, sizeof(stream));
+	memset(&read_ctx, 0, sizeof(read_ctx));
+	underruns = read_errors = 0;
+	read_ctx.last_cdsync_return = 0;
+	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++) {
+		sfx_voice_active[i] = false;
+		SpuSetKey(0, 1u << (SFX_FIRST_VOICE + i));
+	}
+	reset_game_state();
+	song_finished = false;
+	if (CdControlB(CdlPause, 0, 0) != 1 || !start_stream_from_disc()) return false;
+	return true;
+}
 #endif
 
 static void reset_spu_channels(void)
@@ -675,6 +913,7 @@ static bool start_stream_from_disc(void)
 	config.sample_rate = (int)sample_rate;
 	config.underrun_callback = stream_underrun_handler;
 	Stream_Init(&stream, &config);
+	stream_initialized = true;
 #if TEST_CHANNELS == 2
 	SPU_CH_VOL_L(0) = 0x3fff;
 	SPU_CH_VOL_R(0) = 0;
@@ -777,13 +1016,18 @@ int main(void)
 #if TEST_BOPEEBO_4CH
 	if (!upload_resident_sfx())
 		show_error(FAIL_SFX_UPLOAD);
+#if !TEST_PLAYABLE_BOPEEBO
 	run_pre_music_sfx_test();
+#endif
 #endif
 	if (CdControlB(CdlPause, 0, 0) != 1)
 		show_error(FAIL_CD_COMMAND);
 
 	if (!start_stream_from_disc())
 		show_error(failure_code ? failure_code : FAIL_HEADER_FORMAT);
+#if TEST_PLAYABLE_BOPEEBO
+	reset_game_state();
+#endif
 
 	for (;;) {
 		(void)feed_stream();
@@ -797,7 +1041,9 @@ int main(void)
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
 		unsigned rate = (unsigned)stream.config.sample_rate;
 #if TEST_BOPEEBO_4CH
-		run_during_music_sfx_test(samples);
+#if !TEST_PLAYABLE_BOPEEBO
+			run_during_music_sfx_test(samples);
+#endif
 #endif
 #if TEST_NO_LOOP
 		uint32_t song_end_samples = TEST_TOTAL_SAMPLES +
@@ -809,9 +1055,32 @@ int main(void)
 		if (samples > TEST_TOTAL_SAMPLES)
 			samples = TEST_TOTAL_SAMPLES;
 #endif
+		#if TEST_PLAYABLE_BOPEEBO
+		if (!song_finished) {
+			if (game_pressed & PAD_START) {
+				if (!restart_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+				samples = 0;
+			} else {
+				game_update(samples);
+				if (!health_q8 && Stream_IsActive(&stream)) {
+					Stream_Stop();
+					song_finished = true;
+				}
+			}
+		} else if (game_pressed & PAD_START) {
+			if (!restart_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+			samples = 0;
+		}
+		#endif
 		uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
 		unsigned beat_period_samples = rate * 60u / TEST_BPM;
 		unsigned beat_phase_samples = beat_period_samples ? samples % beat_period_samples : 0;
+#if TEST_PLAYABLE_BOPEEBO
+		draw_gameplay(samples);
+		draw_rect(20, 220, 264, 6, 48, 48, 58);
+		draw_rect(20, 220, (int)((uint32_t)health_q8 * 132u / 256u), 6, 80, 210, 112);
+#endif
+#if !TEST_PLAYABLE_BOPEEBO
 		FntPrint(-1, "SPU STREAM / VAGi\n\n");
 		FntPrint(-1, "AUDIO %02u:%02u.%03u\n",
 			milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u);
@@ -820,7 +1089,28 @@ int main(void)
 		FntPrint(-1, "BUFFER %u / %u\n", (unsigned)stream.buffer.length,
 			(unsigned)stream.config.buffer_size);
 		FntPrint(-1, "UNDERRUNS %u  CD ERRORS %u\n", (unsigned)underruns, (unsigned)read_errors);
+#endif
 #if TEST_BOPEEBO_4CH
+#if TEST_PLAYABLE_BOPEEBO
+		FntPrint(-1, "BOPEEBO NORMAL  %02u:%02u.%03u  BF <-  DAD ->\n",
+			milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u);
+		FntPrint(-1, "SAMPLES %lu  BUFFER %u/%u\n", (unsigned long)samples,
+			(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size);
+		FntPrint(-1, "CD ERR %u  UNDERRUN %u  %s\n", (unsigned)read_errors,
+			(unsigned)underruns, beat_phase_samples < rate / 10u ? "BEAT" : "");
+		FntPrint(-1, "D-PAD play  CIRCLE mute BF  PAD %s\n", pad_connected ? "ONLINE" : "OFFLINE");
+		FntPrint(-1, "PAN %u/7 L1/R1  SQUARE test  START restart\n", (unsigned)pan_width);
+		FntPrint(-1, "SCORE %ld  COMBO %lu  HITS %lu  MISS %lu\n",
+			(long)score, (unsigned long)combo, (unsigned long)hits,
+			(unsigned long)misses);
+		FntPrint(-1, "HEALTH %u.%02u  BF %s\n",
+			(unsigned)(health_q8 / 256u), (unsigned)((health_q8 % 256u) * 100u / 256u),
+			(voices_muted || bf_miss_silenced) ? "MUTED" : "LIVE");
+		FntPrint(-1, "SQUARE %s x%u  SFX AUTO %u  ACTIVE %u DMA %d\n",
+			sfx_square_down ? "DOWN" : "UP", (unsigned)sfx_square_press_count,
+			(unsigned)sfx_auto_trigger_count, active_sfx_voice_count(), sfx_transfer_completed);
+		FntPrint(-1, "%s\n", health_q8 ? (song_finished ? "END: START TO RESTART" : "PLAYING") : "GAME OVER: START RESTART");
+#else
 		FntPrint(-1, "BOPEEBO 4CH  INST / DAD-L / BF-R\n");
 		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
 			circle_down ? "DOWN" : "UP");
@@ -837,6 +1127,7 @@ int main(void)
 		FntPrint(-1, "UPLOAD %u/%u DMA %d\n", (unsigned)sfx_write_size,
 			(unsigned)SFX_SAMPLE_SIZE, sfx_transfer_completed);
 		FntPrint(-1, "PLAYBACK: %s (NO LOOP)\n", song_finished ? "FINISHED" : "PLAYING");
+#endif
 #elif TEST_CHANNELS == 4
 		FntPrint(-1, "4CH: INST L/R + VOICES L/R\n");
 		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
@@ -855,6 +1146,11 @@ int main(void)
 #endif
 		FntFlush(-1);
 		display_frame();
+#if TEST_PLAYABLE_BOPEEBO
+		if (!health_q8 && song_finished) {
+			/* Keep the post-failure screen live for the Start restart prompt. */
+		}
+#endif
 #if TEST_BOPEEBO_4CH
 		frame_counter++;
 #endif

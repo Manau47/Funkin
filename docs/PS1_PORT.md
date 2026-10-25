@@ -307,3 +307,85 @@ Le BIN/CUE de diagnostic est compilé dans `ps1/build/bopeebo-audio-4ch-sfx-diag
 
 DuckStation n'a pas présenté de fenêtre pilotable dans la session d'observation : après lancement contrôlé, l'énumération Windows ne renvoyait que des fenêtres Explorer portant le nom DuckStation et aucun panneau de l'émulateur. Je n'ai donc pas observé cette nouvelle image, ni son écran de diagnostic, ni écouté ses déclenchements. **Le SFX n'est pas validé.** Pour l'essai manuel, ouvrir le nouveau CUE, écouter le déclenchement annoncé avant la musique, puis écouter la rafale automatique après 2 s; confirmer que `AUTO DURING` atteint `4/4` et que `UPLOAD` indique `1536/1536` avec transfert terminé. Ensuite appuyer sur `J` : `SQUARE PRESSES` et `SFX TRIGGERS MAN` doivent augmenter ensemble. Comparer le résultat pré-musique au résultat pendant Bopeebo, vérifier Circle/`L` et la largeur initiale `5/7`, puis surveiller les underruns et erreurs CD. En l'absence d'audio audible dès le test pré-musique, le problème est côté voix SPU/transfert/échantillon, pas le masquage par la musique. Aucun test console réelle n'a été réalisé.
 
+### Résultat SFX confirmé et prototype jouable Bopeebo Normal
+
+L'utilisateur confirme maintenant que le diagnostic du commit `7a6250c` fonctionne comme prévu, aussi bien pour les SFX automatiques que manuels. Le bip temporaire paraît un peu faible; conserver ce retour pour le mixage final, sans ouvrir un jalon audio dédié. La préférence reste quatre canaux, panoramique initial `5/7` réglable et mute BF Circle (`L`) fonctionnel. Les probes précédents restent reproductibles et inchangés.
+
+#### Chart officiel et conversion
+
+Le chart utilisé est le Normal de Bopeebo classique, `preload/data/songs/bopeebo/bopeebo-chart.json` dans `Funkin.assets` épinglé à `724eba9de9e76761d9cefd52169926bc51c760a5`. Le JSON officiel et les stems ne sont pas ajoutés à Git. `ps1/convert_bopeebo_chart.py` vérifie les données puis génère le tableau C dans le dossier de build ignoré. Il garde la propriété des lanes (`d=0..3` BF, `d=4..7` Dad), convertit `t` et `l` millisecondes en positions échantillon à 43 008 Hz, et calcule la table PBOT1 sans dépendance à la bibliothèque mathématique flottante du SDK freestanding.
+
+La conversion observée compte 102 notes et 58 holds; aucune lane invalide, note dupliquée à même lane/instant ou superposition de holds sur une lane. Le dernier tail est à 3 280 435 samples (~76,28 s); le VAGi audio dure 3 509 453 samples (~81,6 s). Les notes Dad sont affichées et considérées jouées par le stem Dad, sans score joueur. Le convertisseur arrondit chaque temps au sample le plus proche, les demi-samples vers le haut.
+
+#### Règles reprises et écarts provisoires
+
+Le gameplay reprend le scoring PBOT1 de la référence `FunkinCrew/funkin` au commit `d05659bbdcf0d83073c900207cf410472afbbede`: Sick `≤45 ms`, Good `≤90`, Bad `≤135`, Shit `≤160`, Miss au-delà; score maximal 500 pour un écart strictement inférieur à 5 ms, sinon formule sigmoïde du moteur (`500 × (1 − 1/(1+exp(−0,080×(écart−54,99)))) + 9`, tronquée). Les fenêtres sont comparées en unités rationnelles d'échantillons; les tests aux bornes inclusives et immédiatement après chacune passent. Miss vaut −100 et ghost miss −10. Bad/Shit/Miss brisent le combo. Vie initiale 1,0/2,0; Sick +0,03, Good +0,015, Bad 0, Shit −0,02, Miss/ghost −0,08. Les holds donnent +250 score/s et +0,12 vie/s; drop avec plus de 160 ms restants coûte −125 score/s et aucune vie selon les constantes de cette version. Les valeurs de vie Q8 introduisent un faible arrondi.
+
+Écarts actuellement provisoires : appariement d'une pression D-pad à la note BF la plus proche dans sa fenêtre; pas d'input buffering, réglage de latence, pause, jugement textuel par note ni bilan final; pas d'animations ou réactions personnages. Un miss BF coupe la voix BF jusqu'au prochain hit BF, en plus du mute utilisateur séparé. Une pression hors fenêtre applique le ghost miss par défaut. Le chart validé ne contient pas de holds simultanés sur une même lane; l'état runtime réserve donc une tenue active par lane. La vie à zéro arrête la musique, et Start relance seulement après fin/game over. Square reste déclencheur d'essai manuel; les SFX provisoires sont aussi joués pour miss, ghost miss et drop. Les lanes Dad ne sont pas jouables dans ce premier test.
+
+Défilement, jugement, misses automatiques, score et holds sont pilotés par `Stream_GetSamplesPlayed()`, la même horloge SPU que la lecture. Le SDK ancre sa progression sur les interruptions SPU et interpole par VSync; le compteur n'est pas une position matérielle échantillon-exacte. Le rendu GPU suit les frames vidéo, sans piloter la musique ni les jugements. Huit pistes simples montrent BF à gauche et Dad à droite, avec têtes et segments de sustain. Aucun personnage, décor ou menu complet n'est inclus.
+
+#### Validation et image compilée
+
+Vérification hors cible du chart et des bornes de jugement : PASS; conversion générée : 102 notes / 58 holds. Compilation PSn00bSDK 0.24 / GCC 12.3.0 et image CD MODE2/2352 : PASS. Le CUE/BIN est dans `ps1/build/bopeebo-playable-normal-4ch/`; BIN 9 702 000 octets (4 125 secteurs), CUE 93 octets, EXE 57 344 octets. SHA-256 BIN `164232CFE6824822A30F4E83C20005F98F810A2109A6304098FE93113DDE4D83`. Le JSON chart et les fichiers audio officiels restent hors dépôt.
+
+DuckStation est installé et sa fenêtre a été observée, mais le sélecteur de fichier n'a pas pu être piloté de manière fiable; cette image n'a donc pas été exécutée. **Le résultat concret est compilé, pas validé en émulateur.** Son, affichage GPU, entrée des quatre directions, hits/misses, holds, voix BF et redémarrage doivent encore être observés dans DuckStation. Aucun test console réelle.
+
+#### Budget mémoire actualisé du probe jouable
+
+`mipsel-none-elf-size`: text 52 308 o, data 2 186 o, BSS 12 936 o, total 67 430 o. EXE disque: 57 344 o. Le ring buffer audio reste une allocation heap de 98 304 o (96 Kio), donc le suivi `text+data+BSS+ring` est 165 734 o (161,85 Kio); il s'agit du test jouable seulement et n'inclut pas tous les besoins système ni le futur contenu. Le tableau constant du chart compte ~1,5 Kio et les états runtime des 102 notes ~102 o; le BSS accru comprend aussi les primitives GPU.
+
+Le SPU garde quatre voix musicales et quatre voix de SFX : 32 768 o de buffers musicaux (`0x1010–0x9010`) + 1 536 o de SFX résident (`0x10000`), 34 304 o au total. Seize des 24 voix restent libres pour cette scène. Débit CD musical : 98 304 o/s, soit 48 secteurs/s (~32 % du débit nominal 2×); 96 Kio de ring équivalent à environ une seconde. Charts, personnages, animations, décors et menus complets restent à budgéter avant toute projection sur le jeu.
+
+Reproduction depuis `ps1/` (stems/encodeur préparés hors Git selon la section précédente) :
+
+```powershell
+$chart = '..\assets\preload\data\songs\bopeebo\bopeebo-chart.json'
+$vagi = Join-Path $env:TEMP 'fnf-bopeebo-quality\bopeebo-43008-4ch.vag'
+cmake --preset default -B .\build\bopeebo-playable-normal-4ch `
+  "-DFUNKIN_PS1_BOPEEBO_CHART_JSON=$chart" `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$vagi"
+cmake --build .\build\bopeebo-playable-normal-4ch --target ps1-bopeebo-playable-disc
+```
+
+Essai manuel : ouvrir le CUE, jouer les flèches à l'arrivée des notes BF, vérifier holds, score/combo/vie/hits/misses, SFX de faute, Circle/`L` mute BF, L1/R1 pan, Square/`J` SFX de test et Start après fin/game over. Contrôler les compteurs CD et underrun pendant toute la chanson. Le SFX provisoire est jugé un peu faible; ajuster avec le mixage final.
+
+
+### Résultat SFX confirmé et prototype jouable Bopeebo Normal
+
+L'utilisateur confirme que le diagnostic du commit `7a6250c` fonctionne, avec SFX automatiques et manuels. Le bip temporaire paraît un peu faible; garder le point pour le mixage final, sans rouvrir un jalon dédié au bip. La préférence reste quatre canaux, panoramique initial `5/7` réglable et mute BF avec Circle (`L`) fonctionnel. Les probes antérieurs restent reproductibles. Dans le jeu, L1/R1 règlent le panoramique afin que les quatre directions restent réservées aux lanes; la persistance du réglage attend le futur menu d'options.
+
+#### Chart officiel
+
+Le chart est le Normal de Bopeebo classique : `preload/data/songs/bopeebo/bopeebo-chart.json` depuis `Funkin.assets` à `724eba9de9e76761d9cefd52169926bc51c760a5`. Le JSON chart et les stems officiels ne sont pas commités. `ps1/convert_bopeebo_chart.py` valide les entrées, convertit `t`/`l` millisecondes en samples à 43 008 Hz et génère une table C dans le dossier de build ignoré. Les lanes `d=0..3` sont BF et `d=4..7` Dad.
+
+Résultat de conversion : 102 notes, 58 holds, aucune lane invalide, aucun doublon même lane/même instant et aucun chevauchement de holds sur une même lane. Le dernier tail est à 3 280 435 samples (~76,28 s); le stream audio va à 3 509 453 samples (~81,6 s). Dad est visualisé et son stem couvre ses notes; aucune lane Dad n'est jouable. La conversion arrondit au sample le plus proche, demi-sample vers le haut.
+
+#### Règles et différences provisoires
+
+Le scoring reprend PBOT1 depuis `FunkinCrew/funkin` au commit `d05659bbdcf0d83073c900207cf410472afbbede`: Sick `≤45 ms`, Good `≤90`, Bad `≤135`, Shit `≤160`, puis Miss; score `500` si l'écart est strictement inférieur à 5 ms, sinon formule sigmoïde du moteur (pente `0,080`, centre `54,99 ms`, score tronqué). Les bornes sont comparées en unités rationnelles de samples. Contrôle des valeurs à 45/90/135/160 ms et juste au-delà : PASS. Miss vaut −100; ghost miss −10. Bad/Shit/Miss cassent le combo. Vie 1,0/2,0 au départ; Sick +0,03, Good +0,015, Bad 0, Shit −0,02, Miss/ghost −0,08. Les holds donnent +250 points/s et +0,12 vie/s; abandon avec plus de 160 ms restants applique −125 points/s et 0 de pénalité de vie selon les constantes de cette version. Le stockage de vie Q8 arrondit légèrement les gains.
+
+Écarts de ce jalon : une pression D-pad prend la note BF la plus proche dans la fenêtre; pas d'input buffering, compensation de latence, pause, classement textuel de chaque note ni bilan final. Pas d'animations, scripts ou réactions personnages. Le miss BF coupe sa voix jusqu'au prochain hit BF; Circle mute reste un état séparé. Une pression hors fenêtre applique le ghost miss par défaut. Une tenue active par lane est gérée; le chart testé n'a aucun chevauchement de holds dans la même lane. Vie à zéro arrête le flux. Start redémarre proprement après fin ou game over, pas pendant le morceau. Square reste un déclencheur SFX de test; les fautes miss/ghost/drop utilisent également le SFX provisoire.
+
+Le scroll, les misses, les jugements, le score et les holds utilisent `Stream_GetSamplesPlayed()` depuis l'horloge audio SPU. Le SDK ancre cette valeur sur les interruptions SPU puis interpole via VSync; ce n'est pas un read head exact par échantillon. Les frames ne pilotent que le rendu. Huit pistes simples rendent BF à gauche et Dad à droite, avec têtes de notes et segments de sustain. Pas de personnage, décor ni menu complet.
+
+#### Compilation, exécution et mémoire
+
+Vérification de conversion et limites de jugement : PASS. Compilation PSn00bSDK 0.24 / GCC 12.3.0 et génération de l'image MODE2/2352 : PASS. Le dossier distinct est `ps1/build/bopeebo-playable-normal-4ch/`; BIN 9 702 000 octets (4 125 secteurs), CUE 93 octets, EXE 57 344 octets. SHA-256 BIN `9030DA2D2E2BC0EB00707541754F2FDC41D03FD2BE633C3CEDBAE1EC1CECE88D`. Les ressources officielles restent hors Git.
+
+DuckStation était présent, mais le sélecteur d'image n'a pas pu être piloté de manière fiable; le CUE n'a pas été exécuté. Le prototype est compilé, pas validé en émulateur. Affichage, audio, commandes, jugements, holds, mute après faute et redémarrage restent à observer. Aucune console réelle n'a été testée.
+
+Budget mesuré par `mipsel-none-elf-size`: text 52 228 o, data 2 186 o, BSS 12 932 o, total 67 346 o. Ring audio en heap: 98 304 o (96 Kio), total suivi `text+data+BSS+ring`: 165 650 o (161,77 Kio). BSS inclut notamment les primitives GPU et l'état/stack du SDK; le tableau chart constant fait environ 1,5 Kio, les états de 102 notes environ 102 o. Le SPU réserve 32 768 o au double tampon musical et 1 536 o au SFX; 34 304 o sur 512 Kio. Quatre voix SPU musique + quatre SFX sont utilisées, 16 libres dans cette scène de test. Débit CD : 98 304 o/s, 48 secteurs/s, ~32 % du débit nominal 2×; 96 Kio représentent ~1 s de tampon. Ce budget n'inclut pas le contenu complet du jeu (charts futurs, personnages, animations, décors, menus, banques de SFX).
+
+Reproduction depuis `ps1/` avec le VAGi quatre canaux déjà généré hors Git :
+
+```powershell
+$chart = '..\assets\preload\data\songs\bopeebo\bopeebo-chart.json'
+$vagi = Join-Path $env:TEMP 'fnf-bopeebo-quality\bopeebo-43008-4ch.vag'
+cmake --preset default -B .\build\bopeebo-playable-normal-4ch `
+  "-DFUNKIN_PS1_BOPEEBO_CHART_JSON=$chart" `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$vagi"
+cmake --build .\build\bopeebo-playable-normal-4ch --target ps1-bopeebo-playable-disc
+```
+
+Essai manuel : ouvrir le CUE, jouer les quatre flèches, vérifier holds et score/combo/vie/hits/misses; écouter les SFX de faute, Circle/L pour le mute BF, L1/R1 pour le pan, Square/J pour le SFX manuel, puis Start après fin/game over. Surveiller CD errors et underruns jusqu'à la fin. Le SFX provisoire est jugé faible; régler lors du mixage final.

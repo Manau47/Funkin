@@ -176,3 +176,46 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI
 elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
 	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH does not name an existing VAGi file")
 endif()
+
+# First playable Bopeebo Normal slice. The official chart JSON is supplied from
+# the pinned assets checkout or local work folder and converted into a small
+# generated C table; neither chart data nor official audio is vendored here.
+if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_JSON}" AND
+	DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}")
+	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
+	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
+	set(_psn00bsdk_cdstream_dir
+		"${_psn00bsdk_root}/share/psn00bsdk/examples/sound/cdstream")
+	if(NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.c" OR
+	   NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.h")
+		message(FATAL_ERROR "PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
+	endif()
+	find_package(Python3 REQUIRED COMPONENTS Interpreter)
+	set(_playable_chart_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_chart.h")
+	add_custom_command(
+		OUTPUT "${_playable_chart_header}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_chart.py"
+			"${FUNKIN_PS1_BOPEEBO_CHART_JSON}" "${_playable_chart_header}" --rate 43008
+		DEPENDS convert_bopeebo_chart.py "${FUNKIN_PS1_BOPEEBO_CHART_JSON}"
+		VERBATIM
+	)
+	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}"
+		"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag" COPYONLY)
+	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
+		spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c"
+		"${_playable_chart_header}" "${_bopeebo_sfx_header}")
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bopeebo-sfx)
+	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
+		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
+		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
+	target_include_directories(funkin-ps1-bopeebo-playable PRIVATE
+		"${_psn00bsdk_cdstream_dir}" "${CMAKE_CURRENT_BINARY_DIR}")
+	psn00bsdk_add_cd_image(
+		ps1-bopeebo-playable-disc funkin-ps1-bopeebo-playable
+		bopeebo_playable_iso.xml
+		DEPENDS funkin-ps1-bopeebo-playable system.cnf
+			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
+			"${_bopeebo_sfx_vag}")
+elseif(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON OR DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
+	message(FATAL_ERROR "Playable Bopeebo requires both FUNKIN_PS1_BOPEEBO_CHART_JSON and FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH to name existing files")
+endif()
