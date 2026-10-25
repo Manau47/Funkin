@@ -401,3 +401,52 @@ La présentation est maintenant Dad à gauche et BF à droite. Les notes gardent
 Vérification automatisée ciblée : `python ps1/test_bopeebo_hold_drop.py` couvre tenue terminée, relâchement avec plus de 160 ms, seuil exact à un taux de 43 kHz, ainsi que les échantillons immédiatement sous/au-dessus du seuil au taux de jeu réel 43 008 Hz, absence de répétition par frame, maintien des stems Dad/instrumental et rétablissement de BF après la frappe suivante. Ces tests de règles côté hôte ne remplacent pas l'observation de l'audio PS1.
 
 La nouvelle image de correction est isolée dans `ps1/build/bopeebo-hold-release-fix/`. PSn00bSDK 0.24 / GCC 12.3.0 a compilé l'ELF et généré un BIN de 9 702 000 octets (4 125 secteurs MODE2/2352) et un CUE de 93 octets. ELF `text=52 472`, `data=2 186`, `BSS=12 936`, soit 67 594 octets; avec le ring audio 98 304, RAM suivie 165 898 octets (~162,01 Kio). Le budget SPU et CD reste celui du probe précédent : 34 304 octets SPU, 4 voix musique + 4 SFX, 16 voix libres, CD à 98 304 octets/s, tampon ~1 s. Le test ciblé hôte (`python ps1/test_bopeebo_hold_drop.py`) passe, 5 cas. **Aucun essai de ce nouveau disque dans DuckStation n'a été observé dans ce tour et aucune console réelle n'a été testée.**
+
+## Première scène visuelle PS1 de Bopeebo
+
+L'utilisateur valide manuellement le commit `01e84a0` dans DuckStation : le relâchement anticipé d'une tenue coupe BF, une réussite suivante rétablit sa voix, le mute manuel reste fonctionnel et Dad/BF sont placés correctement. Ce retour concerne le build de ce commit, pas le nouveau disque visuel ci-dessous.
+
+### Ressources et conversion
+
+Les ressources examinées viennent du sous-module officiel `Funkin.assets`, épinglé à `724eba9de9e76761d9cefd52169926bc51c760a5`. La semaine 1 référence `preload/data/stages/mainStage.json`; ses couches communes mesurent `stageback.png` 2560×1400 (12 564 octets), `stagefront.png` 2560×581 (115 485 octets) et `stagecurtains.png` 2560×1400 (118 886 octets). Les PNG sont réduits en 320×176 pour fond/rideaux et 320×56 pour le premier plan, sans interpolation bilinéaire, puis découpés en tuiles 256 pixels.
+
+BF dispose de l'ancien atlas Sparrow complet `shared/images/characters/BOYFRIEND.png` (8192×4096, 3 394 386 octets) et XML. Le convertisseur en extrait deux images par animation idle, chant gauche/bas/haut/droite et miss dans ces quatre directions. Les JSON Animate modernes de Dad (`991×981`) et GF (`2064×1065`) décrivent des personnages en pièces riggées plutôt que des cellules Sparrow complètes. Les images `preload/images/storymenu/props/dad` et `gf`, bien que dotées de longues séquences idle, sont des masques rectangulaires pour l'interface du story menu, pas des sprites complets de personnage en jeu; un premier essai de recoloration a révélé des aplats rectangulaires dans DuckStation et a été abandonné.
+
+Pour livrer une scène cohérente sans faussement présenter ces masques comme des personnages, la conversion dessine donc des silhouettes PS1 temporaires Dad et GF à partir de formes nettes et de leurs palettes caractéristiques. Dad a six poses simplifiées sélectionnées par les notes adverses et le tempo; GF alterne quatre poses de danse. Ce ne sont pas les poses officielles ni leurs animations directionnelles. L'extraction et le rendu des rigs Animate complets restent à faire. BF, ses chants et ses miss utilisent au contraire les images officielles de l'atlas historique. Le stageback et les rideaux sont derrière les personnages; stagefront puis les huit pistes, les récepteurs et les notes gardent les plans avant. Les personnages ne sont pas encore animés à partir des fautes Dad/GF; les réactions BF suivent les hits, les tenues, les ratés et le délai audio.
+
+`ps1/convert_bopeebo_visuals.py` dépend de Python 3 et de FFmpeg fourni localement. Il lit le sous-module épinglé, applique un redimensionnement nearest-neighbor, réduit chaque groupe à une palette 4bpp RGB555 de 16 entrées (index 0 transparent), puis génère le header dans le répertoire de build. Ni les PNG officiels, ni l'header généré, ni le SDK ne sont ajoutés au dépôt. Les textures sont chargées une fois en VRAM avant `CdInit` et le démarrage du flux; aucune lecture CD graphique n'est faite pendant la chanson.
+
+### Budgets mesurés et estimés
+
+| Zone | Utilisé pour ce prototype | Réserve / précaution |
+|---|---:|---|
+| RAM principale, ELF `text+data+BSS` mesuré | 430 398 o (text 414 616, data 2 186, BSS 13 596) | Le text contient code, chart, SFX et 360 448 o de pages d'images compressées 4bpp. |
+| Tampon audio principal | 98 304 o (96 Kio), alloué par le lecteur | Environ 1 s au débit de ce flux. |
+| RAM suivie totale | 528 702 o (~516,3 Kio) | Sous-total ELF + ring; marge arithmétique jusqu'à 2 Mio : 1 568 450 o. La pile, les allocations internes SDK et le pic de conversion ne sont pas mesurés au runtime; le pic de conversion est côté PC, pas PS1. |
+| VRAM | 307 200 o double framebuffer + 360 448 o de textures + 128 o palettes = 667 776 o | Sur 1 Mio, 380 800 o restent théoriquement avant polices, tables d'affichage et autres usages SDK; cette réserve doit être mesurée sur cible. |
+| SPU | 32 768 o musique + 1 536 o SFX = 34 304 o | 4 voix streaming + 4 voix SFX utilisées, 16/24 voix restantes; budgets précédents conservés. |
+| CD | 98 304 o/s, soit 48 secteurs/s | Tampon de 96 Kio ≈1 s; aucune lecture d'assets pendant le streaming. |
+
+Ce budget concerne uniquement le probe jouable actuel. Les futurs charts, personnages/réseaux d'animations, décors, effets et menus consommeront la marge; l'exécutable n'a pas encore de mesure de heap/stack en fonctionnement ni de profiling GPU sur matériel. La réduction de pixels avant stockage économise ici réellement de la VRAM par rapport au RGBA source; charger les 360 448 octets de texture depuis le header statique consomme en revanche la même quantité de RAM principale, elle n'est pas économisée.
+
+### Compilation et observation
+
+Le nouveau build reproductible est `ps1/build/bopeebo-ps1-visuals/`; les entrées non versionnées sont le chart officiel JSON, le VAGi quatre canaux 43 008 Hz déjà généré et FFmpeg. Configuration Windows depuis la racine du dépôt, en fournissant les chemins locaux à CMake :
+
+```powershell
+$sdk = 'C:\toolchains\PSn00bSDK-0.24-win32'
+$env:PSN00BSDK_LIBS = "$sdk\lib\libpsn00b"
+cmake -S ps1 -B ps1/build/bopeebo-ps1-visuals -G Ninja `
+  "-DCMAKE_MAKE_PROGRAM=$sdk/bin/ninja.exe" `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:PSN00BSDK_LIBS/cmake/sdk.cmake" `
+  "-DPSN00BSDK_TC=$sdk" -DPSN00BSDK_TARGET=mipsel-none-elf `
+  -DCMAKE_BUILD_TYPE=Debug `
+  "-DFUNKIN_PS1_BOPEEBO_CHART_JSON=$env:TEMP/fnf-bopeebo-port/bopeebo-chart.json" `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$env:TEMP/fnf-bopeebo-quality/bopeebo-43008-4ch.vag" `
+  "-DFUNKIN_PS1_FFMPEG=C:/path/to/ffmpeg.exe"
+cmake --build ps1/build/bopeebo-ps1-visuals --target ps1-bopeebo-playable-disc
+```
+
+PSn00bSDK 0.24 / GCC 12.3.0 compile et mkpsxiso ont terminé. L'ELF rapporte `text=414 616`, `data=2 186`, `BSS=13 596`; BIN 10 118 304 octets, CUE 93 octets, SHA-256 BIN `E791CE261F9C441EF6CCE04BDE11572F1E81480B38B374B6A614720B5278E2E4`. DuckStation 0.1-8675 a démarré l'image finale, affiché la scène à 320×240 et 60 IPS; la position audio a avancé et le programme est resté jusqu'à l'état de game over sans écran d'erreur. L'observation a duré environ 18 s et les diagnostics compacts étaient masqués; elle ne permet pas d'affirmer des compteurs CD/underrun nuls, une écoute concluante, les entrées, le mute, les holds, les SFX, le redémarrage ni la lecture entière de 81,6 s. La variante intermédiaire à aplats, elle aussi compilée, a affiché `CD ERR 0`, `UNDERRUN 0` et 60 IPS à environ 2,8 s, mais ces compteurs ne sont pas reportés comme mesure du BIN final.
+
+Vérification hôte `python ps1/test_bopeebo_hold_drop.py` : 5 cas PASS après ajustement du test de source à la signature lane-aware; `git diff --check` : PASS. **Le nouveau jalon visuel n'est pas validé par l'utilisateur.** Le morceau entier, la lisibilité/animation pendant les notes, Circle, holds, SFX, erreurs CD/underruns, redémarrage et un essai console réelle restent à vérifier. Les assets et exécutables construits restent dans le sous-module ou le répertoire ignoré `ps1/build/`.

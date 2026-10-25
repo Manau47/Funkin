@@ -192,6 +192,33 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	endif()
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
 	set(_playable_chart_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_chart.h")
+	set(FUNKIN_PS1_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../assets" CACHE PATH
+		"Root of the pinned Funkin.assets submodule")
+	if(NOT EXISTS "${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml")
+		message(FATAL_ERROR "FUNKIN_PS1_ASSETS_DIR does not contain the pinned official asset checkout")
+	endif()
+	if(NOT FUNKIN_PS1_FFMPEG OR NOT EXISTS "${FUNKIN_PS1_FFMPEG}")
+		find_program(FUNKIN_PS1_FFMPEG NAMES ffmpeg)
+	endif()
+	if(NOT FUNKIN_PS1_FFMPEG OR NOT EXISTS "${FUNKIN_PS1_FFMPEG}")
+		message(FATAL_ERROR "Set FUNKIN_PS1_FFMPEG to an ffmpeg executable for deterministic art conversion")
+	endif()
+	set(_playable_visual_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_visual_data.h")
+	set(_visual_asset_dependencies
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stageback.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagefront.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagecurtains.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml")
+	add_custom_command(
+		OUTPUT "${_playable_visual_header}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+			--assets "${FUNKIN_PS1_ASSETS_DIR}"
+			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			--output "${_playable_visual_header}"
+		DEPENDS convert_bopeebo_visuals.py ${_visual_asset_dependencies}
+		VERBATIM
+	)
 	add_custom_command(
 		OUTPUT "${_playable_chart_header}"
 		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_chart.py"
@@ -203,7 +230,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag" COPYONLY)
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c"
-		"${_playable_chart_header}" "${_bopeebo_sfx_header}")
+		"${_playable_chart_header}" "${_playable_visual_header}" "${_bopeebo_sfx_header}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bopeebo-sfx)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1

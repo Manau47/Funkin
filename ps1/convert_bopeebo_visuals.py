@@ -1,0 +1,394 @@
+#!/usr/bin/env python3
+"""Convert a small, deterministic PS1 Bopeebo scene from the pinned assets."""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import pathlib
+import re
+import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
+
+
+SCENE_W = 320
+STAGE_BACK_H = 176
+STAGE_FRONT_H = 56
+FRAME_W = 64
+FRAME_H = 96
+GF_W = 80
+GF_H = 80
+PAGE_W = 256
+PAGE_H = 256
+PAGE_BYTES = PAGE_W * PAGE_H // 2
+
+BF_ANIMS = [
+    ("idle", "BF idle dance"),
+    ("left", "BF NOTE LEFT"),
+    ("down", "BF NOTE DOWN"),
+    ("up", "BF NOTE UP"),
+    ("right", "BF NOTE RIGHT"),
+    ("miss_left", "BF NOTE LEFT MISS"),
+    ("miss_down", "BF NOTE DOWN MISS"),
+    ("miss_up", "BF NOTE UP MISS"),
+    ("miss_right", "BF NOTE RIGHT MISS"),
+]
+
+
+def run_ffmpeg(ffmpeg: str, source: pathlib.Path, filters: str, width: int, height: int) -> bytearray:
+    command = [
+        ffmpeg, "-v", "error", "-i", str(source), "-vf", filters,
+        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
+    ]
+    result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    expected = width * height * 4
+    if len(result.stdout) != expected:
+        raise ValueError(f"unexpected RGBA size from {source}: {len(result.stdout)} != {expected}")
+    return bytearray(result.stdout)
+
+
+def atlas_frames(xml_path: pathlib.Path) -> dict[str, list[dict[str, int | str]]]:
+    groups: dict[str, list[dict[str, int | str]]] = collections.defaultdict(list)
+    for elem in ET.parse(xml_path).getroot().findall("SubTexture"):
+        name = elem.attrib["name"]
+        match = re.fullmatch(r"(.*?)(\d+)", name)
+        if not match:
+            continue
+        frame = {k: int(elem.attrib.get(k, "0")) for k in ("x", "y", "width", "height")}
+        frame["frameX"] = int(elem.attrib.get("frameX", "0"))
+        frame["frameY"] = int(elem.attrib.get("frameY", "0"))
+        frame["frameWidth"] = int(elem.attrib.get("frameWidth", str(frame["width"])))
+        frame["frameHeight"] = int(elem.attrib.get("frameHeight", str(frame["height"])))
+        frame["rotated"] = elem.attrib.get("rotated", "false").lower() == "true"
+        frame["index"] = int(match.group(2))
+        frame["name"] = name
+        groups[match.group(1)].append(frame)
+    for frames in groups.values():
+        frames.sort(key=lambda frame: int(frame["index"]))
+    return groups
+
+
+def extract_sparrow_frame(ffmpeg: str, png: pathlib.Path, frame: dict, size: tuple[int, int]) -> bytearray:
+    if frame["rotated"]:
+        raise ValueError(f"selected Sparrow frame is rotated and unsupported: {frame['name']}")
+    w, h = size
+    fw = max(int(frame["frameWidth"]), int(frame["width"]))
+    fh = max(int(frame["frameHeight"]), int(frame["height"]))
+    pad_x = max(0, -int(frame["frameX"]))
+    pad_y = max(0, -int(frame["frameY"]))
+    filters = (
+        f"crop={frame['width']}:{frame['height']}:{frame['x']}:{frame['y']},"
+        f"pad={fw}:{fh}:{pad_x}:{pad_y}:color=0x00000000,"
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=neighbor,"
+        f"pad={w}:{h}:(ow-iw)/2:oh-ih:color=0x00000000,format=rgba"
+    )
+    return run_ffmpeg(ffmpeg, png, filters, w, h)
+
+
+def extract_stage(ffmpeg: str, png: pathlib.Path, width: int, height: int) -> bytearray:
+    filters = f"scale={width}:{height}:flags=neighbor,format=rgba"
+    return run_ffmpeg(ffmpeg, png, filters, width, height)
+
+
+def new_canvas(width: int, height: int) -> bytearray:
+    return bytearray(width * height * 4)
+
+
+def fill_rect(pixels: bytearray, width: int, height: int, x0: int, y0: int,
+              x1: int, y1: int, color: tuple[int, int, int]) -> None:
+    for y in range(max(0, y0), min(height, y1)):
+        for x in range(max(0, x0), min(width, x1)):
+            i = (y * width + x) * 4
+            pixels[i:i + 4] = bytes((*color, 255))
+
+
+def fill_ellipse(pixels: bytearray, width: int, height: int, cx: int, cy: int,
+                 rx: int, ry: int, color: tuple[int, int, int]) -> None:
+    for y in range(max(0, cy - ry), min(height, cy + ry + 1)):
+        for x in range(max(0, cx - rx), min(width, cx + rx + 1)):
+            if ((x - cx) * (x - cx) * ry * ry +
+                    (y - cy) * (y - cy) * rx * rx <= rx * rx * ry * ry):
+                i = (y * width + x) * 4
+                pixels[i:i + 4] = bytes((*color, 255))
+
+
+def fill_polygon(pixels: bytearray, width: int, height: int,
+                 points: tuple[tuple[int, int], ...], color: tuple[int, int, int]) -> None:
+    for y in range(max(0, min(p[1] for p in points)), min(height, max(p[1] for p in points) + 1)):
+        intersections = []
+        for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]):
+            if (y0 <= y < y1) or (y1 <= y < y0):
+                intersections.append(x0 + (y - y0) * (x1 - x0) // (y1 - y0))
+        intersections.sort()
+        for left, right in zip(intersections[::2], intersections[1::2]):
+            fill_rect(pixels, width, height, left, y, right + 1, y + 1, color)
+
+
+def dad_pose(variation: int) -> bytearray:
+    """Create a tiny, crisp stand-in from Dad's official palette and silhouette cues."""
+    w, h = FRAME_W, FRAME_H
+    p = new_canvas(w, h)
+    purple, dark, skin, shirt = (143, 68, 180), (35, 25, 49), (246, 197, 220), (231, 226, 236)
+    bob = variation & 1
+    fill_polygon(p, w, h, ((12, 49), (51, 47), (59, 85), (47, 91), (17, 86)), dark)
+    fill_polygon(p, w, h, ((15, 48), (48, 46), (54, 80), (43, 85), (18, 82)), purple)
+    fill_polygon(p, w, h, ((23, 53), (42, 52), (37, 70), (27, 67)), shirt)
+    fill_rect(p, w, h, 18, 80, 28, 95, dark)
+    fill_rect(p, w, h, 39, 80, 48, 95, dark)
+    fill_ellipse(p, w, h, 32, 30 + bob, 15, 19, dark)
+    fill_ellipse(p, w, h, 32, 29 + bob, 13, 17, skin)
+    fill_polygon(p, w, h, ((17, 26), (14, 13), (23, 18), (27, 7), (33, 16),
+                           (43, 9), (43, 19), (51, 15), (47, 30), (39, 24), (23, 27)), purple)
+    fill_rect(p, w, h, 22, 29 + bob, 29, 32 + bob, dark)
+    fill_rect(p, w, h, 36, 29 + bob, 43, 32 + bob, dark)
+    fill_rect(p, w, h, 30, 38 + bob, 36, 40 + bob, dark)
+    # One arm and microphone read clearly at native resolution; alternate by chart-lane pose.
+    arm_x = 7 if variation % 4 in (0, 2) else 46
+    fill_polygon(p, w, h, ((18, 50), (24, 54), (arm_x + 7, 66), (arm_x, 62)), skin)
+    fill_rect(p, w, h, arm_x, 54, arm_x + 6, 66, dark)
+    fill_ellipse(p, w, h, arm_x + 3, 52, 5, 6, (95, 102, 119))
+    return p
+
+
+def gf_pose(variation: int) -> bytearray:
+    """Create a small rhythm-dance stand-in with GF's pink hair and red outfit."""
+    w, h = GF_W, GF_H
+    p = new_canvas(w, h)
+    pink, darkpink, skin, red, dark = (245, 60, 145), (156, 36, 92), (255, 202, 170), (203, 44, 91), (32, 20, 40)
+    bob = (variation & 1) * 2
+    # Seated pose over the iconic speaker pair.
+    fill_rect(p, w, h, 5, 57, 39, 79, dark)
+    fill_rect(p, w, h, 41, 57, 75, 79, dark)
+    fill_ellipse(p, w, h, 22, 68, 8, 8, (88, 54, 115))
+    fill_ellipse(p, w, h, 58, 68, 8, 8, (88, 54, 115))
+    fill_ellipse(p, w, h, 42, 23 + bob, 22, 23, darkpink)
+    fill_ellipse(p, w, h, 43, 23 + bob, 16, 18, skin)
+    fill_ellipse(p, w, h, 42, 12 + bob, 21, 12, pink)
+    hair_x = 12 if variation % 2 == 0 else 53
+    fill_polygon(p, w, h, ((25, 12 + bob), (15, 4 + bob), (12, 28 + bob),
+                           (17, 48), (25, 40), (30, 23 + bob)), pink)
+    fill_polygon(p, w, h, ((56, 12 + bob), (69, 19), (68, 43), (58, 49),
+                           (54, 33 + bob)), pink)
+    fill_rect(p, w, h, 34, 24 + bob, 38, 27 + bob, dark)
+    fill_rect(p, w, h, 47, 24 + bob, 51, 27 + bob, dark)
+    fill_polygon(p, w, h, ((29, 43), (56, 42), (64, 59), (46, 64), (26, 58)), red)
+    fill_polygon(p, w, h, ((30, 55), (43, 58), (33, 70), (21, 68)), skin)
+    fill_polygon(p, w, h, ((47, 58), (61, 54), (69, 65), (54, 69)), skin)
+    fill_ellipse(p, w, h, hair_x, 32 + bob, 6, 14, pink)
+    return p
+
+
+def median_palette(images: list[bytearray], max_colors: int = 15) -> list[tuple[int, int, int]]:
+    histogram: collections.Counter[tuple[int, int, int]] = collections.Counter()
+    for pixels in images:
+        for i in range(0, len(pixels), 4):
+            if pixels[i + 3] >= 128:
+                histogram[(pixels[i], pixels[i + 1], pixels[i + 2])] += 1
+    if not histogram:
+        return [(1, 1, 1)]
+    boxes = [list(histogram.items())]
+    while len(boxes) < max_colors:
+        candidates = [(max(max(c[k] for c, _ in box) - min(c[k] for c, _ in box) for k in range(3)), i)
+                      for i, box in enumerate(boxes) if len(box) > 1]
+        if not candidates:
+            break
+        _, index = max(candidates)
+        box = boxes.pop(index)
+        channel = max(range(3), key=lambda k: max(c[k] for c, _ in box) - min(c[k] for c, _ in box))
+        box.sort(key=lambda item: item[0][channel])
+        total = sum(n for _, n in box)
+        running, split = 0, 1
+        for split in range(1, len(box)):
+            running += box[split - 1][1]
+            if running * 2 >= total:
+                break
+        boxes.extend((box[:split], box[split:]))
+    palette = []
+    for box in boxes:
+        total = sum(n for _, n in box)
+        palette.append(tuple(sum(color[k] * n for color, n in box) // total for k in range(3)))
+    return palette[:max_colors]
+
+
+def nearest_palette_index(rgb: tuple[int, int, int], palette: list[tuple[int, int, int]]) -> int:
+    return min(range(len(palette)), key=lambda i: sum((rgb[c] - palette[i][c]) ** 2 for c in range(3))) + 1
+
+
+def quantize(pixels: bytearray, palette: list[tuple[int, int, int]]) -> bytearray:
+    indices = bytearray(len(pixels) // 4)
+    cache: dict[tuple[int, int, int], int] = {}
+    for i in range(len(indices)):
+        alpha = pixels[i * 4 + 3]
+        if alpha < 128:
+            continue
+        rgb = (pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2])
+        if rgb not in cache:
+            cache[rgb] = nearest_palette_index(rgb, palette)
+        indices[i] = cache[rgb]
+    return indices
+
+
+def pack_page(images: list[tuple[str, bytearray, int, int]], first_page: int,
+              palette_index: int, page_data: list[bytearray], descriptors: dict[str, dict]) -> int:
+    page_no = first_page
+    x = y = row_h = 0
+    if not page_data or len(page_data) <= page_no:
+        page_data.append(bytearray(PAGE_BYTES))
+    for name, indices, width, height in images:
+        if x + width > PAGE_W:
+            x, y, row_h = 0, y + row_h, 0
+        if y + height > PAGE_H:
+            page_no += 1
+            page_data.append(bytearray(PAGE_BYTES))
+            x = y = row_h = 0
+        page = page_data[page_no]
+        for py in range(height):
+            for px in range(width):
+                value = indices[py * width + px]
+                pos = (y + py) * PAGE_W + x + px
+                byte_pos = pos >> 1
+                if pos & 1:
+                    page[byte_pos] |= value << 4
+                else:
+                    page[byte_pos] |= value
+        descriptors[name] = {"page": page_no, "palette": palette_index, "u": x, "v": y, "w": width, "h": height}
+        x += width
+        row_h = max(row_h, height)
+    return page_no + 1
+
+
+def rgb555(color: tuple[int, int, int]) -> int:
+    r, g, b = (component >> 3 for component in color)
+    packed = (b << 10) | (g << 5) | r
+    return packed or 1  # RGB=0 is transparent on the PS1.
+
+
+def write_header(output: pathlib.Path, palettes: list[list[tuple[int, int, int]]],
+                 pages: list[bytearray], descriptors: dict[str, dict]) -> None:
+    lines = ["/* Generated by convert_bopeebo_visuals.py; do not edit. */",
+             "#ifndef BOPEEBO_VISUAL_DATA_H", "#define BOPEEBO_VISUAL_DATA_H",
+             "#include <stdint.h>",
+             "typedef struct { uint8_t page, palette, u, v; uint16_t w, h; } BopeeboVisualFrame;",
+             f"#define BOPEEBO_VISUAL_PAGE_COUNT {len(pages)}u",
+             f"#define BOPEEBO_VISUAL_FRAME_COUNT {len(descriptors)}u"]
+    for i, name in enumerate(descriptors):
+        lines.append(f"#define VIS_{re.sub('[^A-Z0-9]+', '_', name.upper())} {i}u")
+    lines.append("static const uint16_t bopeebo_visual_palettes[4][16] = {")
+    for palette in palettes:
+        values = [0] + [rgb555(c) for c in palette[:15]]
+        values += [0] * (16 - len(values))
+        lines.append("\t{" + ",".join(f"0x{x:04x}" for x in values) + "},")
+    lines.append("};")
+    lines.append("static const BopeeboVisualFrame bopeebo_visual_frames[BOPEEBO_VISUAL_FRAME_COUNT] = {")
+    for name, frame in descriptors.items():
+        lines.append(f"\t{{{frame['page']}, {frame['palette']}, {frame['u']}, {frame['v']}, {frame['w']}, {frame['h']}}}, /* {name} */")
+    lines.append("};")
+    lines.append(f"static const uint16_t bopeebo_visual_pages[{len(pages)}][16384] = {{")
+    for page in pages:
+        words = [page[i] | (page[i + 1] << 8) for i in range(0, len(page), 2)]
+        lines.append("\t{")
+        for i in range(0, len(words), 16):
+            lines.append("\t\t" + ",".join(f"0x{v:04x}" for v in words[i:i + 16]) + ",")
+        lines.append("\t},")
+    lines.extend(("};", "#endif"))
+    output.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def build(args: argparse.Namespace) -> None:
+    assets = pathlib.Path(args.assets).resolve()
+    shared_images = assets / "shared" / "images"
+    chars = assets / "shared" / "images" / "characters"
+    ffmpeg = str(pathlib.Path(args.ffmpeg).resolve())
+    temp_images: dict[str, bytearray] = {}
+    frame_sizes: dict[str, tuple[int, int]] = {}
+
+    with tempfile.TemporaryDirectory(prefix="fnf-ps1-art-"):
+        # The standard Week 1 stage JSON resolves these shared textures.
+        for name, file, h in (("stage_back", "stageback.png", STAGE_BACK_H),
+                              ("stage_curtains", "stagecurtains.png", STAGE_BACK_H),
+                              ("stage_front", "stagefront.png", STAGE_FRONT_H)):
+            pixels = extract_stage(ffmpeg, shared_images / file, SCENE_W, h)
+            for tile, x0 in enumerate((0, 256)):
+                w = min(256, SCENE_W - x0)
+                crop = bytearray()
+                for y in range(h):
+                    start = (y * SCENE_W + x0) * 4
+                    crop.extend(pixels[start:start + w * 4])
+                frame_name = f"{name}_{tile}"
+                temp_images[frame_name] = crop
+                frame_sizes[frame_name] = (w, h)
+
+        bf_groups = atlas_frames(chars / "BOYFRIEND.xml")
+        bf_png = chars / "BOYFRIEND.png"
+        for anim, prefix in BF_ANIMS:
+            frames = bf_groups.get(prefix)
+            if not frames:
+                raise ValueError(f"missing BF animation prefix in pinned atlas: {prefix}")
+            wanted = min(2, len(frames))
+            for i in range(wanted):
+                name = f"bf_{anim}_{i}"
+                temp_images[name] = extract_sparrow_frame(ffmpeg, bf_png, frames[i], (FRAME_W, FRAME_H))
+                frame_sizes[name] = (FRAME_W, FRAME_H)
+
+        for out_i in range(6):
+            name = f"dad_idle_{out_i}"
+            temp_images[name] = dad_pose(out_i)
+            frame_sizes[name] = (FRAME_W, FRAME_H)
+        for out_i in range(4):
+            name = f"gf_idle_{out_i}"
+            temp_images[name] = gf_pose(out_i)
+            frame_sizes[name] = (GF_W, GF_H)
+
+    # One 16-color palette per layer group; nearest-color mapping and nearest
+    # scaling deliberately avoid filtered edges on the PS1.
+    stage_names = [name for name in temp_images if name.startswith("stage_")]
+    bf_names = [name for name in temp_images if name.startswith("bf_")]
+    dad_names = [name for name in temp_images if name.startswith("dad_")]
+    gf_names = [name for name in temp_images if name.startswith("gf_")]
+    palettes = [median_palette([temp_images[n] for n in names]) for names in (stage_names, bf_names, dad_names, gf_names)]
+    quantized = {name: quantize(pixels, palettes[0 if name.startswith("stage_") else 1 if name.startswith("bf_") else 2 if name.startswith("dad_") else 3])
+                 for name, pixels in temp_images.items()}
+    pages: list[bytearray] = []
+    descriptors: dict[str, dict] = {}
+
+    # Stage layer tiles each occupy one page. They are loaded before the
+    # streaming driver starts, so visual assets never issue competing CD reads.
+    for name in stage_names:
+        if len(pages) >= len(stage_names):
+            raise AssertionError("stage pages must be allocated first")
+        page = bytearray(PAGE_BYTES)
+        indices = quantized[name]
+        w, h = frame_sizes[name]
+        for y in range(h):
+            for x in range(w):
+                value = indices[y * w + x]
+                pos = y * PAGE_W + x
+                if pos & 1: page[pos >> 1] |= value << 4
+                else: page[pos >> 1] |= value
+        page_index = len(pages)
+        pages.append(page)
+        descriptors[name] = {"page": page_index, "palette": 0, "u": 0, "v": 0, "w": w, "h": h}
+
+    next_page = len(pages)
+    for prefix, names, palette_idx in (("bf_", bf_names, 1), ("dad_", dad_names, 2), ("gf_", gf_names, 3)):
+        groups = [(name, quantized[name], *frame_sizes[name]) for name in names]
+        next_page = pack_page(groups, next_page, palette_idx, pages, descriptors)
+    if len(pages) > 11:
+        raise ValueError(f"scene requires {len(pages)} texture pages; current VRAM plan allows 11")
+    write_header(pathlib.Path(args.output), palettes, pages, descriptors)
+    print(f"converted stage tiles {len(stage_names)}, BF frames {len(bf_names)}, Dad idle reactions {len(dad_names)}, GF dance frames {len(gf_names)}")
+    print(f"4bpp pages: {len(pages)} ({len(pages) * 32768} bytes VRAM); generated header: {pathlib.Path(args.output).stat().st_size} bytes")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--assets", required=True, help="root of the pinned assets submodule")
+    parser.add_argument("--ffmpeg", required=True, help="path to ffmpeg")
+    parser.add_argument("--output", required=True, help="generated C header (kept in the build directory)")
+    args = parser.parse_args()
+    build(args)
+
+
+if __name__ == "__main__":
+    main()

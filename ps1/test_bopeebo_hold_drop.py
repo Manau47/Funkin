@@ -84,7 +84,7 @@ class HoldDropTests(unittest.TestCase):
 
     def test_c_source_uses_one_shot_release_path_and_separate_bf_mute(self):
         self.assertIn("(uint64_t)remaining_samples * 1000u > (uint64_t)rate * 160u", SOURCE)
-        self.assertIn("if (hold_release_is_miss(remaining, rate))\n\t\t\t\t\tgame_hold_drop(remaining, rate);", SOURCE)
+        self.assertIn("if (hold_release_is_miss(remaining, rate))\n\t\t\t\t\tgame_hold_drop(lane, remaining, rate);", SOURCE)
         self.assertIn("active_hold[lane] = -1;", SOURCE)
         self.assertIn("SPU_CH_VOL_L(3) = (voices_muted", SOURCE)
         self.assertIn("|| bf_miss_silenced", SOURCE)
