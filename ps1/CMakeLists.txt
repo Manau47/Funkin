@@ -125,3 +125,54 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOP
 elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO)
 	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_BOPEEBO does not name an existing VAGi file")
 endif()
+
+# Comparative four-channel Bopeebo image. The voice stems are downmixed once
+# during encoding; SPU channel volumes provide runtime panning without re-encode.
+if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}")
+	set(FUNKIN_PS1_AUDIO_4CH_SAMPLE_COUNT "3509453u" CACHE STRING
+		"Source sample count used to stop the four-channel Bopeebo probe")
+	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
+	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
+	set(_psn00bsdk_cdstream_dir
+		"${_psn00bsdk_root}/share/psn00bsdk/examples/sound/cdstream")
+	if(NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.c" OR
+	   NOT EXISTS "${_psn00bsdk_cdstream_dir}/stream.h")
+		message(FATAL_ERROR
+			"PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
+	endif()
+	find_package(Python3 REQUIRED COMPONENTS Interpreter)
+	set(_bopeebo_sfx_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_sfx_data.h")
+	set(_bopeebo_sfx_vag "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_sfx.vag")
+	add_custom_command(
+		OUTPUT "${_bopeebo_sfx_header}" "${_bopeebo_sfx_vag}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_sfx.py"
+			--header "${_bopeebo_sfx_header}" --vag "${_bopeebo_sfx_vag}"
+		DEPENDS generate_ps1_sfx.py convert_bopeebo_to_vagi.py
+		VERBATIM
+	)
+	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}"
+		"${CMAKE_CURRENT_BINARY_DIR}/stream-4ch.vag" COPYONLY)
+	psn00bsdk_add_executable(funkin-ps1-bopeebo-4ch-audio GPREL
+		spu_probe.c
+		"${_psn00bsdk_cdstream_dir}/stream.c"
+		"${_bopeebo_sfx_header}")
+	add_custom_target(funkin-ps1-bopeebo-sfx DEPENDS "${_bopeebo_sfx_header}" "${_bopeebo_sfx_vag}")
+	add_dependencies(funkin-ps1-bopeebo-4ch-audio funkin-ps1-bopeebo-sfx)
+	target_compile_definitions(funkin-ps1-bopeebo-4ch-audio PRIVATE
+		TEST_CHANNELS=4
+		TEST_BOPEEBO_4CH=1
+		TEST_NO_LOOP=1
+		TEST_TOTAL_SAMPLES=${FUNKIN_PS1_AUDIO_4CH_SAMPLE_COUNT})
+	target_include_directories(funkin-ps1-bopeebo-4ch-audio PRIVATE
+		"${_psn00bsdk_cdstream_dir}" "${CMAKE_CURRENT_BINARY_DIR}")
+	psn00bsdk_add_cd_image(
+		ps1-bopeebo-audio-4ch-disc
+		funkin-ps1-bopeebo-4ch-audio
+		bopeebo_audio_4ch_iso.xml
+		DEPENDS funkin-ps1-bopeebo-4ch-audio system.cnf
+			"${CMAKE_CURRENT_BINARY_DIR}/stream-4ch.vag"
+			"${_bopeebo_sfx_vag}"
+	)
+elseif(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
+	message(FATAL_ERROR "FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH does not name an existing VAGi file")
+endif()

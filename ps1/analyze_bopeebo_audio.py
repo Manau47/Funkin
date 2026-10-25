@@ -33,7 +33,7 @@ def decode_vagi(path: Path) -> tuple[list[array], int, int]:
     interleave = struct.unpack_from("<I", data, 8)[0]
     channel_bytes, rate = struct.unpack_from(">II", data, 12)
     channels = struct.unpack_from("<H", data, 30)[0]
-    if channels != 6 or interleave % 16 or len(data) != 2048 + channels * channel_bytes:
+    if channels < 1 or interleave % 16 or len(data) != 2048 + channels * channel_bytes:
         raise ValueError("unexpected VAGi channel count, alignment, or length")
 
     decoded = [array("h") for _ in range(channels)]

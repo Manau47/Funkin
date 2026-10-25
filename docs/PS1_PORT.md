@@ -238,3 +238,58 @@ La variante corrigée à 43 008 Hz a été recompilée et exécutée dans DuckSt
 
 La variante corrigée 43 008 Hz est hors Git dans `build/bopeebo-audio-43008-final`: VAGi 12 118 016 octets, 493 chunks; BIN 14 326 032 octets, CUE 90 octets, SHA-256 `E288B8C1889BCC8DA248321DE32EC70C10BE50688849278F19E21FD8E2112C49`. Les deux images restent sous des dossiers distincts ignorés par Git. La compilation GCC 12.3.0 / PSn00bSDK 0.24 a réussi; les avertissements observés sont deux conversions `volatile` dans `stream.c` fourni par le SDK. Aucune écoute acoustique contrôlée n'a été faite par l'agent.
 
+### Comparaison Bopeebo quatre canaux à 43 008 Hz, avec effets
+
+L'utilisateur confirme maintenant subjectivement la qualité de la référence Bopeebo six canaux à 43 008 Hz et que son mute BF par Circle (`L` dans DuckStation) fonctionne. Cette image six canaux reste inchangée dans `ps1/build/bopeebo-audio-43008-final/` pour l'écoute A/B.
+
+La nouvelle variante conserve les mêmes trois stems de l'assets épinglé, leur origine commune, leurs PCM 43 008 Hz et l'encodeur ADPCM corrigé. L'ordre VAGi est instrumental L/R, Dad mono, BF mono. Les stems de voix sont ramenés en mono par moyenne signée `(L+R)/2`, avec arrondi à l'entier le plus proche. L'analyse des PCM locaux donne Dad corrélation L/R `0,997517`, variation RMS `−0,005 dB`, crête 16 440; BF `0,994837`, `−0,011 dB`, crête 19 869. Les canaux sont donc très corrélés et cette moyenne ne montre pas d'annulation de phase mesurable; le niveau RMS change de moins de 0,02 dB. Aucun stem n'est normalisé seul.
+
+Les quatre voies musicales partagent le volume `0x2800` (62,5 % de `0x3fff`). Dad est à gauche et BF à droite par défaut. Les flèches gauche/droite règlent un paramètre de largeur de 0 à 7 en changeant seulement les volumes SPU : aucun réencodage n'est nécessaire. La loi de panoramique à puissance constante utilise les facteurs Q14 gauche/droite suivants, ensuite multipliés par le gain musical commun : `(0,707; 0,707)`, `(0,782; 0,624)`, `(0,847; 0,532)`, `(0,901; 0,434)`, `(0,944; 0,330)`, `(0,975; 0,223)`, `(0,994; 0,112)`, `(1; 0)`. Dad suit cette courbe de gauche vers le centre; BF en est le miroir. Circle (`L`) met à zéro seulement le volume BF, puis le restaure au même panoramique, sans arrêter son flux ni changer sa position. Le bouton Square (`J`) déclenche l'effet d'essai.
+
+L'effet sonore synthétique est un bip ADPCM résident de 0,122 s, 1 536 octets et 22 050 Hz; le code est incorporé à l'EXE puis copié une seule fois en RAM SPU à `0x10000`. Quatre voix SPU dédiées (4–7) servent de pool à rotation pour les déclenchements rapprochés; au cinquième déclenchement avant libération, la voix la plus ancienne du pool est reprise. Le gain `0x0800` vaut 12,5 % du volume maximal. L'analyse ADPCM mesure une crête décodée de 4 787 LSB. Quatre effets parfaitement superposés donnent une borne conservatrice de 2 394 LSB par sortie après ce gain. La musique décodée et panoramiquée, au gain commun, culmine à 25 474/26 672 LSB L/R en largeur maximale. En additionnant la borne des quatre effets aux crêtes musicales observées, il reste au minimum 1,04 dB de marge numérique (environ 3 701 LSB) en sortie droite; la somme temporelle réelle est inférieure ou égale à cette borne. Ce calcul vérifie le mix numérique du test, pas le niveau analogique ni les effets du matériel réel.
+
+L'analyse reproductible du downmix et du mixage ADPCM est `ps1/analyze_bopeebo_4ch_audio.py`; elle décode les quatre voies VAGi et l'effet VAGp, évalue les panoramiques centré/intermédiaire/large, puis ajoute la borne de quatre effets. Pour ce probe :
+
+| Ressource | Allocation mesurée ou configurée | Réserve / interprétation |
+|---|---:|---|
+| RAM principale : EXE chargé (code, données et échantillon source SFX) | 47 104 o | inclut les 1 536 o SFX encodés |
+| RAM principale : BSS statique du linker | 7 456 o | inclut l'état SDK et la pile d'interruptions de 4 Kio |
+| RAM principale : ring audio `malloc` | 98 304 o (96 Kio) | couvre 1,0 s à 98 304 o/s; cela consomme toujours ces 96 Kio, la durée de réserve n'est pas une économie de RAM |
+| RAM principale : total suivi du probe | 152 864 o (149,3 Kio) | EXE + BSS + ring; n'inclut pas les réserves système et la pile d'exécution |
+| RAM SPU : double tampon musical | 32 768 o (32 Kio) | quatre voies × 2 tampons × 4 096 o, `0x1010–0x9010` |
+| RAM SPU : effet résident | 1 536 o | `0x10000`, préchargé avant le morceau |
+| RAM SPU : réservé par ce probe / espace libre arithmétique | 34 304 / 489 984 o | 33,5 / 478,5 Kio sur 512 Kio; le jeu et le SDK auront leurs propres besoins |
+| Voix SPU | 8 utilisées / 16 libres | 4 musique + 4 pool SFX sur 24; les 16 restantes sont une réserve de conception, pas une garantie du jeu complet |
+| CD | 98 304 o/s = 48 secteurs de 2 048 o/s | 32 % du débit nominal 2× de 150 secteurs/s; seeks et lectures concurrentes non mesurés |
+
+Le VAGi musical fait 8 079 360 octets. Son débit explique le tampon de 1 seconde; celui-ci coûte bien les 96 Kio indiqués. Le probe réserve aussi 32 Kio SPU de musique, plus l'effet. Ces chiffres sont spécifiques à cette scène de test. Ils ne budgètent pas les charts, personnages, animations, décors, interfaces et sons de gameplay; ils doivent donc rester séparés de toute affirmation sur la place disponible pour le jeu final. Les allocations CPU/heap et les réserves de l'OS devront être remesurées avec le port jouable.
+
+La conversion, l'image et l'analyse se reproduisent depuis `ps1/` (PSn00bSDK 0.24, CMake, Ninja, FFmpeg et Python déjà installés comme décrit dans `ps1/README.md`). Les fichiers de stems et VAGi restent hors Git :
+
+```powershell
+$song = '..\assets\songs\bopeebo'
+$work = Join-Path $env:TEMP 'fnf-bopeebo-724eba9'
+New-Item -ItemType Directory -Force $work | Out-Null
+foreach ($stem in 'Inst', 'Voices-bf', 'Voices-dad') {
+  ffmpeg -hide_banner -y -i "$song\$stem.ogg" -map 0:a:0 -ac 2 `
+    -af 'aresample=43008:filter_size=64:phase_shift=10:linear_interp=0:cutoff=0.97' `
+    -c:a pcm_s16le "$work\$stem-43008.wav"
+}
+python .\convert_bopeebo_4ch_to_vagi.py "$work\bopeebo-43008-4ch.vag" `
+  --instrumental "$work\Inst-43008.wav" `
+  --player-voice "$work\Voices-bf-43008.wav" `
+  --opponent-voice "$work\Voices-dad-43008.wav" --rate 43008
+cmake --preset default -B .\build\bopeebo-audio-4ch-43008 `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$work\bopeebo-43008-4ch.vag" `
+  -DFUNKIN_PS1_AUDIO_4CH_SAMPLE_COUNT=3509453u
+cmake --build .\build\bopeebo-audio-4ch-43008 --target ps1-bopeebo-audio-4ch-disc
+python .\analyze_bopeebo_4ch_audio.py `
+  --instrumental "$work\Inst-43008.wav" --dad "$work\Voices-dad-43008.wav" `
+  --bf "$work\Voices-bf-43008.wav" --vagi "$work\bopeebo-43008-4ch.vag" `
+  --sfx .\build\bopeebo-audio-4ch-43008\bopeebo_sfx.vag
+```
+
+Ouvrir `ps1/build/bopeebo-audio-4ch-43008/funkin-ps1-bopeebo-4ch-audio.cue` dans DuckStation pour l'essai A/B avec le CUE six canaux conservé ci-dessus. Confirmer instrumental stéréo, Dad à gauche, BF à droite; tester la largeur avec les flèches; appuyer sur `L` pour couper/rétablir BF; appuyer plusieurs fois rapidement sur `J` pour vérifier le pool d'effets; surveiller position audio, fin sans boucle, `UNDERRUNS` et `CD ERRORS`. La lecture observée par l'agent a atteint `FINISHED (NO LOOP)` à 01:21.600 avec compteur 3 509 453, 0 underrun et 0 erreur CD. L'écran affichait le tampon, le mute, la largeur, l'effet et son compteur. L'agent n'a pas confirmé à l'écoute la balance, n'a pas obtenu de validation de chaque bouton dans cette session et n'a pas mesuré de dérive. Le fonctionnement sonore de la variante quatre canaux et des effets reste à faire confirmer en essai A/B; seule la référence six canaux et le prototype quatre canaux synthétique précédent ont un retour subjectif utilisateur. Aucune console réelle n'a été testée.
+
+Compilation PSn00bSDK 0.24 / GCC 12.3.0 réussie : EXE 47 104 octets, BIN `funkin-ps1-bopeebo-4ch-audio.bin` 9 690 240 octets, CUE 94 octets. Le BIN contient 4 120 secteurs MODE2/2352. Le CUE et BIN sont dans `ps1/build/bopeebo-audio-4ch-43008/`, ignoré par Git; aucune ressource audio officielle n'est ajoutée au dépôt.
+

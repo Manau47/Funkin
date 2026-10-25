@@ -34,6 +34,15 @@
 #define TEST_VOICE_VOLUME 0x2fffu
 #define TEST_INSTRUMENT_VOLUME 0x2fffu
 #define SONG_MIX_VOLUME 0x2800u
+#define MUSIC_SPAN_GAIN 0x2800u
+#define SFX_VOLUME 0x0800u
+#define SFX_SPU_ADDR 0x10000u
+#define SFX_FIRST_VOICE 4u
+#define SFX_VOICE_COUNT 4u
+
+#if TEST_BOPEEBO_4CH
+#include "bopeebo_sfx_data.h"
+#endif
 
 typedef struct {
 	uint32_t magic;
@@ -90,6 +99,12 @@ static bool circle_down;
 #if TEST_NO_LOOP
 static bool song_finished;
 #endif
+#if TEST_BOPEEBO_4CH
+static uint8_t pan_width = 7;
+static uint8_t sfx_voice_cursor;
+static unsigned sfx_trigger_count;
+static bool sfx_uploaded;
+#endif
 
 static void abort_cd_read(void);
 
@@ -101,7 +116,8 @@ enum {
 	FAIL_CD_READ = 5,
 	FAIL_BUFFER_TIMEOUT = 6,
 	FAIL_STREAM_START = 7,
-	FAIL_UNDERRUN = 8
+	FAIL_UNDERRUN = 8,
+	FAIL_SFX_UPLOAD = 9
 };
 
 enum {
@@ -243,6 +259,82 @@ static void stream_underrun_handler(void)
 }
 
 #if TEST_CHANNELS >= 4
+#if TEST_BOPEEBO_4CH
+static const uint16_t pan_curve[8][2] = {
+	{ 11585, 11585 }, { 12809, 10215 }, { 13872, 8716 }, { 14761, 7108 },
+	{ 15464, 5411 }, { 15972, 3646 }, { 16280, 1834 }, { 16383, 0 }
+};
+
+static void set_voice_pan(void)
+{
+	uint16_t left = (uint16_t)((uint32_t)MUSIC_SPAN_GAIN * pan_curve[pan_width][0] / 16383u);
+	uint16_t right = (uint16_t)((uint32_t)MUSIC_SPAN_GAIN * pan_curve[pan_width][1] / 16383u);
+	SPU_CH_VOL_L(2) = left;
+	SPU_CH_VOL_R(2) = right;
+	SPU_CH_VOL_L(3) = voices_muted ? 0 : right;
+	SPU_CH_VOL_R(3) = voices_muted ? 0 : left;
+}
+
+static void play_resident_sfx(void)
+{
+	unsigned voice = SFX_FIRST_VOICE + sfx_voice_cursor;
+	uint32_t key = 1u << voice;
+	SpuSetKey(0, key);
+	SPU_CH_ADDR(voice) = getSPUAddr(SFX_SPU_ADDR);
+	SPU_CH_FREQ(voice) = getSPUSampleRate(SFX_SAMPLE_RATE);
+	SPU_CH_VOL_L(voice) = SFX_VOLUME;
+	SPU_CH_VOL_R(voice) = SFX_VOLUME;
+	SPU_CH_ADSR1(voice) = 0x00ff;
+	SPU_CH_ADSR2(voice) = 0x0000;
+	SpuSetKey(1, key);
+	sfx_voice_cursor = (uint8_t)((sfx_voice_cursor + 1u) % SFX_VOICE_COUNT);
+	sfx_trigger_count++;
+}
+
+static bool upload_resident_sfx(void)
+{
+	SpuSetTransferMode(SPU_TRANSFER_BY_DMA);
+	SpuSetTransferStartAddr(SFX_SPU_ADDR);
+	SpuWrite((const uint32_t *)sfx_sample, SFX_SAMPLE_SIZE);
+	if (!SpuIsTransferCompleted(SPU_TRANSFER_WAIT))
+		return false;
+	sfx_uploaded = true;
+	return true;
+}
+
+static bool poll_bopeebo4_controls(void)
+{
+	PADTYPE *pad = (PADTYPE *)&pad_buffers[0][0];
+	bool connected = pad->stat == 0 &&
+		(pad->type == PAD_ID_DIGITAL || pad->type == PAD_ID_ANALOG_STICK ||
+		 pad->type == PAD_ID_ANALOG);
+	if (!connected) {
+		previous_pad_buttons = 0xffff;
+		pad_was_connected = false;
+		circle_down = false;
+		return false;
+	}
+
+	uint16_t buttons = (uint16_t)pad->btn;
+	circle_down = !(buttons & PAD_CIRCLE);
+	if (!pad_was_connected) {
+		previous_pad_buttons = buttons;
+		pad_was_connected = true;
+	} else {
+		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
+			voices_muted = !voices_muted;
+		if ((previous_pad_buttons & PAD_LEFT) && !(buttons & PAD_LEFT) && pan_width)
+			pan_width--;
+		if ((previous_pad_buttons & PAD_RIGHT) && !(buttons & PAD_RIGHT) && pan_width < 7u)
+			pan_width++;
+		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE) && sfx_uploaded)
+			play_resident_sfx();
+		previous_pad_buttons = buttons;
+	}
+	set_voice_pan();
+	return true;
+}
+#else
 static bool poll_voice_toggle(void)
 {
 	PADTYPE *pad = (PADTYPE *)&pad_buffers[0][0];
@@ -283,6 +375,7 @@ static bool poll_voice_toggle(void)
 #endif
 	return true;
 }
+#endif
 #endif
 
 static void reset_spu_channels(void)
@@ -473,6 +566,13 @@ static bool start_stream_from_disc(void)
 	SPU_CH_VOL_L(1) = 0;
 	SPU_CH_VOL_R(1) = 0x3fff;
 #else
+#if TEST_BOPEEBO_4CH
+	SPU_CH_VOL_L(0) = MUSIC_SPAN_GAIN;
+	SPU_CH_VOL_R(0) = 0;
+	SPU_CH_VOL_L(1) = 0;
+	SPU_CH_VOL_R(1) = MUSIC_SPAN_GAIN;
+	set_voice_pan();
+#else
 	SPU_CH_VOL_L(0) = TEST_INSTRUMENT_VOLUME;
 	SPU_CH_VOL_R(0) = 0;
 	SPU_CH_VOL_L(1) = 0;
@@ -481,6 +581,7 @@ static bool start_stream_from_disc(void)
 	SPU_CH_VOL_R(2) = 0;
 	SPU_CH_VOL_L(3) = 0;
 	SPU_CH_VOL_R(3) = TEST_VOICE_VOLUME;
+#endif
 #endif
 #if TEST_CHANNELS == 6
 	/* Apply one common attenuation to preserve stem balance. */
@@ -558,6 +659,10 @@ int main(void)
 	StartPAD();
 	ChangeClearPAD(0);
 #endif
+#if TEST_BOPEEBO_4CH
+	if (!upload_resident_sfx())
+		show_error(FAIL_SFX_UPLOAD);
+#endif
 	if (CdControlB(CdlPause, 0, 0) != 1)
 		show_error(FAIL_CD_COMMAND);
 
@@ -568,7 +673,9 @@ int main(void)
 		(void)feed_stream();
 		if (read_ctx.read_error || underruns)
 			show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
-#if TEST_CHANNELS >= 4
+#if TEST_BOPEEBO_4CH
+		bool pad_connected = poll_bopeebo4_controls();
+#elif TEST_CHANNELS >= 4
 		bool pad_connected = poll_voice_toggle();
 #endif
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
@@ -594,7 +701,17 @@ int main(void)
 		FntPrint(-1, "BUFFER %u / %u\n", (unsigned)stream.buffer.length,
 			(unsigned)stream.config.buffer_size);
 		FntPrint(-1, "UNDERRUNS %u  CD ERRORS %u\n", (unsigned)underruns, (unsigned)read_errors);
-#if TEST_CHANNELS == 4
+#if TEST_BOPEEBO_4CH
+		FntPrint(-1, "BOPEEBO 4CH  INST / DAD-L / BF-R\n");
+		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
+			circle_down ? "DOWN" : "UP");
+		FntPrint(-1, "BF VOICE: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
+		FntPrint(-1, "PAN WIDTH %u/7 (LEFT/RIGHT)\n", (unsigned)pan_width);
+		FntPrint(-1, "SQUARE: PLAY SFX (%u VOICES)\n", (unsigned)SFX_VOICE_COUNT);
+		FntPrint(-1, "SFX TRIGGERS %u  VOLUME %u/16383\n", sfx_trigger_count,
+			(unsigned)SFX_VOLUME);
+		FntPrint(-1, "PLAYBACK: %s (NO LOOP)\n", song_finished ? "FINISHED" : "PLAYING");
+#elif TEST_CHANNELS == 4
 		FntPrint(-1, "4CH: INST L/R + VOICES L/R\n");
 		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
 			circle_down ? "DOWN" : "UP");
