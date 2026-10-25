@@ -177,7 +177,7 @@ class Rig:
                             out[2][di + channel] = (self.atlas_pixels[si + channel] * alpha + out[2][di + channel] * olda * inv // 255) // oa
                     out[2][di + 3] = oa
 
-    def render(self, frame_index, canvas=1200):
+    def render_positioned(self, frame_index, canvas=1200):
         pixels = bytearray(canvas * canvas * 4)
         center = canvas // 2
         # The source Animate stage is 1920x1080; its exported character rigs
@@ -198,7 +198,12 @@ class Rig:
         for y in range(height):
             a = ((y + y0) * canvas + x0) * 4
             crop[y * width * 4:(y + 1) * width * 4] = pixels[a:a + width * 4]
-        return width, height, crop
+        return x0 - center, y0 - center, width, height, crop
+
+    def render(self, frame_index, canvas=1200):
+        """Render one rig frame, retaining the legacy tightly-cropped result."""
+        _, _, width, height, pixels = self.render_positioned(frame_index, canvas)
+        return width, height, pixels
 
 
 def main():

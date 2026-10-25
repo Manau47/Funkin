@@ -130,3 +130,7 @@ cmake --build .\build\spu-four-channel --target ps1-spu-4ch-disc
 Open `build/spu-four-channel/funkin-ps1-spu-4ch-probe.cue` in DuckStation. Confirm both signal groups are distinct, toggle Circle and check that only voice audio mutes while `SAMPLES` continues, then watch CD errors and underruns over several minutes. The four-channel image is not validated until this run is observed. See [PS1_PORT.md](../docs/PS1_PORT.md) for the format checks, mix headroom, and RAM/SPU/CD calculations.
 
 
+
+## Official note art candidate (v10)
+
+The playable Bopeebo candidate now converts note arrows, strumline idle/press/confirm frames, and sustain bodies/caps from the pinned official Funkin note style. The conversion runs from CMake with `FUNKIN_PS1_ASSETS_DIR` and FFmpeg; source XML/PNG assets remain in the asset submodule and generated art tables remain under the ignored build directory. The final candidate image and DuckStation captures are in `build/bopeebo-official-assets-v10/` (ignored). Its user-visible state remains an unvalidated visual prototype pending idle/sing/miss review and full-song checks.

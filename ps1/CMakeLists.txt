@@ -211,7 +211,12 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagefront.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagecurtains.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.png"
-		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml")
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/notes.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/notes.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/noteStrumline.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/noteStrumline.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/NOTE_hold_assets.png")
 	add_custom_command(
 		OUTPUT "${_playable_visual_header}"
 		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"

@@ -19,8 +19,6 @@ STAGE_BACK_H = 176
 STAGE_FRONT_H = 56
 FRAME_W = 64
 FRAME_H = 96
-GF_W = 80
-GF_H = 80
 PAGE_W = 256
 PAGE_H = 256
 PAGE_BYTES = PAGE_W * PAGE_H // 2
@@ -88,6 +86,44 @@ def extract_sparrow_frame(ffmpeg: str, png: pathlib.Path, frame: dict, size: tup
     return run_ffmpeg(ffmpeg, png, filters, w, h)
 
 
+def extract_crop(ffmpeg: str, png: pathlib.Path, x: int, y: int, width: int, height: int,
+                 size: tuple[int, int]) -> bytearray:
+    out_w, out_h = size
+    filters = (f"crop={width}:{height}:{x}:{y},"
+               f"scale={out_w}:{out_h}:flags=neighbor,format=rgba")
+    return run_ffmpeg(ffmpeg, png, filters, out_w, out_h)
+
+
+def fit_anchored_rig(rig: Rig, frame_ids: list[int], out_w: int, out_h: int) -> dict[int, bytearray]:
+    """Fit a rig's poses together, keeping their source-space origin and floor."""
+    rendered = {frame: rig.render_positioned(frame) for frame in frame_ids}
+    min_x = min(item[0] for item in rendered.values())
+    max_x = max(item[0] + item[2] for item in rendered.values())
+    min_y = min(item[1] for item in rendered.values())
+    floor_y = max(item[1] + item[3] for item in rendered.values())
+    union_w, union_h = max_x - min_x, floor_y - min_y
+    scale = min((out_w - 4) / union_w, (out_h - 2) / union_h)
+    scaled_union_w = max(1, round(union_w * scale))
+    left = (out_w - scaled_union_w) // 2
+    result: dict[int, bytearray] = {}
+    for frame, (x, y, width, height, source) in rendered.items():
+        scaled_w = max(1, round(width * scale))
+        scaled_h = max(1, round(height * scale))
+        x0 = left + round((x - min_x) * scale)
+        bottom_gap = round((floor_y - (y + height)) * scale)
+        y0 = out_h - bottom_gap - scaled_h
+        target = bytearray(out_w * out_h * 4)
+        for dy in range(scaled_h):
+            sy = min(height - 1, dy * height // scaled_h)
+            for dx in range(scaled_w):
+                sx = min(width - 1, dx * width // scaled_w)
+                si = (sy * width + sx) * 4
+                di = ((y0 + dy) * out_w + x0 + dx) * 4
+                target[di:di + 4] = source[si:si + 4]
+        result[frame] = target
+    return result
+
+
 def extract_stage(ffmpeg: str, png: pathlib.Path, width: int, height: int) -> bytearray:
     # The source stage is 8x larger than the PS1 output. Area downsampling
     # preserves thin architecture and curtains without runtime bilinear blur.
@@ -114,11 +150,12 @@ def alpha_over(background: bytearray, foreground: bytearray) -> bytearray:
 
 
 def fit_nearest(pixels: bytearray, width: int, height: int,
-                out_w: int, out_h: int) -> bytearray:
+                out_w: int, out_h: int, anchor_bottom: bool = False) -> bytearray:
     scale = min(out_w / width, out_h / height)
     scaled_w = max(1, min(out_w, round(width * scale)))
     scaled_h = max(1, min(out_h, round(height * scale)))
-    xoff, yoff = (out_w - scaled_w) // 2, (out_h - scaled_h) // 2
+    xoff = (out_w - scaled_w) // 2
+    yoff = out_h - scaled_h if anchor_bottom else (out_h - scaled_h) // 2
     out = bytearray(out_w * out_h * 4)
     for y in range(scaled_h):
         sy = min(height - 1, y * height // scaled_h)
@@ -128,94 +165,6 @@ def fit_nearest(pixels: bytearray, width: int, height: int,
             di = ((y + yoff) * out_w + x + xoff) * 4
             out[di:di + 4] = pixels[si:si + 4]
     return out
-
-
-def new_canvas(width: int, height: int) -> bytearray:
-    return bytearray(width * height * 4)
-
-
-def fill_rect(pixels: bytearray, width: int, height: int, x0: int, y0: int,
-              x1: int, y1: int, color: tuple[int, int, int]) -> None:
-    for y in range(max(0, y0), min(height, y1)):
-        for x in range(max(0, x0), min(width, x1)):
-            i = (y * width + x) * 4
-            pixels[i:i + 4] = bytes((*color, 255))
-
-
-def fill_ellipse(pixels: bytearray, width: int, height: int, cx: int, cy: int,
-                 rx: int, ry: int, color: tuple[int, int, int]) -> None:
-    for y in range(max(0, cy - ry), min(height, cy + ry + 1)):
-        for x in range(max(0, cx - rx), min(width, cx + rx + 1)):
-            if ((x - cx) * (x - cx) * ry * ry +
-                    (y - cy) * (y - cy) * rx * rx <= rx * rx * ry * ry):
-                i = (y * width + x) * 4
-                pixels[i:i + 4] = bytes((*color, 255))
-
-
-def fill_polygon(pixels: bytearray, width: int, height: int,
-                 points: tuple[tuple[int, int], ...], color: tuple[int, int, int]) -> None:
-    for y in range(max(0, min(p[1] for p in points)), min(height, max(p[1] for p in points) + 1)):
-        intersections = []
-        for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]):
-            if (y0 <= y < y1) or (y1 <= y < y0):
-                intersections.append(x0 + (y - y0) * (x1 - x0) // (y1 - y0))
-        intersections.sort()
-        for left, right in zip(intersections[::2], intersections[1::2]):
-            fill_rect(pixels, width, height, left, y, right + 1, y + 1, color)
-
-
-def dad_pose(variation: int) -> bytearray:
-    """Create a tiny, crisp stand-in from Dad's official palette and silhouette cues."""
-    w, h = FRAME_W, FRAME_H
-    p = new_canvas(w, h)
-    purple, dark, skin, shirt = (143, 68, 180), (35, 25, 49), (246, 197, 220), (231, 226, 236)
-    bob = variation & 1
-    fill_polygon(p, w, h, ((12, 49), (51, 47), (59, 85), (47, 91), (17, 86)), dark)
-    fill_polygon(p, w, h, ((15, 48), (48, 46), (54, 80), (43, 85), (18, 82)), purple)
-    fill_polygon(p, w, h, ((23, 53), (42, 52), (37, 70), (27, 67)), shirt)
-    fill_rect(p, w, h, 18, 80, 28, 95, dark)
-    fill_rect(p, w, h, 39, 80, 48, 95, dark)
-    fill_ellipse(p, w, h, 32, 30 + bob, 15, 19, dark)
-    fill_ellipse(p, w, h, 32, 29 + bob, 13, 17, skin)
-    fill_polygon(p, w, h, ((17, 26), (14, 13), (23, 18), (27, 7), (33, 16),
-                           (43, 9), (43, 19), (51, 15), (47, 30), (39, 24), (23, 27)), purple)
-    fill_rect(p, w, h, 22, 29 + bob, 29, 32 + bob, dark)
-    fill_rect(p, w, h, 36, 29 + bob, 43, 32 + bob, dark)
-    fill_rect(p, w, h, 30, 38 + bob, 36, 40 + bob, dark)
-    # One arm and microphone read clearly at native resolution; alternate by chart-lane pose.
-    arm_x = 7 if variation % 4 in (0, 2) else 46
-    fill_polygon(p, w, h, ((18, 50), (24, 54), (arm_x + 7, 66), (arm_x, 62)), skin)
-    fill_rect(p, w, h, arm_x, 54, arm_x + 6, 66, dark)
-    fill_ellipse(p, w, h, arm_x + 3, 52, 5, 6, (95, 102, 119))
-    return p
-
-
-def gf_pose(variation: int) -> bytearray:
-    """Create a small rhythm-dance stand-in with GF's pink hair and red outfit."""
-    w, h = GF_W, GF_H
-    p = new_canvas(w, h)
-    pink, darkpink, skin, red, dark = (245, 60, 145), (156, 36, 92), (255, 202, 170), (203, 44, 91), (32, 20, 40)
-    bob = (variation & 1) * 2
-    # Seated pose over the iconic speaker pair.
-    fill_rect(p, w, h, 5, 57, 39, 79, dark)
-    fill_rect(p, w, h, 41, 57, 75, 79, dark)
-    fill_ellipse(p, w, h, 22, 68, 8, 8, (88, 54, 115))
-    fill_ellipse(p, w, h, 58, 68, 8, 8, (88, 54, 115))
-    fill_ellipse(p, w, h, 42, 23 + bob, 22, 23, darkpink)
-    fill_ellipse(p, w, h, 43, 23 + bob, 16, 18, skin)
-    fill_ellipse(p, w, h, 42, 12 + bob, 21, 12, pink)
-    hair_x = 12 if variation % 2 == 0 else 53
-    fill_polygon(p, w, h, ((25, 12 + bob), (15, 4 + bob), (12, 28 + bob),
-                           (17, 48), (25, 40), (30, 23 + bob)), pink)
-    fill_polygon(p, w, h, ((56, 12 + bob), (69, 19), (68, 43), (58, 49),
-                           (54, 33 + bob)), pink)
-    fill_rect(p, w, h, 34, 24 + bob, 38, 27 + bob, dark)
-    fill_rect(p, w, h, 47, 24 + bob, 51, 27 + bob, dark)
-    fill_polygon(p, w, h, ((29, 43), (56, 42), (64, 59), (46, 64), (26, 58)), red)
-    fill_polygon(p, w, h, ((30, 55), (43, 58), (33, 70), (21, 68)), skin)
-    fill_polygon(p, w, h, ((47, 58), (61, 54), (69, 65), (54, 69)), skin)
-    fill_ellipse(p, w, h, hair_x, 32 + bob, 6, 14, pink)
-    return p
 
 
 def median_palette(images: list[bytearray], max_colors: int = 15) -> list[tuple[int, int, int]]:
@@ -337,6 +286,7 @@ def write_header(output: pathlib.Path,
                  palette8: list[tuple[int, int, int]],
                  palette4: list[tuple[int, int, int]],
                  palette_bf8: list[tuple[int, int, int]],
+                 palette_ui4: list[list[tuple[int, int, int]]],
                  pages8: list[bytearray], pages4: list[bytearray],
                  page_table: list[tuple[int, int, int]],
                  descriptors: dict[str, dict]) -> None:
@@ -367,6 +317,12 @@ def write_header(output: pathlib.Path,
     values += [0] * (256 - len(values))
     lines.append("static const uint16_t bopeebo_visual_palette_bf8[256] = {" +
                   ",".join(f"0x{x:04x}" for x in values) + "};")
+    lines.append("static const uint16_t bopeebo_visual_palette_ui4[4][16] = {")
+    for palette in palette_ui4:
+        values = [0] + [rgb555(c) for c in palette[:15]]
+        values += [0] * (16 - len(values))
+        lines.append("{" + ",".join(f"0x{x:04x}" for x in values) + "},")
+    lines.append("};")
     lines.append("static const BopeeboVisualFrame bopeebo_visual_frames[BOPEEBO_VISUAL_FRAME_COUNT] = {")
     for name, frame in descriptors.items():
         lines.append(f"\t{{{frame['page']}, {frame['palette']}, {frame['u']}, {frame['v']}, {frame['w']}, {frame['h']}}}, /* {name} */")
@@ -430,24 +386,75 @@ def build(args: argparse.Namespace) -> None:
     dad_pose_frames = [(f"dad_idle_{i}", frame) for i, frame in enumerate((0, 2, 4, 6, 8, 10))]
     for direction, first in (("up", 12), ("down", 18), ("left", 24), ("right", 30)):
         dad_pose_frames.extend(((f"dad_{direction}_0", first + 1), (f"dad_{direction}_1", first + 4)))
+    dad_source_ids = [frame for _, frame in dad_pose_frames]
+    dad_anchored = fit_anchored_rig(dad_rig, dad_source_ids, 72, 112)
     for name, source_frame in dad_pose_frames:
-        width, height, pixels = dad_rig.render(source_frame)
-        if not pixels:
-            raise ValueError(f"empty Dad Animate frame {source_frame}")
-        temp_images[name] = fit_nearest(pixels, width, height, 72, 112)
+        temp_images[name] = dad_anchored[source_frame]
         frame_sizes[name] = (72, 112)
 
-    for i, source_frame in enumerate((0, 4, 8, 11, 15, 19, 22, 26)):
-        width, height, pixels = gf_rig.render(source_frame)
-        if not pixels:
-            raise ValueError(f"empty Girlfriend Animate frame {source_frame}")
-        temp_images[f"gf_dance_{i}"] = fit_nearest(pixels, width, height, 128, 120)
+    gf_source_ids = (0, 4, 8, 11, 15, 19, 22, 26)
+    gf_anchored = fit_anchored_rig(gf_rig, list(gf_source_ids), 128, 120)
+    for i, source_frame in enumerate(gf_source_ids):
+        temp_images[f"gf_dance_{i}"] = gf_anchored[source_frame]
         frame_sizes[f"gf_dance_{i}"] = (128, 120)
+
+    # Bopeebo's standard note style uses these pinned official sprites, not
+    # the older NOTE_assets chart-editor atlas or generated geometric arrows.
+    directions = ("left", "down", "up", "right")
+    note_png = shared_images / "notes.png"
+    note_groups = atlas_frames(shared_images / "notes.xml")
+    receptor_png = shared_images / "noteStrumline.png"
+    receptor_groups = atlas_frames(shared_images / "noteStrumline.xml")
+    ui4_by_direction: dict[str, list[str]] = {}
+    for lane, direction in enumerate(directions):
+        note_frames = note_groups.get(f"note{direction.title()}")
+        if not note_frames:
+            raise ValueError(f"missing official note sprite for {direction}")
+        note_name = f"ui_note_{direction}"
+        temp_images[note_name] = extract_sparrow_frame(ffmpeg, note_png, note_frames[0], (32, 32))
+        frame_sizes[note_name] = (32, 32)
+        lane_names = [note_name]
+
+        for state, source_names in (
+            ("idle", (f"static{direction.title()}",)),
+            ("press", (f"press{direction.title()}",)),
+            ("confirm", (f"confirm{direction.title()}",)),
+        ):
+            source_frames = []
+            for source_name in source_names:
+                source_frames.extend(receptor_groups.get(source_name, []))
+            if not source_frames:
+                raise ValueError(f"missing official {state} receptor sprite for {direction}")
+            if state == "idle":
+                selected = source_frames[:1]
+            elif state == "press":
+                selected = source_frames[-1:]
+            else:
+                selected = source_frames[:4]
+            for frame_index, source_frame in enumerate(selected):
+                name = (f"ui_receptor_{direction}_{state}" if state != "confirm" else
+                        f"ui_receptor_{direction}_confirm_{frame_index}")
+                temp_images[name] = extract_sparrow_frame(ffmpeg, receptor_png, source_frame, (32, 32))
+                frame_sizes[name] = (32, 32)
+                lane_names.append(name)
+
+        hold_png = assets / "preload" / "images" / "NOTE_hold_assets.png"
+        hold_w, hold_h = 416, 87
+        column_w = hold_w // 8
+        for part, column, size in (("body", lane * 2, (16, 24)), ("tail", lane * 2 + 1, (16, 24))):
+            name = f"ui_hold_{part}_{direction}"
+            temp_images[name] = fit_nearest(
+                run_ffmpeg(ffmpeg, hold_png, f"crop={column_w}:{hold_h}:{column * column_w}:0,format=rgba",
+                           column_w, hold_h), column_w, hold_h, *size)
+            frame_sizes[name] = size
+            lane_names.append(name)
+        ui4_by_direction[direction] = lane_names
 
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
     bf_core_names = [name for name in bf_names if not name.startswith("bf_miss_")]
     bf_miss_names = [name for name in bf_names if name.startswith("bf_miss_")]
+    ui_names = [name for names in ui4_by_direction.values() for name in names]
     dad_names = [name for name in temp_images if name.startswith("dad_")]
     gf_names = [name for name in temp_images if name.startswith("gf_")]
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
@@ -455,10 +462,14 @@ def build(args: argparse.Namespace) -> None:
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
     palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names], 255)
     palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
+    palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
+                   for d in directions]
     palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
-                  if not name.startswith("bf_")}
+                  if not name.startswith(("bf_", "ui_"))}
     quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
+    quantized_ui4 = {name: quantize(temp_images[name], palette_ui4[lane])
+                     for lane, direction in enumerate(directions) for name in ui4_by_direction[direction]}
     quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
     descriptors: dict[str, dict] = {}
     pages8: list[bytearray] = []
@@ -488,9 +499,15 @@ def build(args: argparse.Namespace) -> None:
     # get a dedicated 8bpp CLUT and the two remaining 8bpp texture pages.
     pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names],
               0, 1, pages4, descriptors)
+    ui_first_page = len(pages4)
+    pack_page([(n, quantized_ui4[n], *frame_sizes[n]) for n in ui_names],
+              ui_first_page, 1, pages4, descriptors)
+    for lane, direction in enumerate(directions):
+        for name in ui4_by_direction[direction]:
+            descriptors[name]["palette"] = 3 + lane
     # Place aligned 8bpp pages right of the framebuffers (font at x=960,y=0).
     # 4bpp pages use the free strip x=320..383 beside both 320-word framebuffers.
-    if len(pages8) > 9 or len(pages4) > 4:
+    if len(pages8) > 9 or len(pages4) > 2:
         raise ValueError(f"visual page layout exceeds free VRAM: {len(pages8)}x8bpp, {len(pages4)}x4bpp")
     page_table: list[tuple[int, int, int]] = []
     row0 = [(384 + i * 128, 0) for i in range(4)]
@@ -498,17 +515,12 @@ def build(args: argparse.Namespace) -> None:
     for i in range(len(pages8)):
         x, y = row0[i] if i < 4 else row1[i - 4]
         page_table.append((x, y, 1))
-    # 8bpp page bases align to 128 VRAM words. Four top-row and up to five
-    # lower-row pages are available. 4bpp pages use the unused horizontal
-    # strip immediately right of both 320-word framebuffers (x=320..383).
-    first4x = 320
+    # 8bpp page bases align to 128 VRAM words. The 64-word strip beside the
+    # framebuffers provides two vertically adjacent 4bpp pages.
     for i in range(len(pages4)):
-        x = first4x + i * 64
-        if x + 64 > 1024:
-            raise ValueError("4bpp pages collide with the framebuffer or exceed VRAM width")
-        # Texture-page Y is quantized by getTPage to 0 or 256; keep the
-        # 4bpp page aligned at 256 so runtime UVs address the uploaded data.
-        page_table.append((x, 256, 0))
+        if i > 1:
+            raise ValueError("only two 4bpp pages fit in the free VRAM strip")
+        page_table.append((320, i * 256, 0))
     if len(page_table) != len(pages8) + len(pages4):
         raise ValueError("generated VRAM page table does not cover all texture pages")
 
@@ -517,6 +529,8 @@ def build(args: argparse.Namespace) -> None:
     vram_regions = [("framebuffer0", 0, 0, 320, 240), ("framebuffer1", 0, 240, 320, 240),
                     ("palette8", 0, 496, 256, 1), ("palette4", 256, 496, 16, 1),
                     ("palette_bf8", 0, 480, 256, 1), ("font_reservation", 960, 0, 64, 256)]
+    vram_regions.extend((f"palette_ui4_{i}", (256 if i == 3 else 272 + i * 16),
+                         (480 if i == 3 else 496), 16, 1) for i in range(4))
     for i, (x, y, depth) in enumerate(page_table):
         vram_regions.append((f"texture_page_{i}", x, y, 128 if depth else 64, 256))
     for i, (name, x, y, width, height) in enumerate(vram_regions):
@@ -525,7 +539,7 @@ def build(args: argparse.Namespace) -> None:
         for other_name, ox, oy, ow, oh in vram_regions[:i]:
             if x < ox + ow and ox < x + width and y < oy + oh and oy < y + height:
                 raise ValueError(f"VRAM regions {name} and {other_name} overlap")
-    for name in bf_miss_names:
+    for name in bf_miss_names + ui_names:
         descriptors[name]["page"] += len(pages8)
 
     # Keep quantization losses visible in the build log to guide art choices.
@@ -545,7 +559,10 @@ def build(args: argparse.Namespace) -> None:
     print(f"stage palette loss: 15-color RMSE {rmse(stage_names, stage_palette_old):.2f}; shared 255-color RMSE {rmse(stage_names, palette8):.2f} RGB levels")
     print(f"Dad/GF combined palette RMSE: Dad {rmse(dad_names, palette8):.2f}, GF {rmse(gf_names, palette8):.2f} RGB levels")
     print(f"BF core idle/sing at 64x96: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
-    write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, pages8, pages4, page_table, descriptors)
+    print("Official arrows/receptors/holds: 4bpp per direction, 15-color CLUT each; " +
+          ", ".join(f"{d} RMSE {rmse(ui4_by_direction[d], palette_ui4[i]):.2f}" for i, d in enumerate(directions)))
+    write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
+                 pages8, pages4, page_table, descriptors)
     print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance; BF {len(bf_names)} official Sparrow frames")
     print(f"VRAM map verified: {len(pages8)}x8bpp + {len(pages4)}x4bpp, framebuffers, CLUTs and font reserve are in bounds without overlap")
     print(f"VRAM textures: {len(pages8)}x8bpp + {len(pages4)}x4bpp = {len(pages8)*65536+len(pages4)*32768} bytes; generated header {pathlib.Path(args.output).stat().st_size} bytes")
