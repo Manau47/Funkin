@@ -79,7 +79,7 @@ typedef struct {
 
 /* Separate geometry/state groups preserve the future two-player split. */
 static const NoteGroupLayout note_groups[2] = {
-	{ 14, 78, 18, 16, 24, 0 }, /* Dad/autoplay: compact upper-left */
+	{ 24, 78, 18, 16, 24, 0 }, /* Dad/autoplay: 16px arrow edge aligns with action-safe x=16 */
 	{ 176, 194, 32, 30, 100, 1 } /* BF/player: raised to leave clear lower margin */
 };
 static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
@@ -1006,16 +1006,30 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 	}
 }
 
-static void draw_scene(uint32_t samples)
+static uint32_t music_beat_q16(uint32_t samples)
 {
 	uint32_t rate = BOPEEBO_CHART_RATE;
-	uint32_t beat_period = rate * 60u / BOPEEBO_BPM;
-	uint32_t beat_phase = beat_period ? samples % beat_period : 0;
-	uint32_t pulse_window = rate * 35u / 100u;
-	unsigned pulse_q8 = pulse_window && beat_phase < pulse_window ?
-		(unsigned)(((uint64_t)(pulse_window - beat_phase) * 7u) / pulse_window) : 0u;
+	unsigned tempo_index = 0;
+	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
+	       bopeebo_tempo_changes[tempo_index + 1u].sample <= samples) tempo_index++;
+	const BopeeboTempoChange *tempo = &bopeebo_tempo_changes[tempo_index];
+	uint64_t beat = tempo->beat_q16 +
+		(uint64_t)(samples - tempo->sample) * tempo->bpm_centi * 65536u /
+		((uint64_t)rate * 6000u);
+	return beat > 0xffffffffu ? 0xffffffffu : (uint32_t)beat;
+}
+
+static void draw_scene(uint32_t samples)
+{
+	uint32_t rate = stream.config.sample_rate ?
+		(uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	uint32_t beat_q16 = music_beat_q16(samples);
+	uint32_t beat = beat_q16 >> 16;
+	uint32_t beat_phase = beat_q16 & 0xffffu;
+	const uint32_t pulse_window_q16 = 22937u; /* first 35% of each tempo-mapped beat */
+	unsigned pulse_q8 = beat_phase < pulse_window_q16 ?
+		(unsigned)(((uint64_t)(pulse_window_q16 - beat_phase) * 7u) / pulse_window_q16) : 0u;
 	unsigned zoom_q8 = BOPEEBO_STAGE_CAMERA_ZOOM_Q8 + pulse_q8;
-	unsigned beat = beat_period ? samples / beat_period : 0u;
 	/* Focus targets and stage transforms are generated from the official stage
 	   data; smooth transitions follow chart events, never individual note hits. */
 	unsigned event_index = 0;
@@ -1050,12 +1064,20 @@ static void draw_scene(uint32_t samples)
 			{ VIS_DAD_LEFT_0, VIS_DAD_LEFT_1 }, { VIS_DAD_DOWN_0, VIS_DAD_DOWN_1 },
 			{ VIS_DAD_UP_0, VIS_DAD_UP_1 }, { VIS_DAD_RIGHT_0, VIS_DAD_RIGHT_1 }
 		};
-		uint32_t phase = ((uint64_t)(samples - dad_visual_start) * 24u) / rate;
-		dad_frame = sing_frames[dad_visual_lane & 3u][phase & 1u];
+		dad_frame = sing_frames[dad_visual_lane & 3u][(beat_phase >> 15) & 1u];
 	} else {
-		dad_frame = VIS_DAD_IDLE_0 + (beat / 2u) % 6u;
+		unsigned idle_pose = (unsigned)((uint64_t)beat_phase * 6u >> 16);
+		if (idle_pose > 5u) idle_pose = 5u;
+		dad_frame = VIS_DAD_IDLE_0 + idle_pose;
 	}
-	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u,
+	/* GF's pinned character config alternates two 15-frame dances each beat.
+	   Nine source poses per side are sampled across that beat, including the
+	   original speaker rig's embedded pulse. */
+	unsigned gf_side = (beat & 1u) ? 0u : BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
+	unsigned gf_pose = (unsigned)((uint64_t)beat_phase * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT >> 16);
+	if (gf_pose >= BOPEEBO_GF_DANCE_FRAMES_PER_BEAT)
+		gf_pose = BOPEEBO_GF_DANCE_FRAMES_PER_BEAT - 1u;
+	draw_visual_frame(VIS_GF_DANCE_0 + gf_side + gf_pose,
 		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
 		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
 		camera_x, camera_y, zoom_q8, 256);
@@ -1069,9 +1091,14 @@ static void draw_scene(uint32_t samples)
 	if (bf_visual_state == 2u)
 		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
 	else if (bf_visual_state == 1u)
-		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
+		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat_phase >> 15) & 1u);
 	else
-		bf_frame = VIS_BF_IDLE_0 + ((beat & 1u) ? 1u : 0u);
+		{
+			unsigned idle_step = (unsigned)((uint64_t)beat_phase * BOPEEBO_BF_IDLE_SEQUENCE_LENGTH >> 16);
+			if (idle_step >= BOPEEBO_BF_IDLE_SEQUENCE_LENGTH)
+				idle_step = BOPEEBO_BF_IDLE_SEQUENCE_LENGTH - 1u;
+			bf_frame = VIS_BF_IDLE_0 + bopeebo_bf_idle_sequence[idle_step];
+		}
 	draw_visual_frame(bf_frame,
 		BOPEEBO_BF_X - (int)(BOPEEBO_BF_FRAME_W / 2u),
 		BOPEEBO_BF_Y - (int)BOPEEBO_BF_FRAME_H,

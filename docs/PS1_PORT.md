@@ -724,3 +724,39 @@ Dans DuckStation 0.1-8675 x64, D3D11, le jeu a été observé à 320×240. Les d
 Les captures PNG fournies ont été extraites des images DuckStation puis recadrées/réduites par nearest-neighbor à la résolution du jeu (320×240), sans interpolation. Fichiers : `health-0.png`, `health-25.png`, `health-50.png`, `health-75.png`, `health-100.png` et `health-moving.png`. Le disque diagnostic est sous `health-test/`; le disque jouable normal est à la racine du livrable. Les BIN/CUE ne sont pas ajoutés à Git.
 
 Ce passage valide visuellement le calcul et l’ancrage dans l’émulateur, pas une mesure de dérive, une validation CRT/PAL ou une exécution sur console. Le résultat audio et gameplay des précédentes versions n’a pas été rejoué lors de ce test de HUD; aucun underrun audio pour cette variante n’est donc affirmé.
+
+## Révision v20 — zone sûre Dad et cycles d’animation audio-clockés
+
+La v19 reste en attente de validation utilisateur. Cette révision ne la considère pas validée sur la seule base de la démo.
+
+### Zone sûre et scènes animées
+
+Les guides diagnostiques restent estimatifs : le bleu/gris (`RGB 48,96,112`) encadre la zone titre 95 % (x=8..311, y=6..233); le vert (`RGB 96,160,128`) encadre la zone action 90 % (x=16..303, y=12..227). Le groupe Dad/autoplay a été décalé de 6 pixels vers l’intérieur : ses récepteurs et notes de 16 px commencent désormais à x=16, au bord de la zone action. Le même layout sert aux notes, tenues et flashes de confirmation; chart, ownership, timing et caméra ne changent pas.
+
+Le convertisseur extrait les 14 étapes du timeline idle officiel de BF et n’en stocke qu’une fois les rasters identiques; la séquence conserve donc les répétitions et cadence d’origine. Dad utilise six poses du cycle de rig idle réparties sur la séquence de 12 images source, plus deux poses chantées par direction; le fit commun garde le sol et les offsets. GF alterne les séquences gauche/droite et utilise neuf poses extraites par côté. Chaque pose provient du rig officiel Week 1, qui inclut le mouvement des enceintes. Les chanteurs reviennent au cycle idle après la durée chant définie par le gameplay. Le beat, les impulsions, animations de repos/chant et événements caméra utilisent le compteur de samples audio et une table tempo Q16 continue; la conversion supporte les événements de changement BPM. Le chart Bopeebo épinglé n’a pas de changement de BPM, donc ce chemin est compilé mais le cas d’un changement effectif n’est pas observé sur le morceau.
+
+Ces séquences sont des échantillons de poses rig sélectionnés, pas une lecture complète de tous les dessins intermédiaires, ni une validation utilisateur de finition. Elles gardent l’identité des rigs tout en limitant les pages chargées en 8bpp. Le tableau d’animation consomme 98 frames visuelles sur 11 pages (9×8bpp + 2×4bpp); le convertisseur vérifie toutes les pages, palettes, framebuffers et réserves dans la carte VRAM.
+
+### Budget v20
+
+| Ressource suivie | Estimation v20 | Portée |
+|---|---:|---|
+| ELF text + data + BSS | 734 698 o (`712 228 + 2 262 + 20 208`), mesuré avec `mipsel-none-elf-size` | Code et tables statiques; comparaison v19 `668 650 o`, soit +66 048 o. |
+| Ring CD→RAM | 98 304 o | Allocation configurée, non high-water. |
+| RAM suivie | 833 002 o (~813,5 Kio) | ELF + ring; pile, heap, allocations SDK et pics runtime non instrumentés. |
+| Double framebuffer | 307 200 o | 2×320×240×16bpp. |
+| Textures | 655 360 o | 9 pages 8bpp et 2 pages 4bpp; +65 536 o versus v19. |
+| CLUT + police réservée | 1 216 + 32 768 o | Palettes mesurées dans les tables; police réservée par estimation. |
+| VRAM suivie | 996 544 o utilisés; 52 032 o de marge arithmétique | 1 Mio total; les allocations runtime non décrites restent à confirmer. |
+| SPU / voix | 34 304 o; 8/24 voix | Flux musical quatre canaux + pool SFX, configuration inchangée. |
+| Débit CD | 98 304 o/s | Quatre canaux 43 008 Hz; aucune lecture CD graphique ajoutée. |
+
+La hausse principale concerne les poses visuelles et le code de conversion/runtime. Ces valeurs décrivent le prototype Bopeebo, pas le jeu complet; le budget ne comprend pas de mesures de marge CPU ou de high-water RAM.
+
+### Compilation, exécution et limites
+
+Deux builds PSn00bSDK 0.24 / GCC MIPS 12.3 ont produit BIN/CUE séparés : `bopeebo-animation-v20-playable` (démo OFF) et `bopeebo-animation-v20` (démo caméra ON). Le build jouable produit un BIN de 10 459 344 octets (4 447 secteurs) et un CUE de 93 octets. Les données officielles, chart et VAGi 4 canaux à 43 008 Hz viennent de sous-modules épinglés ou de fichiers locaux temporaires; aucun SDK, asset généré ou source audio n’est inclus au dépôt.
+
+La version démo a été chargée dans DuckStation 0.1-8675 x64, D3D11, sortie logique 320×240. L’émulateur affichait 58–60 IPS pendant les captures. La capture finale intégrée DuckStation dure 60,60 s (640×480, 59,82 fps, piste audio AAC) et montre la scène de la démo caméra. Elle commence à l’horloge musique 27,766 s, montre un autre état animé à 57,766 s et atteint l’état final autour de 81,6 s; les images à 2 et 30 s de la capture sont distinctes. Elle couvre un extrait continu jusque vers la fin du morceau, pas un parcours jouable depuis le début. Les animations et le rendu sont constatés dans cet extrait; aucun retour utilisateur ne valide encore v19 ou la présentation v20.
+
+Restent à rejouer dans un test utilisateur : plusieurs cycles idle complets, Dad/GF/BF en chant et retour idle, pistes Dad visible/masquée, toute la chanson depuis le début, mute BF, tenues, SFX, redémarrage, compteurs CD/underrun et stabilité audio avec cette nouvelle scène. Le cas de changement BPM a été vérifié par conversion synthétique (100 BPM, puis 120 BPM à 60 s → 2 580 480 samples et beat Q16 6 553 600), mais pas exécuté dans DuckStation. Pas de mesure de dérive, d’essai sur CRT/PAL ni de validation console réelle. Référence visuelle examinée : `Screen_Recording_20261025_185817.mp4` (98,219 s, 1200×1080, 120 fps); les poses et compositions sont adaptées, pas une validation de parité visuelle. Les BIN/CUE et la vidéo sont hors Git sous `outputs/FNF-PS1-v20-final/` (mode jouable à la racine, caméra démo dans `camera-demo/`, capture `camera-transitions-v20.mp4`).

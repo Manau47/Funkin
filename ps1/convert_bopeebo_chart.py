@@ -16,8 +16,12 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--rate", type=int, default=43008)
+    parser.add_argument("--bpm", type=float, default=100.0,
+                        help="song BPM when the chart file has no tempo map")
     args = parser.parse_args()
     chart = json.loads(args.source.read_text(encoding="utf-8"))
+    if not math.isfinite(args.bpm) or args.bpm <= 0:
+        raise SystemExit("BPM must be a finite positive number")
     raw = chart["notes"]["normal"]
     notes = []
     for index, note in enumerate(raw):
@@ -62,6 +66,49 @@ def main() -> None:
     body.extend([f"#define BOPEEBO_CAMERA_EVENT_COUNT {len(camera_events)}u",
                  "static const BopeeboCameraEvent bopeebo_camera_events[BOPEEBO_CAMERA_EVENT_COUNT] = {"])
     body.extend(f"\t{{ {sample}u, {focus} }}," for sample, focus in camera_events)
+    body.extend(["};"])
+
+    # Keep the audio-clock beat phase continuous across tempo changes. Charts
+    # with no map get the pinned song BPM supplied by the build configuration.
+    tempo_changes = [(0.0, args.bpm)]
+    raw_tempo_changes = list(chart.get("bpmChanges", []))
+    raw_tempo_changes.extend(
+        event for event in chart.get("events", [])
+        if event.get("e") in ("BPMChange", "ChangeBPM"))
+    for change in raw_tempo_changes:
+        try:
+            time_ms = float(change.get("t", change.get("time", 0)))
+            bpm_value = change.get("bpm", change.get("v"))
+            if isinstance(bpm_value, dict):
+                bpm_value = bpm_value.get("bpm")
+            bpm = float(bpm_value)
+        except (AttributeError, TypeError, ValueError):
+            raise SystemExit(f"invalid BPM change: {change!r}")
+        if not math.isfinite(time_ms) or time_ms < 0 or not math.isfinite(bpm) or bpm <= 0:
+            raise SystemExit(f"invalid BPM change: {change!r}")
+        tempo_changes.append((time_ms, bpm))
+    tempo_changes.sort()
+    compact_tempo: list[tuple[int, float]] = []
+    for time_ms, bpm in tempo_changes:
+        sample = sample_at_ms(time_ms, args.rate)
+        if compact_tempo and compact_tempo[-1][0] == sample:
+            compact_tempo[-1] = (sample, bpm)
+        elif not compact_tempo or compact_tempo[-1][1] != bpm:
+            compact_tempo.append((sample, bpm))
+    if not compact_tempo or compact_tempo[0][0] != 0:
+        compact_tempo.insert(0, (0, args.bpm))
+    beat_q16 = 0
+    tempo_rows = []
+    for i, (sample, bpm) in enumerate(compact_tempo):
+        if i:
+            previous_sample, previous_bpm = compact_tempo[i - 1]
+            beat_q16 += int((sample - previous_sample) * previous_bpm * 65536 /
+                            (args.rate * 60) + 0.5)
+        tempo_rows.append((sample, beat_q16, max(1, int(bpm * 100 + 0.5))))
+    body.extend(["typedef struct { uint32_t sample; uint32_t beat_q16; uint16_t bpm_centi; } BopeeboTempoChange;",
+                 f"#define BOPEEBO_TEMPO_CHANGE_COUNT {len(tempo_rows)}u",
+                 "static const BopeeboTempoChange bopeebo_tempo_changes[BOPEEBO_TEMPO_CHANGE_COUNT] = {"])
+    body.extend(f"\t{{ {sample}u, {beat}u, {bpm}u }}," for sample, beat, bpm in tempo_rows)
     body.extend(["};", "static const uint16_t pbot1_score_by_ms[161] = {"])
     values = []
     for ms in range(161):
@@ -77,7 +124,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(body), encoding="ascii")
     holds = sum(tail > head for head, tail, _ in notes)
-    print(f"{len(notes)} notes, {holds} holds, last tail {max(t for _, t, _ in notes)} samples")
+    last_tail = max((tail for _, tail, _ in notes), default=0)
+    print(f"{len(notes)} notes, {holds} holds, last tail {last_tail} samples; tempo points {len(tempo_rows)}")
 
 
 if __name__ == "__main__":
