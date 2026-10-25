@@ -616,3 +616,49 @@ cmake -S ps1 -B ps1/build/bopeebo-scene-camera-ui-v13 -G Ninja `
   '-DFUNKIN_PS1_FFMPEG=T:/Docker/MGTV Playlist Gen/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe'
 cmake --build ps1/build/bopeebo-scene-camera-ui-v13 --target ps1-bopeebo-playable-disc
 ```
+
+## Révision v15 — composition officielle et caméra de scène
+
+La vidéo utilisateur du 25 octobre sert de référence de cadrage. La v13 ne reproduisait pas ses changements de focus de manière perceptible; cette révision remplace le déplacement de quelques pixels par un suivi de la caméra dans l’espace de scène. Le retour utilisateur sur v13 (« présentation provisoire ») reste applicable; **la v15 est un prototype exécuté, pas une validation visuelle finale**.
+
+### Source de scène et adaptation 4:3
+
+Le convertisseur lit `assets/preload/data/stages/mainStage.json` depuis le sous-module épinglé `724eba9de9e76761d9cefd52169926bc51c760a5`. Il réutilise les positions et offsets de caméra Dad `(335,885)/(150,-100)`, GF `(751.5,787)/(0,0)` et BF `(989.5,885)/(-100,-100)`, ainsi que l’ordre z (fond, GF, Dad, BF, avant-scène). Les coordonnées monde sont réduites au huitième pour la PS1, puis le décor officiel est précomposé à ses échelles d’origine dans une toile 352×192. La fenêtre n’est pas étirée : le point de vue est recentré et agrandi pour remplir le 320×240. Cette composition autorise Dad à sortir du cadre lorsque BF chante et BF à être rogné lors du focus Dad, comme dans la référence; elle ne promet pas de montrer tous les pieds/personnages à chaque image.
+
+La scène convertie garde des proportions de sprite cohérentes : Dad 53×96, GF 87×79, BF 52×52, à partir des rectangles et dimensions logiques des rigs/atlas officiels. Le zoom base de caméra est adapté du `cameraZoom=1.1` officiel à un facteur Q8 de 640 (2,5×); le zoom d’impulsion atteint au plus 647/256 (~2,53×). Cette calibration PS1 est un choix de cadrage, pas le zoom littéral 1.1 de Flixel. Les sections officielles `FocusCamera` du chart commandent le focus : Dad à 0 ms, BF à 2 400 ms, Dad à 4 800 ms, puis alternance; transitions smoothstep de 600 ms (quatre temps au BPM 100). La pulsation et les transitions utilisent `Stream_GetSamplesPlayed()`. Notes et HUD sont tracés après la scène et restent en coordonnées écran.
+
+Les pistes BF sont placées à y=194 (au lieu de 216) pour libérer de l’espace en bas; Dad garde son groupe compact en haut à gauche. Triangle masque les pistes Dad sans retirer leurs événements ni animations. Le HUD reprend l’icône officielle Dad/BF et la jauge de rapport de force; le texte `SCENE DEMO` apparaît seulement dans la build de démonstration. `Select` révèle/masque les diagnostics. La build jouable par défaut conserve score, santé, timings, fautes, mute et game over; la démo saute le jugement, le score, la santé et le game over et anime les poses depuis le chart. Elle n’est pas un second mode jouable.
+
+### Cartes, budget et pertes visuelles
+
+Les rendus v14/v15 préchargent 7 pages 8bpp et 2 pages 4bpp : 524 288 octets de texels. Les portraits BF/Dad et Sick/Good/Bad/Shit officiels partagent une page 4bpp avec leurs palettes; notes et états de récepteurs restent issus des atlas officiels. Le convertisseur vérifie les bornes et chevauchements des pages/CLUT avec framebuffers, palettes et zones réservées. La palette 4bpp des popups réduit certains dégradés/détails; les images 8bpp importantes restent à 255 couleurs indexées. Aucune méthode de pixel art n’est revendiquée : c’est un échantillonnage nearest-neighbor de sources officielles.
+
+| Région | Occupation calculée / mesurée | Limite |
+|---|---:|---|
+| ELF `text+data+BSS` | 602 778 o (`580 324 + 2 262 + 20 192`), mesure `mipsel-none-elf-size` | Texte contient code et données visuelles/chart/SFX statiques. |
+| Ring CD→RAM | 98 304 o (96 Kio) | Alloué par le lecteur; durée théorique ~1 s au débit VAGi courant. |
+| RAM principale suivie | 701 082 o (~684.7 Kio) | Somme ELF + ring, pas un high-water mark; stack, heap, SDK/runtime et temporaires ne sont pas instrumentés. |
+| Double framebuffer | 307 200 o | Deux images 320×240×16bpp. |
+| Textures | 524 288 o | 7 pages 8bpp + 2 pages 4bpp, d’après la table générée. |
+| CLUT | 1 216 o | Palettes générées et réservées. |
+| Police réservée | 32 768 o | Estimation de planification, pas une allocation mesurée. |
+| VRAM suivi et marge | 865 472 o utilisés; 183 104 o de marge arithmétique | Sur 1 Mio; la marge doit encore accueillir ressources/allocations futures. |
+| SPU / voix | 34 304 o; 8/24 voix utilisées | 32 768 musique + 1 536 SFX; 16 voix libres. |
+| Débit CD | 98 304 o/s | Quatre canaux à 43 008 Hz; pas de nouvelle lecture concurrente de graphismes. |
+
+Le préchargement VRAM ne libère pas la copie statique des textures dans la RAM principale. Ces chiffres décrivent uniquement ce prototype, pas le jeu complet; charts de toutes les semaines, personnages animés complets, menus, scènes et SFX demanderont une nouvelle mesure.
+
+### Build et observation DuckStation
+
+Deux configurations ont compilé dans des répertoires distincts :
+
+- `ps1/build/bopeebo-playable-v15/funkin-ps1-bopeebo-playable.cue` — mode normal, `FUNKIN_PS1_SCENE_DEMO_DEFAULT=OFF`, diagnostics masqués par défaut.
+- `ps1/build/bopeebo-camera-demo-v15/funkin-ps1-bopeebo-playable.cue` — démo clairement étiquetée, mode normal de jugement désactivé, diagnostics masqués par défaut.
+
+Les deux utilisent PSn00bSDK 0.24 / GCC 12.3, CMake 4.4.4, Ninja, Python 3.13, FFmpeg 7.1.1, le chart JSON et le VAGi 4 canaux à 43 008 Hz fournis localement. BIN/CUE, VAGi, assets convertis, captures et SDK restent dans les répertoires de build ignorés ou hors dépôt. Le BIN jouable v15 pèse 10 308 816 octets; son ELF mesure `text=580 324`, `data=2 262`, `BSS=20 192`. La compilation complète des cibles CMake passe après ajout du garde `TEST_PLAYABLE_BOPEEBO` autour de l’ouverture des polices; les avertissements persistants sont ceux de conversion `volatile` dans `stream.c` du SDK et des messages de configuration d’architecture/chemin de CMake portable.
+
+La build démo v15 a démarré dans DuckStation 0.1-8675, rendu 320×240 logique et un statut ~60 FPS. L’enregistrement réel recadré à 640×480 (`ps1/build/bopeebo-camera-demo-v15/camera-transitions-v15.mp4`) montre Dad→BF puis BF→Dad; les captures fixes sont `camera-focus-dad-1.283s.png`, `camera-transition-dad-bf.png` (~2.766 s) et `camera-focus-bf-4.216s.png`. Ces temps sont ceux affichés par l’horloge du programme et sont reproductibles au redémarrage de la démo. La vidéo vient de la sortie DuckStation, recadrée depuis la capture de bureau; elle ne constitue pas une mesure de dérive.
+
+**Observé dans cette exécution :** boot, affichage de scène, notes, focus et transitions dans les deux sens. **Non vérifié :** lecture sonore à l’écoute dans ce passage, compteurs CD/underrun (masqués pendant la capture), parcours complet, contrôles Triangle/Select/mute/notes/holds/SFX/restart sur cette révision, stabilité audio sur une chanson entière, mesure de dérive, validation visuelle utilisateur et exécution sur console réelle. Les validations précédentes de gameplay et d’audio restent des retours sur leurs commits respectifs et ne sont pas automatiquement transférées à cette révision.
+
+Pour reproduire la configuration caméra, suivre les commandes de build de v13 ci-dessus et ajouter `-DFUNKIN_PS1_SCENE_DEMO_DEFAULT=ON -DFUNKIN_PS1_DIAGNOSTICS_DEFAULT=OFF`. Pour la build jouable, mettre `FUNKIN_PS1_SCENE_DEMO_DEFAULT=OFF`. `Select` est le contrôle documenté pour afficher les compteurs sur la démo; cette bascule reste à confirmer sur l’image v15.
