@@ -64,6 +64,9 @@
 #ifndef GAME_SCENE_DEMO_DEFAULT
 #define GAME_SCENE_DEMO_DEFAULT 0
 #endif
+#ifndef GAME_HEALTH_BAR_TEST_DEFAULT
+#define GAME_HEALTH_BAR_TEST_DEFAULT 0
+#endif
 
 typedef struct {
 	int16_t first_center_x;
@@ -102,6 +105,11 @@ static uint8_t camera_focus_display;
 static bool camera_transitioning;
 static bool dad_lanes_visible;
 static bool diagnostics_visible;
+static unsigned hud_display_health_percent;
+static unsigned hud_actual_health_percent;
+static int hud_health_boundary_x;
+static int hud_dad_icon_x;
+static int hud_bf_icon_x;
 static POLY_F4 game_prims[GAME_MAX_PRIMS];
 static unsigned game_prim_count;
 static POLY_FT4 visual_prims[VISUAL_MAX_PRIMS];
@@ -256,7 +264,11 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
-		diagnostics_font_id = FntOpen(24, 56, 272, 164, 0, 512);
+		diagnostics_font_id = FntOpen(
+			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
+			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
+			GAME_HEALTH_BAR_TEST_DEFAULT ? 24 : 164, 0,
+			GAME_HEALTH_BAR_TEST_DEFAULT ? 80 : 512);
 #endif
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -1074,21 +1086,54 @@ static void draw_gameplay(uint32_t samples)
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
 
-	/* HUD and transient judgment sprites are screen-space, independent of camera. */
-	draw_rect(16, 12, 288, 36, 20, 16, 29);
+	/* HUD and transient judgment sprites are screen-space, independent of camera.
+	   The stage remains visible outside the narrow bar and score backplate. */
 	/* FNF-style force balance: red opponent left, green BF right. This is
 	   display-only; health_q8 and game-over logic remain untouched. */
-	draw_rect(94, 19, 132, 16, 18, 18, 24);
-	unsigned player_width = (unsigned)health_q8 * 62u / 512u;
+	uint16_t hud_health_q8 = health_q8;
+#if GAME_HEALTH_BAR_TEST_DEFAULT
+	/* Deterministic visual-only diagnostic: five fixed values, then a triangle
+	   sweep. It never writes back to health_q8 or affects gameplay rules. */
+	uint32_t seconds = stream.config.sample_rate ? samples / (uint32_t)stream.config.sample_rate : 0;
+	if (seconds < 50u)
+		hud_health_q8 = (uint16_t)((seconds / 10u) * 128u);
+	else {
+		uint32_t phase = (seconds - 50u) % 40u;
+		hud_health_q8 = (uint16_t)(phase <= 20u ? (phase * 512u) / 20u : ((40u - phase) * 512u) / 20u);
+	}
+#endif
+	unsigned player_width = ((unsigned)hud_health_q8 * 124u + 256u) / 512u;
+	if (player_width > 124u) player_width = 124u;
 	unsigned opponent_width = 124u - player_width;
-	if (opponent_width) draw_rect(98, 23, (int)opponent_width, 8, 218, 63, 76);
-	if (player_width) draw_rect(98 + (int)opponent_width, 23, (int)player_width, 8, 76, 211, 121);
-	int boundary = 98 + (int)opponent_width;
-	draw_rect(boundary - 1, 18, 2, 18, 245, 244, 231);
-	/* Submit through the same textured-primitive path used by visible arrows. */
-	draw_textured_frame(VIS_UI_ICON_DAD, boundary - 28, 13, 24, 24);
-	draw_textured_frame(health_q8 >= 256u ? VIS_UI_ICON_BF_WIN : VIS_UI_ICON_BF_LOSE,
-		boundary + 4, 13, 24, 24);
+	const int bar_left = 98;
+	const int bar_right = 222;
+	draw_rect(94, 19, 132, 16, 18, 18, 24);
+	if (opponent_width) draw_rect(bar_left, 23, (int)opponent_width, 8, 218, 63, 76);
+	if (player_width) draw_rect(bar_right - (int)player_width, 23, (int)player_width, 8, 76, 211, 121);
+	int boundary = bar_right - (int)player_width;
+	hud_health_boundary_x = boundary;
+	hud_actual_health_percent = ((unsigned)health_q8 * 100u + 256u) / 512u;
+	hud_display_health_percent = ((unsigned)hud_health_q8 * 100u + 256u) / 512u;
+	/* The original engine anchors both icons to its bar frontier, then offsets
+	   by POSITION_OFFSET=26 on a 150 px icon. Scale that ratio to 24 px; clamp
+	   only the portraits to the 95% CRT title-safe rectangle, never the bar. */
+	const int icon_w = 24;
+	const int icon_offset = (icon_w * 26 + 75) / 150;
+	int dad_x = boundary - (icon_w - icon_offset);
+	int bf_x = boundary - icon_offset;
+	if (dad_x < 16) dad_x = 16;
+	if (dad_x > 304 - icon_w) dad_x = 304 - icon_w;
+	if (bf_x < 16) bf_x = 16;
+	if (bf_x > 304 - icon_w) bf_x = 304 - icon_w;
+	hud_dad_icon_x = dad_x;
+	hud_bf_icon_x = bf_x;
+	/* Transparent official portraits sit above fills/frame and share one anchor. */
+	draw_textured_frame(VIS_UI_ICON_DAD, dad_x, 13, icon_w, icon_w);
+	/* The legacy two-frame BF sheet is idle/default + losing, not win + loss.
+	   Match HealthIcon's original 20% loss threshold; its 80% winning state has
+	   no distinct source frame in this sheet, so it uses the idle/default art. */
+	draw_textured_frame(hud_health_q8 <= 102u ? VIS_UI_ICON_BF_LOSE : VIS_UI_ICON_BF_WIN,
+		bf_x, 13, icon_w, icon_w);
 	if (samples < judgement_until && last_judgement) {
 		static const uint8_t popup_frame[5] = {
 			0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
@@ -1558,10 +1603,19 @@ int main(void)
 				milliseconds / 1000u, milliseconds % 1000u);
 		}
 #else
+		/* Small text-only backing preserves contrast without hiding the stage. */
+		draw_rect(32, 39, 208, 9, 18, 16, 25);
 		FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu\n", (long)score, (unsigned long)combo);
 #endif
 		FntFlush(hud_font_id);
 		if (diagnostics_visible) {
+#if GAME_HEALTH_BAR_TEST_DEFAULT
+			FntPrint(diagnostics_font_id, "HEALTH TEST REAL %u%% DRAW %u%%\n",
+				hud_actual_health_percent, hud_display_health_percent);
+			FntPrint(diagnostics_font_id, "EDGE X=%d  DAD X=%d  BF X=%d\n",
+				hud_health_boundary_x, hud_dad_icon_x, hud_bf_icon_x);
+			FntFlush(diagnostics_font_id);
+#else
 			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
 			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
 			FntPrint(diagnostics_font_id, "CRT SAFE 95/90 SELECT:HIDE\n");
@@ -1575,12 +1629,18 @@ int main(void)
 			FntPrint(diagnostics_font_id, "SCORE %ld COMBO %lu HIT %lu MISS %lu DROP %lu\n",
 				(long)score, (unsigned long)combo, (unsigned long)hits,
 				(unsigned long)misses, (unsigned long)hold_drops);
-			FntPrint(diagnostics_font_id, "HP %u.%02u BF %s PAN %u/7 SFX %u\n",
-				(unsigned)(health_q8 / 256u), (unsigned)((health_q8 % 256u) * 100u / 256u),
+			FntPrint(diagnostics_font_id, "HP REAL %u%% HUD %u%% EDGE X=%d\n",
+				hud_actual_health_percent, hud_display_health_percent, hud_health_boundary_x);
+			FntPrint(diagnostics_font_id, "ICONS D=%d BF=%d SAFE 16..280\n", hud_dad_icon_x, hud_bf_icon_x);
+			FntPrint(diagnostics_font_id, "BF %s PAN %u/7 SFX %u\n",
 				(voices_muted || bf_miss_silenced) ? "MUTED" : "LIVE",
 				(unsigned)pan_width, (unsigned)sfx_manual_trigger_count);
+#if GAME_HEALTH_BAR_TEST_DEFAULT
+			FntPrint(diagnostics_font_id, "HEALTH VISUAL TEST ONLY\n");
+#endif
 			FntPrint(diagnostics_font_id, "D-PAD PLAY C MUTE L1/R1 PAN J SFX  START:RESTART\n");
 			FntFlush(diagnostics_font_id);
+#endif
 		}
 #else
 		FntPrint(-1, "BOPEEBO 4CH  INST / DAD-L / BF-R\n");
@@ -1628,4 +1688,3 @@ int main(void)
 #endif
 	}
 }
-
