@@ -596,3 +596,23 @@ L’ELF v13 et l’image disque ont été compilés, puis l’image a été exé
 Ce constat n’est pas un essai complet : aucune chanson entière n’a été rejouée sur v13; aucun test de tous les boutons, mute Circle, SFX, reprise/redémarrage, compteurs CD/underrun ou comparaison audio n’a été effectué dans cette session; la manette n’a pas été validée sur cette image. La capture vidéo ne contient pas de son. Pas de test console réelle, pas de mesure de dérive audio, ni de mesure high-water RAM. Les validations utilisateur des builds précédents restent des retours sur ces commits, et ne sont pas transférées à v13.
 
 Prochaine vérification : lancer le CUE v13 dans DuckStation avec diagnostics visibles, jouer tout Bopeebo en contrôlant les quatre directions, tenues, mute, SFX, Triangle et redémarrage, noter CD/underruns et écouter le mix; demander ensuite un retour utilisateur sur la lisibilité des flèches, ancrages et caméra. Répéter sur console réelle lorsque le matériel sera disponible.
+
+Commande de reconstruction de v13 (après préparation des chemins locaux ci-dessous; les assets doivent être initialisés à la révision épinglée, le chart JSON, le VAGi et FFmpeg sont hors dépôt) :
+
+```powershell
+$sdk = 'C:\Users\Manau47\Documents\Codex\toolchains\PSn00bSDK-0.24-win32'
+$cmake = 'C:\Users\Manau47\Documents\Codex\toolchains\cmake-4.4.4-windows-x86_64'
+$env:PSN00BSDK_LIBS = "$sdk\lib\libpsn00b"
+$env:Path = "$sdk\bin;$cmake\bin;$env:Path"
+$env:CMAKE_ROOT = "$cmake\share\cmake-4.4"
+cmake -S ps1 -B ps1/build/bopeebo-scene-camera-ui-v13 -G Ninja `
+  "-DCMAKE_MAKE_PROGRAM=$sdk/bin/ninja.exe" `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:PSN00BSDK_LIBS/cmake/sdk.cmake" `
+  -DPSN00BSDK_TC=$sdk -DPSN00BSDK_TARGET=mipsel-none-elf `
+  -DCMAKE_BUILD_TYPE=Debug `
+  "-DFUNKIN_PS1_ASSETS_DIR=$PWD/assets" `
+  "-DFUNKIN_PS1_BOPEEBO_CHART_JSON=$env:TEMP/fnf-bopeebo-port/bopeebo-chart.json" `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$env:TEMP/fnf-bopeebo-quality/bopeebo-43008-4ch.vag" `
+  '-DFUNKIN_PS1_FFMPEG=T:/Docker/MGTV Playlist Gen/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe'
+cmake --build ps1/build/bopeebo-scene-camera-ui-v13 --target ps1-bopeebo-playable-disc
+```
