@@ -54,13 +54,15 @@
 #define VISUAL_MAX_PRIMS 180u
 #define BOPEEBO_BPM 100u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
-#define CAMERA_FOCUS_TRAVEL_PX 18
-#define CAMERA_FOCUS_TIME_MS 550u
+#define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
 #ifndef GAME_DAD_LANES_DEFAULT
 #define GAME_DAD_LANES_DEFAULT 1
 #endif
 #ifndef GAME_DIAGNOSTICS_DEFAULT
 #define GAME_DIAGNOSTICS_DEFAULT 0
+#endif
+#ifndef GAME_SCENE_DEMO_DEFAULT
+#define GAME_SCENE_DEMO_DEFAULT 0
 #endif
 
 typedef struct {
@@ -75,7 +77,7 @@ typedef struct {
 /* Separate geometry/state groups preserve the future two-player split. */
 static const NoteGroupLayout note_groups[2] = {
 	{ 14, 78, 18, 16, 24, 0 }, /* Dad/autoplay: compact upper-left */
-	{ 176, 216, 32, 30, 100, 1 } /* BF/player: lower screen */
+	{ 176, 194, 32, 30, 100, 1 } /* BF/player: raised to leave clear lower margin */
 };
 static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
 static int16_t active_hold[4] = { -1, -1, -1, -1 };
@@ -96,6 +98,8 @@ static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t last_judgement;
 static uint32_t judgement_until;
+static uint8_t camera_focus_display;
+static bool camera_transitioning;
 static bool dad_lanes_visible;
 static bool diagnostics_visible;
 static POLY_F4 game_prims[GAME_MAX_PRIMS];
@@ -105,7 +109,6 @@ static unsigned visual_prim_count;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
 static int diagnostics_font_id = -1;
-static int judgement_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
 {
@@ -251,9 +254,10 @@ static void init_video(void)
 {
 	ResetGraph(0);
 	FntLoad(960, 0);
-	hud_font_id = FntOpen(54, 10, 162, 12, 0, 32);
-	judgement_font_id = FntOpen(212, 34, 100, 12, 0, 24);
+#if TEST_PLAYABLE_BOPEEBO
+	hud_font_id = FntOpen(70, 18, 210, 12, 0, 40);
 	diagnostics_font_id = FntOpen(8, 20, 304, 200, 0, 512);
+#endif
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
 		SetDefDispEnv(&frames[i].display, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -292,6 +296,8 @@ static void load_bopeebo_visuals(void)
 		RECT palette_rect = { x, y, 16, 1 };
 		LoadImage(&palette_rect, (uint32_t *)bopeebo_visual_palette_ui4[lane]);
 	}
+	RECT popup_palette_rect = { 272, 480, 16, 1 };
+	LoadImage(&popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
 	DrawSync(0);
 }
 #endif
@@ -809,6 +815,7 @@ static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 	else if (visual->palette >= 3u && visual->palette <= 5u)
 		setClut(p, 272 + (visual->palette - 3u) * 16u, 496);
 	else if (visual->palette == 6u) setClut(p, 256, 480);
+	else if (visual->palette == 7u) setClut(p, 272, 480);
 	else setClut(p, 0, 496);
 }
 
@@ -832,42 +839,21 @@ static bool draw_textured_frame(unsigned frame, int x, int y, int width, int hei
 	return true;
 }
 
-static void draw_visual_frame(unsigned frame, int x, int y, int camera_shift,
-	unsigned zoom_q8, unsigned parallax_q8, unsigned scale_q8)
+static void draw_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
 	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
-	int shift = camera_shift * (int)parallax_q8 / 256;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
-	int x0 = 160 + ((x - 160) * (int)combined_scale) / 256 + shift;
-	int y0 = 124 + ((y - 124) * (int)combined_scale) / 256;
+	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
 	int w = ((int)visual->w * (int)combined_scale) / 256;
 	int h = ((int)visual->h * (int)combined_scale) / 256;
 	setPolyFT4(p);
 	setRGB0(p, 128, 128, 128);
 	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
-	setUV4(p, visual->u, visual->v,
-		(uint8_t)(visual->u + visual->w - 1u), visual->v,
-		visual->u, (uint8_t)(visual->v + visual->h - 1u),
-		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
-	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	set_visual_clut(p, visual);
-	DrawPrim((uint32_t *)p);
-}
-
-static void draw_hud_icon(unsigned frame, int x, int y, unsigned scale_q8)
-{
-	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
-	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
-	POLY_FT4 *p = &visual_prims[visual_prim_count++];
-	int w = ((int)visual->w * (int)scale_q8) / 256;
-	int h = ((int)visual->h * (int)scale_q8) / 256;
-	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
-	setXY4(p, x, y, x + w, y, x, y + h, x + w, y + h);
 	setUV4(p, visual->u, visual->v,
 		(uint8_t)(visual->u + visual->w - 1u), visual->v,
 		visual->u, (uint8_t)(visual->v + visual->h - 1u),
@@ -986,6 +972,28 @@ static void draw_note_group(uint32_t samples, unsigned group_index)
 	}
 }
 
+static void camera_target_for_focus(int focus, int *x, int *y)
+{
+	switch (focus) {
+	case 1: /* mainStage.json: Dad origin and camera offset */
+		*x = BOPEEBO_DAD_X + BOPEEBO_DAD_CAMERA_X;
+		*y = BOPEEBO_DAD_Y - (int)(BOPEEBO_DAD_FRAME_H / 2u) + BOPEEBO_DAD_CAMERA_Y;
+		break;
+	case 0: /* mainStage.json: BF origin and camera offset */
+		*x = BOPEEBO_BF_X + BOPEEBO_BF_CAMERA_X;
+		*y = BOPEEBO_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) + BOPEEBO_BF_CAMERA_Y;
+		break;
+	case 2: /* Girlfriend */
+		*x = BOPEEBO_GF_X + BOPEEBO_GF_CAMERA_X;
+		*y = BOPEEBO_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) + BOPEEBO_GF_CAMERA_Y;
+		break;
+	default: /* Static chart focus */
+		*x = SCREEN_W / 2;
+		*y = SCREEN_H / 2;
+		break;
+	}
+}
+
 static void draw_scene(uint32_t samples)
 {
 	uint32_t rate = BOPEEBO_CHART_RATE;
@@ -994,31 +1002,35 @@ static void draw_scene(uint32_t samples)
 	uint32_t pulse_window = rate * 35u / 100u;
 	unsigned pulse_q8 = pulse_window && beat_phase < pulse_window ?
 		(unsigned)(((uint64_t)(pulse_window - beat_phase) * 7u) / pulse_window) : 0u;
-	unsigned zoom_q8 = 256u + pulse_q8;
+	unsigned zoom_q8 = BOPEEBO_STAGE_CAMERA_ZOOM_Q8 + pulse_q8;
 	unsigned beat = beat_period ? samples / beat_period : 0u;
-	/* Follow official FocusCamera chart sections, not individual note hits. */
+	/* Focus targets and stage transforms are generated from the official stage
+	   data; smooth transitions follow chart events, never individual note hits. */
 	unsigned event_index = 0;
 	while (event_index + 1u < BOPEEBO_CAMERA_EVENT_COUNT &&
 	       bopeebo_camera_events[event_index + 1u].sample <= samples) event_index++;
-	int previous_shift = event_index ?
-		(bopeebo_camera_events[event_index - 1u].focus == 1 ? CAMERA_FOCUS_TRAVEL_PX :
-		 bopeebo_camera_events[event_index - 1u].focus == 0 ? -CAMERA_FOCUS_TRAVEL_PX : 0) : 0;
-	int target_shift = BOPEEBO_CAMERA_EVENT_COUNT ?
-		(bopeebo_camera_events[event_index].focus == 1 ? CAMERA_FOCUS_TRAVEL_PX :
-		 bopeebo_camera_events[event_index].focus == 0 ? -CAMERA_FOCUS_TRAVEL_PX : 0) : 0;
-	uint32_t transition = BOPEEBO_CHART_RATE * CAMERA_FOCUS_TIME_MS / 1000u;
-	uint32_t elapsed = samples - bopeebo_camera_events[event_index].sample;
+	int target_focus = BOPEEBO_CAMERA_EVENT_COUNT ? bopeebo_camera_events[event_index].focus : 1;
+	int previous_focus = event_index ? bopeebo_camera_events[event_index - 1u].focus : target_focus;
+	int from_x, from_y, to_x, to_y;
+	camera_target_for_focus(previous_focus, &from_x, &from_y);
+	camera_target_for_focus(target_focus, &to_x, &to_y);
+	uint32_t transition = rate * CAMERA_FOCUS_TIME_MS / 1000u;
+	uint32_t elapsed = samples >= bopeebo_camera_events[event_index].sample ?
+		samples - bopeebo_camera_events[event_index].sample : transition;
 	if (elapsed > transition) elapsed = transition;
 	uint32_t t = transition ? (uint32_t)(((uint64_t)elapsed * 256u) / transition) : 256u;
 	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
-	int camera_shift = previous_shift + (target_shift - previous_shift) * (int)smooth / 256;
+	int camera_x = from_x + (to_x - from_x) * (int)smooth / 256;
+	int camera_y = from_y + (to_y - from_y) * (int)smooth / 256;
+	camera_focus_display = (uint8_t)target_focus;
+	camera_transitioning = event_index && elapsed < transition;
 
-	/* Scene zoom/focus is audio-clocked; note groups and HUD remain screen-locked. */
-	draw_visual_frame(VIS_STAGE_BACK_0, 0, 0, camera_shift, zoom_q8, 64, 276);
-	draw_visual_frame(VIS_STAGE_BACK_1, 256, 0, camera_shift, zoom_q8, 64, 276);
-	/* The stage curtain is a backdrop layer; character feet must remain visible. */
-	draw_visual_frame(VIS_STAGE_FRONT_0, 0, 150, camera_shift, zoom_q8, 192, 276);
-	draw_visual_frame(VIS_STAGE_FRONT_1, 256, 150, camera_shift, zoom_q8, 192, 276);
+	/* One world transform covers official stage props and characters; the
+	   extended stage composition safely overfills all camera crop edges. */
+	draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
+		camera_x, camera_y, zoom_q8, 256);
+	draw_visual_frame(VIS_STAGE_SCENE_1, BOPEEBO_STAGE_SCENE_X + 256,
+		BOPEEBO_STAGE_SCENE_Y, camera_x, camera_y, zoom_q8, 256);
 
 	unsigned dad_frame;
 	if (samples < dad_visual_until) {
@@ -1031,9 +1043,15 @@ static void draw_scene(uint32_t samples)
 	} else {
 		dad_frame = VIS_DAD_IDLE_0 + (beat / 2u) % 6u;
 	}
-	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u, 96, 70, camera_shift, zoom_q8, 256, 288);
-	/* Stage z-order from mainStage.json: GF behind both singers. */
-	draw_visual_frame(dad_frame, 64, 58, camera_shift, zoom_q8, 256, 288);
+	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u,
+		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
+		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256);
+	/* mainStage z-indices: GF=100, Dad=200, BF=300; stage props are behind. */
+	draw_visual_frame(dad_frame,
+		BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
+		BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256);
 
 	unsigned bf_frame;
 	if (bf_visual_state == 2u)
@@ -1042,7 +1060,10 @@ static void draw_scene(uint32_t samples)
 		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
 	else
 		bf_frame = VIS_BF_IDLE_0 + ((beat & 1u) ? 1u : 0u);
-	draw_visual_frame(bf_frame, 184, 58, camera_shift, zoom_q8, 256, 288);
+	draw_visual_frame(bf_frame,
+		BOPEEBO_BF_X - (int)(BOPEEBO_BF_FRAME_W / 2u),
+		BOPEEBO_BF_Y - (int)BOPEEBO_BF_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256);
 }
 
 static void draw_gameplay(uint32_t samples)
@@ -1053,19 +1074,29 @@ static void draw_gameplay(uint32_t samples)
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
 
-	/* Compact portrait/score/life HUD; only chart diagnostics are textual. */
-	draw_rect(0, 0, 320, 30, 20, 16, 29);
+	/* HUD and transient judgment sprites are screen-space, independent of camera. */
+	draw_rect(0, 0, 320, 32, 20, 16, 29);
 	/* FNF-style force balance: red opponent left, green BF right. This is
 	   display-only; health_q8 and game-over logic remain untouched. */
-	draw_rect(97, 8, 126, 12, 18, 18, 24);
-	unsigned player_width = (unsigned)health_q8 * 61u / 512u;
-	unsigned opponent_width = 122u - player_width;
-	if (opponent_width) draw_rect(99, 10, (int)opponent_width, 8, 218, 63, 76);
-	if (player_width) draw_rect(99 + (int)opponent_width, 10, (int)player_width, 8, 76, 211, 121);
-	int boundary = 99 + (int)opponent_width;
-	draw_rect(boundary - 1, 6, 2, 16, 245, 244, 231);
-	draw_hud_icon(VIS_DAD_IDLE_0, 78, 4, 42);
-	draw_hud_icon(VIS_BF_IDLE_0, 220, 4, 42);
+	draw_rect(96, 4, 128, 12, 18, 18, 24);
+	unsigned player_width = (unsigned)health_q8 * 62u / 512u;
+	unsigned opponent_width = 124u - player_width;
+	if (opponent_width) draw_rect(98, 6, (int)opponent_width, 8, 218, 63, 76);
+	if (player_width) draw_rect(98 + (int)opponent_width, 6, (int)player_width, 8, 76, 211, 121);
+	int boundary = 98 + (int)opponent_width;
+	draw_rect(boundary - 1, 2, 2, 16, 245, 244, 231);
+	draw_textured_frame(VIS_UI_ICON_DAD, boundary - 18, 0, 16, 16);
+	draw_textured_frame(health_q8 >= 256u ? VIS_UI_ICON_BF_WIN : VIS_UI_ICON_BF_LOSE,
+		boundary + 2, 0, 16, 16);
+	if (samples < judgement_until && last_judgement) {
+		static const uint8_t popup_frame[5] = {
+			0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
+			VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
+		};
+		const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
+		draw_textured_frame(popup_frame[last_judgement],
+			(SCREEN_W - popup->w) / 2, 42, popup->w, popup->h);
+	}
 }
 
 static void reset_game_state(void)
@@ -1088,6 +1119,33 @@ static void reset_game_state(void)
 	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
 	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0;
 }
+
+#if GAME_SCENE_DEMO_DEFAULT
+/* Camera QA drives poses from chart time but intentionally skips scoring,
+   health, input judgments, misses and all audio controls/game-over logic. */
+static void update_scene_demo_visuals(uint32_t samples)
+{
+	dad_visual_until = 0;
+	bf_visual_until = 0;
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		const BopeeboNote *note = &bopeebo_notes[i];
+		if (note->head > samples) break;
+		uint32_t until = note->tail > note->head ? note->tail :
+			note->head + BOPEEBO_CHART_RATE * 280u / 1000u;
+		if (samples > until) continue;
+		if (note->lane >= 4u) {
+			dad_visual_lane = (uint8_t)(note->lane - 4u);
+			dad_visual_start = note->head;
+			dad_visual_until = until;
+		} else {
+			bf_visual_lane = (uint8_t)note->lane;
+			bf_visual_state = 1u;
+			bf_visual_until = until;
+		}
+	}
+	if (!bf_visual_until) bf_visual_state = 0;
+}
+#endif
 
 static bool restart_bopeebo(void)
 {
@@ -1446,11 +1504,15 @@ int main(void)
 				if (!restart_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
 				samples = 0;
 			} else {
+#if GAME_SCENE_DEMO_DEFAULT
+				update_scene_demo_visuals(samples);
+#else
 				game_update(samples);
 				if (!health_q8 && Stream_IsActive(&stream)) {
 					Stream_Stop();
 					song_finished = true;
 				}
+#endif
 			}
 		} else if (game_pressed & PAD_START) {
 			if (!restart_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
@@ -1475,19 +1537,24 @@ int main(void)
 #endif
 #if TEST_BOPEEBO_4CH
 #if TEST_PLAYABLE_BOPEEBO
-		/* Keep the default HUD to one row so it does not cover character faces. */
-		FntPrint(hud_font_id, "S%05ld C%03lu\n", (long)score, (unsigned long)combo);
-		FntFlush(hud_font_id);
+		/* Keep the production HUD compact; camera QA is explicitly labelled. */
+#if GAME_SCENE_DEMO_DEFAULT
 		{
-			static const char *const labels[] = { "        ", "Sick    ", "Good    ", "Bad     ", "Shit    " };
-			unsigned shown = samples < judgement_until ? last_judgement : 0u;
-			/* Clear the previous transient judgement after its audio-clock lifetime. */
-			FntPrint(judgement_font_id, "%s\n", shown ? labels[shown] : "        ");
-			FntFlush(judgement_font_id);
+			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
+			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
+			FntPrint(hud_font_id, "SCENE DEMO %s %02u.%03u\n", focus_names[focus_index],
+				milliseconds / 1000u, milliseconds % 1000u);
 		}
+#else
+		FntPrint(hud_font_id, "S%05ld C%03lu\n", (long)score, (unsigned long)combo);
+#endif
+		FntFlush(hud_font_id);
 		if (diagnostics_visible) {
-			FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  DAD TRI:%s  SEL:HIDE\n",
+			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
+			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
+			FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u FOCUS %s%s  TRI:%s\n",
 				milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u,
+				focus_names[focus_index], camera_transitioning ? " ->" : "",
 				dad_lanes_visible ? "ON" : "OFF");
 			FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u PAD %s\n", (unsigned)stream.buffer.length,
 				(unsigned)stream.config.buffer_size, (unsigned)read_errors, (unsigned)underruns,
