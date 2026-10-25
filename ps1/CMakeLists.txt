@@ -216,7 +216,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			--assets "${FUNKIN_PS1_ASSETS_DIR}"
 			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
 			--output "${_playable_visual_header}"
-		DEPENDS convert_bopeebo_visuals.py ${_visual_asset_dependencies}
+		DEPENDS convert_bopeebo_visuals.py animate_preview.py ${_visual_asset_dependencies}
 		VERBATIM
 	)
 	add_custom_command(

@@ -450,3 +450,61 @@ cmake --build ps1/build/bopeebo-ps1-visuals --target ps1-bopeebo-playable-disc
 PSn00bSDK 0.24 / GCC 12.3.0 compile et mkpsxiso ont terminé. L'ELF rapporte `text=414 616`, `data=2 186`, `BSS=13 596`; BIN 10 118 304 octets, CUE 93 octets, SHA-256 BIN `E791CE261F9C441EF6CCE04BDE11572F1E81480B38B374B6A614720B5278E2E4`. DuckStation 0.1-8675 a démarré l'image finale, affiché la scène à 320×240 et 60 IPS; la position audio a avancé et le programme est resté jusqu'à l'état de game over sans écran d'erreur. L'observation a duré environ 18 s et les diagnostics compacts étaient masqués; elle ne permet pas d'affirmer des compteurs CD/underrun nuls, une écoute concluante, les entrées, le mute, les holds, les SFX, le redémarrage ni la lecture entière de 81,6 s. La variante intermédiaire à aplats, elle aussi compilée, a affiché `CD ERR 0`, `UNDERRUN 0` et 60 IPS à environ 2,8 s, mais ces compteurs ne sont pas reportés comme mesure du BIN final.
 
 Vérification hôte `python ps1/test_bopeebo_hold_drop.py` : 5 cas PASS après ajustement du test de source à la signature lane-aware; `git diff --check` : PASS. **Le nouveau jalon visuel n'est pas validé par l'utilisateur.** Le morceau entier, la lisibilité/animation pendant les notes, Circle, holds, SFX, erreurs CD/underruns, redémarrage et un essai console réelle restent à vérifier. Les assets et exécutables construits restent dans le sous-module ou le répertoire ignoré `ps1/build/`.
+
+## Audit graphique et scène améliorée
+
+Le retour utilisateur considère BF convaincant et le prototype prometteur, mais trop proche d'un rendu SNES; les textures réduites ne sont donc pas un plafond artistique. L'objectif reste une présentation PS1 soignée, avec des poses FNF lisibles, un décor reconnaissable, une caméra rythmée discrète et une interface plus fine. PaRappa sert de référence de mise en scène/finition, pas de style à copier. La validation précédente du gameplay et du son concernait le commit `01e84a0`; elle ne vaut pas validation de la présente scène.
+
+### Ressources examinées et conversion
+
+Le sous-module `Funkin.assets` reste épinglé à `724eba9de9e76761d9cefd52169926bc51c760a5`. Les ressources lues sont les rigs Animate `dad/Animation.json` (14 747 o), son atlas `spritemap1.json` (1 298 o, PNG 141 940 o en 991×981), `gf/Animation.json` (69 471 o) et son atlas (3 552 o, PNG 165 789 o en 2064×1065). Le renderer hôte `ps1/animate_preview.py` suit les instances et transformations des timelines Animate et découpe les symboles depuis les atlas : l'aperçu complet mesure 421×767 pour Dad et 697×635 pour GF. Le convertisseur échantillonne 6 poses de repos Dad et 2 images pour chacune des 4 directions; il prend 8 images de danse dans l'animation idle de GF. Ce sont de vraies poses des rigs officiels, mais les timings d'animation restent des échantillons choisis et ne reproduisent pas encore toutes les timelines/expressions du jeu.
+
+BF reste extrait de l'atlas Sparrow officiel `BOYFRIEND.png` (8192×4096, 3 394 386 o; XML 68 461 o), avec 2 images pour chacune de 9 animations (repos, 4 chants, 4 ratés). Le décor semaine 1 est issu de `stageback.png` 2560×1400 (12 564 o), `stagecurtains.png` 2560×1400 (118 886 o) et `stagefront.png` 2560×581 (115 485 o). Fond et rideaux sont composités puis ramenés à 320×176 avec réduction area pour limiter l'aliasing; le premier plan devient 320×56. Les images de personnage sont ramenées à Dad 72×112, GF 128×120 et BF 64×96 avec nearest-neighbor pour garder des contours francs. La scène compose Dad à gauche, GF et ses enceintes au centre, BF à droite; le décor et les personnages passent derrière les huit pistes, récepteurs et notes. Les pistes Dad sont optionnellement masquées en solo par Triangle, sans retirer charts, données ni animations; l'affichage par défaut reste visible jusqu'à la décision sur la scène complète.
+
+Les textures de décor, Dad et GF utilisent une palette commune 8bpp de 255 couleurs plus l'index 0 transparent; BF utilise une CLUT 4bpp distincte de 15 couleurs plus le transparent. La mesure RGB RMSE de la conversion est 0,95 pour décor/Dad/GF combinés, 1,14 pour Dad et 0,87 pour GF; les comparer au RMSE 8,53 obtenu en contraignant le décor à 15 couleurs. Cette métrique ne mesure ni la ressemblance perceptuelle ni les artefacts d'animation. Les couleurs sont quantifiées en RGB555 par le GPU PS1. Le stage est plus détaillé que la première version 4bpp; aucun filtrage bilinéaire n'est utilisé.
+
+La caméra applique un zoom maximal d'environ 2,7 % au début de chaque battement et un déplacement horizontal de 5 pixels vers Dad ou BF pendant leurs sections vocales; fond, rideaux et avant-plan ont des facteurs de parallaxe distincts. Les pistes de notes restent fixes à l'écran pour préserver la lecture rythmique. C'est une impulsion et un recentrage rudimentaires, sans interpolation de transition; ils restent à évaluer pendant le morceau entier et pourront être assouplis si les notes deviennent moins lisibles. L'interface par défaut tient sur une ligne (temps et état Triangle); Select est prévu pour révéler diagnostic, score, combo, jugements, vie, voix et SFX. Sa bascule n'a pas été confirmée avec le clavier de cet essai DuckStation. Ce HUD de prototype n'est pas l'interface finale.
+
+### Carte mémoire
+
+Le build final charge 7 pages 8bpp (7 × 65 536 = 458 752 o) et 3 pages 4bpp (3 × 32 768 = 98 304 o), soit 557 056 o de textures. La table GPU contient désormais ces 10 pages. Une révision intermédiaire avait omis les trois coordonnées de page BF; DuckStation avait alors rendu BF en données corrompues. La revue d'adresses a aussi révélé que la ligne CLUT y=480 chevauchait les 16 dernières lignes du framebuffer inférieur (y=256..495). Le build v5 place les deux palettes aux lignes y=496..511, sous les deux framebuffers, et les textures à partir de x=384. Cette correction est visible dans la capture du build final : BF est entier et le bas du framebuffer n'est plus recouvert.
+
+| Région | Occupation du build v5 | Nature de la mesure / marge |
+|---|---:|---|
+| RAM principale : ELF `text+data+BSS` | 628 570 o (`text=612 752`, `data=2 210`, `BSS=13 608`) | Mesuré par `mipsel-none-elf-size`; `text` contient environ 557 056 o de pages d'images statiques, ainsi que code, chart, lecteur et SFX. |
+| Tampon CD→RAM | 98 304 o (96 Kio) | Alloué par le stream; durée environ 1 s au débit de 98 304 o/s. |
+| RAM suivie | 726 874 o (~710,0 Kio) | ELF + ring; arithmétiquement 1 370 278 o de moins que 2 Mio, avant heap/stack/runtime SDK non mesurés. Ce n'est pas une mesure de pic mémoire. |
+| VRAM : double framebuffer | 307 200 o | Deux buffers 320×240×16bpp aux lignes 0..239 et 256..495. |
+| VRAM : textures préchargées | 557 056 o | Mesuré par nombre et profondeur des pages générées; pas d'accès CD visuel en cours de morceau. |
+| VRAM : CLUT | 544 o | 256 + 16 entrées de 16 bits; placées dans la bande libre y=496..511. |
+| VRAM : police / reste | 32 Kio réservés par estimation; ~151 008 o restent théoriquement | 32 Kio est une réservation de planification, pas une lecture du high-water mark. Restant calculé sur 1 Mio après framebuffers, textures, CLUT et cette réservation. Tables et contraintes SDK doivent être mesurées sur vraie cible. |
+| SPU et CD | 34 304 o SPU; 4 voix stream + 4 SFX; 98 304 o/s CD | Valeurs de configuration existantes, inchangées par le jalon visuel. 16 voix SPU non affectées sur 24; aucun flux d'assets concurrent. |
+
+Le budget de 557 056 o VRAM n'économise pas cette RAM principale : les mêmes pages sont présentes statiquement dans `text` afin de les précharger en VRAM. Le dimensionnement n'est pas celui du jeu final. Il reste à loger charts, personnages et toutes leurs animations, autres décors, menus, effets visuels et banques d'effets sonores. La conversion peut être affinée par chargement/déchargement par scène si le budget global l'exige, après mesure, sans remettre en cause l'audio par des lectures CD concurrentes non évaluées.
+
+### Construction et vérification observée
+
+Entrées du build : assets du sous-module épinglé, chart officiel Bopeebo Normal dans `%TEMP%\fnf-bopeebo-port\bopeebo-chart.json`, VAGi 4 canaux à 43 008 Hz dans `%TEMP%\fnf-bopeebo-quality\bopeebo-43008-4ch.vag`, Python 3 et FFmpeg 7.1.1. Le SDK, les sources et les ressources générées restent hors dépôt. Configuration/build Windows déjà utilisée pour le BIN/CUE v5 :
+
+```powershell
+$sdk = 'C:\toolchains\PSn00bSDK-0.24-win32'
+$cmake = 'C:\toolchains\cmake-4.4.4-windows-x86_64'
+$env:PSN00BSDK_LIBS = "$sdk\lib\libpsn00b"
+$env:Path = "$sdk\bin;$cmake\bin;$env:Path"
+$env:CMAKE_ROOT = "$cmake\share\cmake-4.4"
+cmake -S ps1 -B ps1/build/bopeebo-visual-audit-v5 -G Ninja `
+  "-DCMAKE_MAKE_PROGRAM=$sdk/bin/ninja.exe" `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:PSN00BSDK_LIBS/cmake/sdk.cmake" `
+  -DPSN00BSDK_TC=$sdk -DPSN00BSDK_TARGET=mipsel-none-elf `
+  -DCMAKE_BUILD_TYPE=Debug `
+  "-DFUNKIN_PS1_BOPEEBO_CHART_JSON=$env:TEMP/fnf-bopeebo-port/bopeebo-chart.json" `
+  "-DFUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH=$env:TEMP/fnf-bopeebo-quality/bopeebo-43008-4ch.vag" `
+  '-DFUNKIN_PS1_FFMPEG=T:/Docker/MGTV Playlist Gen/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe'
+cmake --build ps1/build/bopeebo-visual-audit-v5 --target ps1-bopeebo-playable-disc
+```
+
+PSn00bSDK 0.24 / GCC 12.3.0 et mkpsxiso 2.03 ont compilé l'ELF et généré BIN/CUE : 10 346 448 octets (4 399 secteurs) et 93 octets, SHA-256 BIN `B751E80A7610BE06C566CF7983FFAD0128794A61D5EF94CA8706A34C77811971`. Avertissements restants : casts `volatile` dans `stream.c` du SDK lors de la compilation, et avertissements de chemin long/configuration portable CMake; pas d'erreur de compilation.
+
+DuckStation 0.1-8675 a démarré v5 à 320×240. Pendant l'observation, l'émulateur affichait ~60 IPS; le compteur audio est passé de 00:07 à 00:18 sur deux observations, et la scène affichait BF/Dad/GF, les notes et un bas d'écran intact après déplacement des CLUT. L'exécution continue assez longtemps pour voir plusieurs états d'animation. **Ce n'est pas une mesure de fluidité garantie, une mesure de dérive audio, une validation de la chanson complète ou une acceptation utilisateur.** Le compteur diagnostics/CD n'a pas pu être activé via le clavier utilisé dans cette session; erreurs CD et underruns de v5 sont donc inconnus. Les contrôles, mute, notes tenues, SFX et redémarrage de ce nouveau BIN restent à rejouer; pas de test console réelle. Le build est compilé et exécuté dans l'émulateur, mais le jalon graphique reste à valider par l'utilisateur.
+
+Après changements : `python ps1/test_bopeebo_hold_drop.py` — 5 tests de régression passent; `git diff --check` — PASS. Ces tests vérifient les règles de drop hold du code hôte et ne testent pas le rendu GPU.
