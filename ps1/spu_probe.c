@@ -53,6 +53,7 @@
 static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
 static int16_t active_hold[4] = { -1, -1, -1, -1 };
 static uint32_t hold_last_sample[4];
+static uint32_t hold_drops;
 static int32_t score;
 static uint32_t combo;
 static uint32_t misses;
@@ -61,6 +62,11 @@ static uint16_t health_q8 = 256;
 static bool bf_miss_silenced;
 static POLY_F4 game_prims[GAME_MAX_PRIMS];
 static unsigned game_prim_count;
+
+static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
+{
+	return rate && (uint64_t)remaining_samples * 1000u > (uint64_t)rate * 160u;
+}
 #endif
 
 typedef struct {
@@ -584,6 +590,16 @@ static void game_miss(unsigned index)
 	set_voice_pan();
 }
 
+static void game_hold_drop(uint32_t remaining_samples, uint32_t rate)
+{
+	hold_drops++;
+	combo = 0;
+	score -= (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
+	bf_miss_silenced = true;
+	play_resident_sfx(false);
+	set_voice_pan();
+}
+
 static void game_update(uint32_t samples)
 {
 	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
@@ -614,11 +630,8 @@ static void game_update(uint32_t samples)
 				active_hold[lane] = -1;
 			} else if (!down) {
 				uint32_t remaining = end - samples;
-				if (remaining > rate * 160u / 1000u) {
-					score -= (int32_t)(((uint64_t)remaining * 125u) / rate);
-					combo = 0;
-					play_resident_sfx(false);
-				}
+				if (hold_release_is_miss(remaining, rate))
+					game_hold_drop(remaining, rate);
 				active_hold[lane] = -1;
 			}
 		}
@@ -675,14 +688,15 @@ static void draw_gameplay(uint32_t samples)
 			int x = origin + (int)lane * 24;
 			draw_rect(x, 124, 20, 92, 16, 18, 31);
 			draw_rect(x, 199, 20, 3, 104, 104, 128);
-			draw_rect(x + 2, 197, 16, 7, side ? 224 : 52, side ? 118 : 198, side ? 74 : 240);
+			/* Dad is drawn on the left; BF is on the right. Chart lanes stay unchanged. */
+			draw_rect(x + 2, 197, 16, 7, side ? 52 : 224, side ? 198 : 118, side ? 240 : 74);
 		}
 	}
 	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
 		const BopeeboNote *note = &bopeebo_notes[i];
-		int side = note->lane >= 4u;
+		int is_dad = note->lane >= 4u;
 		unsigned lane = note->lane & 3u;
-		int x = (side ? 170 : 20) + (int)lane * 24 + 3;
+		int x = (is_dad ? 20 : 170) + (int)lane * 24 + 3;
 		int y = 200 - (int)(((int64_t)note->head - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
 		int tail_y = 200 - (int)(((int64_t)note->tail - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
 		if (note->tail > note->head) {
@@ -690,11 +704,11 @@ static void draw_gameplay(uint32_t samples)
 			int bottom = y > tail_y ? y : tail_y;
 			if (bottom > 124 && top < 216)
 				draw_rect(x + 4, top < 124 ? 124 : top, 8, (bottom > 216 ? 216 : bottom) - (top < 124 ? 124 : top),
-					side ? 176 : 48, side ? 78 : 158, side ? 56 : 220);
+					is_dad ? 176 : 48, is_dad ? 78 : 158, is_dad ? 56 : 220);
 		}
-		if (game_note_state[i] == 1u || game_note_state[i] == 2u || (side && game_note_state[i] == 3u)) continue;
+		if (game_note_state[i] == 1u || game_note_state[i] == 2u || (is_dad && game_note_state[i] == 3u)) continue;
 		if (y >= 124 && y <= 216)
-			draw_rect(x, y - 5, 18, 10, side ? 248 : 80, side ? 145 : 220, side ? 96 : 255);
+			draw_rect(x, y - 5, 18, 10, is_dad ? 248 : 80, is_dad ? 145 : 220, is_dad ? 96 : 255);
 	}
 }
 
@@ -703,6 +717,7 @@ static void reset_game_state(void)
 	memset(game_note_state, 0, sizeof(game_note_state));
 	for (unsigned lane = 0; lane < 4; lane++) active_hold[lane] = -1;
 	score = combo = misses = hits = 0;
+	hold_drops = 0;
 	health_q8 = 256;
 	bf_miss_silenced = false;
 }
@@ -1092,7 +1107,7 @@ int main(void)
 #endif
 #if TEST_BOPEEBO_4CH
 #if TEST_PLAYABLE_BOPEEBO
-		FntPrint(-1, "BOPEEBO NORMAL  %02u:%02u.%03u  BF <-  DAD ->\n",
+		FntPrint(-1, "BOPEEBO NORMAL  %02u:%02u.%03u  DAD LEFT | BF RIGHT\n",
 			milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u);
 		FntPrint(-1, "SAMPLES %lu  BUFFER %u/%u\n", (unsigned long)samples,
 			(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size);
@@ -1100,9 +1115,9 @@ int main(void)
 			(unsigned)underruns, beat_phase_samples < rate / 10u ? "BEAT" : "");
 		FntPrint(-1, "D-PAD play  CIRCLE mute BF  PAD %s\n", pad_connected ? "ONLINE" : "OFFLINE");
 		FntPrint(-1, "PAN %u/7 L1/R1  SQUARE test  START restart\n", (unsigned)pan_width);
-		FntPrint(-1, "SCORE %ld  COMBO %lu  HITS %lu  MISS %lu\n",
+		FntPrint(-1, "SCORE %ld  COMBO %lu  HITS %lu  MISS %lu DROP %lu\n",
 			(long)score, (unsigned long)combo, (unsigned long)hits,
-			(unsigned long)misses);
+			(unsigned long)misses, (unsigned long)hold_drops);
 		FntPrint(-1, "HEALTH %u.%02u  BF %s\n",
 			(unsigned)(health_q8 / 256u), (unsigned)((health_q8 % 256u) * 100u / 256u),
 			(voices_muted || bf_miss_silenced) ? "MUTED" : "LIVE");
