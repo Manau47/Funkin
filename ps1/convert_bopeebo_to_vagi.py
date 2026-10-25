@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert aligned 22050 Hz stereo Bopeebo WAV stems into a six-channel VAGi."""
+"""Convert aligned stereo Bopeebo WAV stems into a six-channel VAGi."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import wave
 from array import array
 from pathlib import Path
 
-RATE = 22050
+DEFAULT_RATE = 22050
 INTERLEAVE = 4096
 SAMPLES_PER_BLOCK = 28
 BYTES_PER_BLOCK = 16
@@ -39,8 +39,10 @@ def encode_block(samples: list[int], history: tuple[int, int], loop_end: bool) -
             prediction = (previous * coef1 + older * coef2 + 32) >> 6
             max_residual = max(max_residual, abs(source - prediction))
             older, previous = previous, source
+        # PSX ADPCM's shift is inverse: larger values mean a finer step.
+        # Select the finest step that still contains the whole residual range.
         shift = 0
-        while shift < 12 and max_residual > 7 * (4096 >> shift):
+        while shift < 12 and max_residual <= 7 * (4096 >> (shift + 1)):
             shift += 1
 
         previous, older = history
@@ -72,10 +74,10 @@ def encode_block(samples: list[int], history: tuple[int, int], loop_end: bool) -
     return best_body, best_history
 
 
-def read_wav(path: Path) -> tuple[array, int]:
+def read_wav(path: Path, rate: int) -> tuple[array, int]:
     with wave.open(str(path), "rb") as source:
-        if source.getnchannels() != 2 or source.getsampwidth() != 2 or source.getframerate() != RATE:
-            raise ValueError(f"{path} must be 16-bit stereo PCM at {RATE} Hz")
+        if source.getnchannels() != 2 or source.getsampwidth() != 2 or source.getframerate() != rate:
+            raise ValueError(f"{path} must be 16-bit stereo PCM at {rate} Hz")
         frame_count = source.getnframes()
         pcm = array("h")
         pcm.frombytes(source.readframes(frame_count))
@@ -134,9 +136,13 @@ def main() -> None:
     parser.add_argument("--instrumental", type=Path, required=True)
     parser.add_argument("--player-voice", type=Path, required=True)
     parser.add_argument("--opponent-voice", type=Path, required=True)
+    parser.add_argument("--rate", type=int, default=DEFAULT_RATE,
+        help=f"PCM/VAGi sample rate (default: {DEFAULT_RATE})")
     args = parser.parse_args()
 
-    sources = [read_wav(path) for path in (args.instrumental, args.player_voice, args.opponent_voice)]
+    if args.rate <= 0 or args.rate > 44100:
+        parser.error("--rate must be between 1 and 44100 Hz (PS1 SPU output limit)")
+    sources = [read_wav(path, args.rate) for path in (args.instrumental, args.player_voice, args.opponent_voice)]
     lengths = {length for _, length in sources}
     if len(lengths) != 1:
         parser.error("all three WAV stems must have the same decoded frame count and origin")
@@ -153,7 +159,7 @@ def main() -> None:
             print(f"Encoding {labels[stem_index * 2 + channel_index]}: {len(channel)} samples")
             encoded_channels.append(encode_channel(channel, chunk_count))
 
-    write_vagi(args.output, encoded_channels, RATE, source_samples)
+    write_vagi(args.output, encoded_channels, args.rate, source_samples)
 
 
 if __name__ == "__main__":

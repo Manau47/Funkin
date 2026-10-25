@@ -169,11 +169,18 @@ Le test utilise exclusivement la version classique des stems de Bopeebo présent
 
 La licence des ressources à cette révision indique « All rights reserved » et interdit leur redistribution publique sans autorisation. Seuls le code du convertisseur et les références de provenance sont suivis par Git : OGG, WAV PCM, VAGi, EXE, BIN et CUE demeurent hors du dépôt, dans `%TEMP%` ou dans un répertoire de build ignoré. La licence Apache-2.0 du code du jeu ne couvre pas ces ressources audio.
 
-Les WAV de conversion sont décodés par FFmpeg depuis les OGG à 22 050 Hz, PCM signé 16 bits, stéréo. Les trois fichiers ont été contrôlés : origine à 0, même durée et exactement 1 799 280 images-échantillons par canal (81,6 s). Le convertisseur refuse une fréquence, une profondeur, un nombre de canaux ou une longueur différente. Il ne normalise ni ne modifie indépendamment les stems. Le flux VAGi commun ordonne les canaux comme instrumental L/R, BF L/R, Dad L/R. Un seul feeder et un seul compteur audio gardent la lecture entrelacée. Le probe applique un gain SPU identique aux six canaux (`0x2800`) et Circle met à zéro/restaure uniquement les volumes des canaux BF, sans arrêter leur lecture ni déplacer leur position.
+Les trois sources locales contrôlées sont des OGG Vorbis stéréo, 44 100 Hz et 81,600 s : `Inst.ogg` (939 552 octets, débit moyen calculé 92,1 kbit/s), `Voices-bf.ogg` (714 105 octets, 70,0 kbit/s) et `Voices-dad.ogg` (705 962 octets, 69,2 kbit/s). Les fichiers décodés sont alignés à l'origine et en durée. Le flux VAGi ordonne les canaux instrumental L/R, BF L/R, Dad L/R. Aucun stem n'est normalisé indépendamment. Un seul feeder garde les six canaux synchronisés. Le probe applique un gain commun (`0x2800`, 62,5 %) et Circle atténue BF seulement sans arrêter ni déplacer sa lecture.
 
-Le pic instantané maximal calculé de la somme PCM des trois stems décodés est 42 131 sur 32 767, avant atténuation. Le gain commun de 62,5 % donne une borne de 26 332, en laissant environ 6 435 unités (1,9 dB) avant pleine échelle; il conserve les ratios de stems sans normalisation indépendante. Cette estimation ne mesure pas le niveau analogique et le rendu ADPCM doit être écouté en émulateur.
+La première conversion à 22 050 Hz était un choix conservateur de débit CD pour six canaux ADPCM, et non une limite du SPU ou de la PS1. Le SPU accepte des fréquences de lecture bien supérieures, et l'exemple `cdstream` de PSn00bSDK documente un flux jusqu'à 44,1 kHz. La variante 43 008 Hz permet en outre un chunk de 166,7 ms, soit exactement deux chunks par temps à 120 BPM avec l'interleave de 4096 octets. La fréquence doit néanmoins être vérifiée avec le pilote et le rendu sur l'émulateur puis sur console.
 
-À 22 050 Hz et 4096 octets d'interleave par canal, un chunk couvre 7 168 échantillons, soit 325,1 ms. Six canaux occupent 49 152 octets de double-buffer SPU (48 Kio, adresses `0x1010–0xD010`) et utilisent 6 des 24 voix; 18 restent disponibles pour les effets. Le ring buffer principal demeure à 96 Kio, dont le seuil de refill vaut 48 Kio; le préchargement seuil + un chunk est 72 Kio. Le débit du flux est calculé à 75 600 octets/s, soit 36,9 secteurs de 2048 octets/s, sous le plafond nominal de 75 secteurs/s du CD 1x. Ces calculs laissent une marge théorique, mais ne mesurent pas les seeks, les lectures réelles, les interruptions ni les marges CPU/RAM sur console.
+Le budget comparatif à interleave 4096 octets par canal est le suivant. Le double-buffer SPU est 48 Kio dans les deux variantes (`0x1010–0xD010`), utilise 6 des 24 voix et laisse 18 voix pour les effets; le ring buffer principal reste 96 Kio.
+
+| Fréquence | Durée d'un chunk | Débit six canaux | Secteurs 2048 o/s | Couverture du ring 96 Kio |
+|---|---:|---:|---:|---:|
+| 22 050 Hz | 325,1 ms | 75 600 o/s | 36,9 | 1,30 s |
+| 43 008 Hz | 166,7 ms | 147 456 o/s | 72 | 0,67 s |
+
+Le CD en double vitesse transporte nominalement jusqu'à 150 secteurs de données/s; 43 008 Hz représente donc 48 % de ce débit brut. Le seuil de refill de 48 Kio plus un chunk de 24 Kio demande 72 Kio de préchargement. Ce budget rend la variante plausible en lecture séquentielle et laisse une marge de débit théorique, sans mesurer les seeks, interruptions, autres lectures CD ou les marges CPU/RAM sur console.
 
 L'encodeur padde chaque stem jusqu'à une frontière commune de chunk puis ajoute trois chunks silencieux. Le lecteur VAGi désactive la boucle logicielle uniquement pour cette cible : arrivée au bout du fichier, il ne redemande pas le LBA initial. L'écran affiche le compteur SPU, un indicateur de battement dérivé de ce compteur, le tampon, les erreurs CD/underruns, l'état de la manette, l'état de Circle, BF muet/audible, Dad audible et `FINISHED`. Après 81,6 s, le compteur musical est plafonné et le lecteur arrête le SPU après deux chunks de garde, pendant la queue silencieuse; cela évite de vider le ring buffer à la dernière interruption. Le test reste un essai audio seulement : aucun chart, jugement, score, dialogue ou graphisme du jeu n'est intégré.
 
@@ -197,13 +204,37 @@ cmake --preset default -B .\build\bopeebo-audio-final "-DFUNKIN_PS1_AUDIO_VAGI_B
 cmake --build .\build\bopeebo-audio-final --target ps1-bopeebo-audio-disc
 ```
 
-Ouvrir `build/bopeebo-audio-final/funkin-ps1-bopeebo-audio.cue` dans DuckStation. Vérifier le son instrumental et les voix BF/Dad; appuyer sur Circle et confirmer que BF se tait/revient, que Dad et l'instrumental continuent et que `SAMPLES` avance. Laisser finir environ 82 s; l'écran doit afficher `FINISHED`, rester au même temps et ne pas reboucler. Surveiller `UNDERRUNS` et `CD ERRORS` pendant toute la lecture. Une compilation ne valide ni l'écoute ni la fin sans rebouclage. La dérive, la stabilité de timing sur ce nouveau flux et le fonctionnement sur console réelle restent à vérifier après observation.
+Ouvrir les deux images ignorées par Git, `build/bopeebo-audio-final/funkin-ps1-bopeebo-audio.cue` (22 050 Hz) et `build/bopeebo-audio-43008-final/funkin-ps1-bopeebo-audio.cue` (43 008 Hz), dans DuckStation pour comparer. Circle/L coupe/rétablit BF; Dad et l'instrumental doivent continuer. Laisser chaque morceau finir sans rebouclage et surveiller les compteurs. L'utilisateur a confirmé le test Bopeebo initial, y compris Circle avec la touche L de DuckStation, mais a jugé le son dégradé. La nouvelle image haute fréquence a été exécutée pendant les 81,6 s; le mute Circle/L de cette variante n'a pas été retesté.
+
+#### Analyse de qualité et variante 43 008 Hz
+
+L'analyse reproductible `ps1/analyze_bopeebo_audio.py` compare les PCM source, les PCM après rééchantillonnage et le VAGi décodé avec le décodeur ADPCM correspondant. Les SNR/RMSE ADPCM sont mesurés par rapport au PCM de même fréquence; le rééchantillonnage est évalué en reconvertissant vers 44,1 kHz et comparant au décodage source. Les chiffres ci-dessous sont des mesures numériques hors émulateur, pas une mesure de sortie analogique.
+
+| Étape / comparaison | 22 050 Hz | 43 008 Hz |
+|---|---:|---:|
+| Mix PCM source 44,1 kHz : RMS / pic | 6 608,1 / 43 689 | 6 608,1 / 43 689 |
+| Mix PCM à fréquence cible : RMS | 6 603,7 | 6 608,1 |
+| Pic du mix PCM rééchantillonné | 42 132 | 43 270 |
+| PCM rééchantillonné, aller-retour vs source 44,1 kHz (SNR) | 30,06 dB | 78,75 dB |
+| Ancien encodeur ADPCM, erreur PCM→décodage (SNR) | 14,38 dB | 14,56 dB |
+| Encodeur corrigé ADPCM, erreur PCM→décodage (SNR) | 28,38 dB | 35,08 dB |
+| Encodeur corrigé, RMSE | 251,7 LSB | 116,5 LSB |
+| Mix décodé ADPCM corrigé : RMS | 6 608,6 | 6 609,2 |
+| Pic du mix décodé ADPCM corrigé | 42 772 | 43 194 |
+
+L'analyse a isolé deux causes : le rééchantillonnage à 22 050 Hz enlève davantage de contenu aigu, et l'ancienne sélection du champ `shift` ADPCM choisissait une quantification trop grossière (le champ est inverse : une valeur plus élevée donne un pas plus fin). Le convertisseur choisit maintenant le pas le plus fin qui contient les résidus; la qualité numérique s'améliore nettement aux deux fréquences. Le rééchantillonneur 43 008 Hz utilise FFmpeg `aresample` avec filtre 64 taps, cutoff 0,97; la commande antérieure à 22 050 utilisait le rééchantillonneur SWR par défaut. L'analyse ne permet pas à elle seule de quantifier le rendu subjectif, les filtres matériels ou l'aliasing du SPU.
+
+La somme des stems PCM à gain unitaire culmine à 43 689, au-dessus de la pleine échelle 16 bits, donc l'addition brute saturerait. Le probe garde les gains relatifs et applique un gain commun `0x2800` (62,5 %); après ADPCM corrigé, le pic observé est 26 734 à 22 050 Hz et 26 998 à 43 008 Hz, sans échantillons au-delà de ±32 767 (environ 1,7–1,8 dB de marge). Aucun limiteur ni normalisation individuelle n'est appliqué. Le niveau analogique reste à écouter.
+
+Pour régénérer la variante haute fréquence, rééchantillonner chaque stem à 43 008 Hz avec un départ identique, `-ac 2 -ar 43008 -af aresample=43008:filter_size=64:phase_shift=10:linear_interp=0:cutoff=0.97 -c:a pcm_s16le`, puis lancer `convert_bopeebo_to_vagi.py ... --rate 43008`. Le compte exact est 3 509 453 images par canal (81,600005 s); configurer CMake avec `-DFUNKIN_PS1_AUDIO_SAMPLE_COUNT=3509453u`. Pour 22 050 Hz, conserver l'image A/B existante; elle n'est pas remplacée.
 
 #### Résultat de compilation et exécution de cet essai
 
-Le convertisseur a généré hors Git un VAGi de 6 268 928 octets, six canaux, 22 050 Hz, 255 chunks et queue silencieuse. La cible `ps1-bopeebo-audio-disc` a compilé avec PSn00bSDK 0.24 / GCC 12.3.0; l'image BIN fait 7 608 720 octets (3 235 secteurs bruts) et son CUE 90 octets. Les seuls avertissements sont les deux suppressions de `volatile` dans `stream.c` fourni par le SDK.
+La version A/B de référence à 22 050 Hz est conservée hors Git : VAGi 6 268 928 octets, 255 chunks; BIN 7 608 720 octets, CUE 90 octets, SHA-256 `240EF6D1DFD0FA8694BCDEFF7CDF0F650CA5EF7817A7F93E59B6492734BBA902`. Elle correspond à l'ancienne quantification ADPCM et reste utile pour l'écoute comparative.
 
-L'image finale a été démarrée et observée dans DuckStation 0.1-8675. Pendant la lecture, l'écran a montré une progression jusqu'à `AUDIO 01:09.716`, `SAMPLES 1537259`, avec `UNDERRUNS 0` et `CD ERRORS 0`. À la fin, l'écran affichait `AUDIO 01:21.600`, `SAMPLES 1799280`, `BUFFER 73728 / 98304`, `UNDERRUNS 0`, `CD ERRORS 0` et `PLAYBACK: FINISHED (NO LOOP)`. La fin et l'absence de rebouclage ont donc été observées dans l'émulateur pour la totalité des 81,6 s sources. La dérive par rapport à une horloge externe n'a pas été mesurée; je n'ai pas réalisé d'écoute acoustique contrôlée.
+Cette première image a été exécutée dans DuckStation 0.1-8675 sur les 81,6 s; fin sans rebouclage, `UNDERRUNS 0`, `CD ERRORS 0`. L'utilisateur a confirmé le jalon Bopeebo et le mute BF avec Circle/L. Il a signalé une qualité sonore dégradée, ce qui a motivé la comparaison PCM/ADPCM ci-dessus.
 
-Circle n'a pas été validé pendant cette exécution. Les périphériques actifs dans les paramètres DuckStation étaient Keyboard et Mouse, sans manette physique; le raccourci clavier testé n'a pas modifié l'état affiché. `PAD CONNECTED` signifie uniquement que le port virtuel expose une manette. Le code et le prototype quatre canaux précédemment confirmé par l'utilisateur indiquent le chemin de volume prévu, mais Bopeebo doit encore être testé avec une entrée Circle fonctionnelle pour vérifier BF seul, Dad/instrumental inchangés et poursuite de `SAMPLES`. Le compteur qui progresse et les compteurs d'erreurs à zéro prouvent ici l'exécution et le transport audio, pas une écoute acoustique qualitative. Aucun test console réelle n'a été fait.
+La variante corrigée à 43 008 Hz a été recompilée et exécutée dans DuckStation 0.1-8675. Observations écran : 00:00.866 / 37 273 échantillons, 00:24.766 / 1 065 164, 00:58.699 / 2 524 569, puis 01:21.600 / 3 509 453 et `FINISHED (NO LOOP)`. Tous ces points montraient `UNDERRUNS 0` et `CD ERRORS 0`; ce n'est pas une mesure de dérive à une horloge externe. L'écoute A/B subjective et le mute Circle/L sur cette image corrigée restent à faire par l'utilisateur; aucune console réelle n'a été testée.
+
+La variante corrigée 43 008 Hz est hors Git dans `build/bopeebo-audio-43008-final`: VAGi 12 118 016 octets, 493 chunks; BIN 14 326 032 octets, CUE 90 octets, SHA-256 `E288B8C1889BCC8DA248321DE32EC70C10BE50688849278F19E21FD8E2112C49`. Les deux images restent sous des dossiers distincts ignorés par Git. La compilation GCC 12.3.0 / PSn00bSDK 0.24 a réussi; les avertissements observés sont deux conversions `volatile` dans `stream.c` fourni par le SDK. Aucune écoute acoustique contrôlée n'a été faite par l'agent.
 

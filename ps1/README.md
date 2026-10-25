@@ -34,7 +34,7 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 - The probe detected controller port 1 as digital pad type `0x04` and displayed the idle button states. A held-button value was not confirmed during this check.
 - The on-screen footer was shortened after the first emulator view showed it clipped; the rebuilt image displayed the full footer.
 - The user reports a manual DuckStation pass of the four-channel synthetic stream: 3 min 08 s, 0 CD errors, 0 underruns, and Circle voice mute/restore worked. Precise drift and real-console behavior remain unmeasured.
-- A full-length, six-channel classic Bopeebo audio-only image built and reached `FINISHED (NO LOOP)` in DuckStation, with 0 underruns and 0 CD errors. Circle mute was not validated because the active keyboard mapping did not change the displayed state; there was no physical controller or console test.
+- The user confirmed the full-length classic Bopeebo audio test and BF mute/restore with Circle (DuckStation keyboard mapping `L`). Their listening report noted degraded sound. Investigation found both low-rate resampling loss and an ADPCM shift-selection bug; the encoder fix and 43,008 Hz variant are documented in [PS1_PORT.md](../docs/PS1_PORT.md). The 43,008 Hz image ran through `FINISHED (NO LOOP)` in DuckStation with 0 underruns and 0 CD errors. A/B listening of the corrected variants and real-console behavior remain unverified.
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
 

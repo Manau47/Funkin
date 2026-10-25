@@ -93,6 +93,8 @@ endif()
 # encoded to a six-channel VAGi outside the repository; no game assets are
 # copied into Git. Circle mutes BF's player-voice pair while Dad remains live.
 if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO}")
+	set(FUNKIN_PS1_AUDIO_SAMPLE_COUNT "1799280u" CACHE STRING
+		"Source sample count used to stop the full-song Bopeebo probe")
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
 	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
 	set(_psn00bsdk_cdstream_dir
@@ -110,7 +112,7 @@ if(DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOP
 	target_compile_definitions(funkin-ps1-bopeebo-audio PRIVATE
 		TEST_CHANNELS=6
 		TEST_NO_LOOP=1
-		TEST_TOTAL_SAMPLES=1799280u)
+		TEST_TOTAL_SAMPLES=${FUNKIN_PS1_AUDIO_SAMPLE_COUNT})
 	target_include_directories(funkin-ps1-bopeebo-audio PRIVATE
 		"${_psn00bsdk_cdstream_dir}")
 	psn00bsdk_add_cd_image(
