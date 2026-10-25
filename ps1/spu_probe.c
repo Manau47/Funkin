@@ -77,6 +77,21 @@ typedef struct {
 	uint8_t lane_group;
 } NoteGroupLayout;
 
+typedef enum {
+	SCREEN_TITLE,
+	SCREEN_MAIN_MENU,
+	SCREEN_FREEPLAY,
+	SCREEN_GAMEPLAY,
+	SCREEN_PAUSE
+} GameScreen;
+static GameScreen game_screen = SCREEN_TITLE;
+static uint32_t menu_ticks;
+static int menu_font_id = -1;
+typedef struct { const char *song; const char *difficulty; } FreeplayEntry;
+static const FreeplayEntry freeplay_catalog[] = {
+	{ "BOPEEBO", "NORMAL" }
+};
+
 /* Separate geometry/state groups preserve the future two-player split. */
 static const NoteGroupLayout note_groups[2] = {
 	{ 24, 78, 18, 16, 24, 0 }, /* Dad/autoplay: 16px arrow edge aligns with action-safe x=16 */
@@ -202,6 +217,9 @@ static bool sfx_uploaded;
 #endif
 static void abort_cd_read(void);
 static bool start_stream_from_disc(void);
+#if TEST_PLAYABLE_BOPEEBO
+static bool feed_stream(void);
+#endif
 
 enum {
 	FAIL_NOT_FOUND = 1,
@@ -269,6 +287,7 @@ static void init_video(void)
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 24 : 164, 0,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 80 : 512);
+		menu_font_id = FntOpen(48, 183, 256, 42, 0, 48);
 #endif
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -566,21 +585,27 @@ static bool poll_bopeebo4_controls(void)
 		game_pressed = 0;
 	} else {
 		game_pressed = (uint16_t)(previous_pad_buttons & (uint16_t)~buttons);
-		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
 			sfx_square_press_count++;
 			if (sfx_uploaded)
 				play_resident_sfx(true);
 		}
-		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
 #if TEST_PLAYABLE_BOPEEBO
-		if ((previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT))
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT))
 			diagnostics_visible = !diagnostics_visible;
-		if ((previous_pad_buttons & PAD_TRIANGLE) && !(buttons & PAD_TRIANGLE))
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_TRIANGLE) && !(buttons & PAD_TRIANGLE))
 			dad_lanes_visible = !dad_lanes_visible;
-		if ((previous_pad_buttons & PAD_L1) && !(buttons & PAD_L1) && pan_width)
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_L1) && !(buttons & PAD_L1) && pan_width)
 			pan_width--;
-		if ((previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
+		if (game_screen == SCREEN_GAMEPLAY &&
+		    (previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
 			pan_width++;
 #else
 		if ((previous_pad_buttons & PAD_LEFT) && !(buttons & PAD_LEFT) && pan_width)
@@ -1183,6 +1208,40 @@ static void draw_gameplay(uint32_t samples)
 	}
 }
 
+static void draw_menu_screen(void)
+{
+	game_prim_count = 0;
+	visual_prim_count = 0;
+	if (game_screen == SCREEN_PAUSE) {
+		/* Keep the paused stage visible under a compact, screen-space overlay. */
+		draw_rect(55, 158, 210, 74, 14, 12, 28);
+		draw_rect(59, 162, 202, 66, 66, 51, 111);
+		FntPrint(menu_font_id, "PAUSED\nCROSS RESUME\nCIRCLE FREEPLAY");
+		FntFlush(menu_font_id);
+		return;
+	}
+
+	/* Title and menu art uses pinned official logo, GF dance, and Freeplay art.
+	   Main-menu mode deliberately exposes only a path with an implemented action. */
+	if (game_screen == SCREEN_FREEPLAY)
+		draw_textured_frame(VIS_MENU_FREEPLAY_BG, 176, 96, 128, 72);
+	draw_textured_frame(VIS_MENU_LOGO, 72, 6, 176, 132);
+	if (game_screen == SCREEN_MAIN_MENU)
+		draw_textured_frame(VIS_MENU_FREEPLAY_BUTTON, 88, 137, 144, 40);
+	unsigned beat = (menu_ticks / 36u) & 1u;
+	unsigned pose = (menu_ticks / 4u) % BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
+	draw_textured_frame(VIS_GF_DANCE_0 + beat * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
+		210, 119, BOPEEBO_GF_FRAME_W, BOPEEBO_GF_FRAME_H);
+	if (game_screen == SCREEN_TITLE)
+		FntPrint(menu_font_id, "PRESS START TO CONTINUE");
+	else if (game_screen == SCREEN_MAIN_MENU)
+		FntPrint(menu_font_id, "CROSS SELECT");
+	else
+		FntPrint(menu_font_id, "FREEPLAY\n> %s - %s\nCROSS PLAY  CIRCLE BACK",
+			freeplay_catalog[0].song, freeplay_catalog[0].difficulty);
+	FntFlush(menu_font_id);
+}
+
 static void reset_game_state(void)
 {
 	memset(game_note_state, 0, sizeof(game_note_state));
@@ -1252,6 +1311,122 @@ static bool restart_bopeebo(void)
 	song_finished = false;
 	if (CdControlB(CdlPause, 0, 0) != 1 || !start_stream_from_disc()) return false;
 	return true;
+}
+
+static void release_song_resources(void)
+{
+	abort_cd_read();
+	CdReadCallback(0);
+	if (Stream_IsActive(&stream)) Stream_Stop();
+	if (stream_initialized) {
+		Stream_Destroy(&stream);
+		stream_initialized = false;
+	}
+	memset(&stream, 0, sizeof(stream));
+	memset(&read_ctx, 0, sizeof(read_ctx));
+	(void)CdControlB(CdlPause, 0, 0);
+}
+
+static bool enter_bopeebo(void)
+{
+	release_song_resources();
+	reset_game_state();
+	song_finished = false;
+	if (!start_stream_from_disc()) return false;
+	game_screen = SCREEN_GAMEPLAY;
+	return true;
+}
+
+static void return_to_freeplay(void)
+{
+	release_song_resources();
+	song_finished = true;
+	game_screen = SCREEN_FREEPLAY;
+}
+
+static void run_playable_frontend(void)
+{
+	reset_game_state();
+	game_screen = SCREEN_TITLE;
+	menu_ticks = 0;
+	for (;;) {
+		bool pad_connected = poll_bopeebo4_controls();
+		uint32_t samples = 0;
+		unsigned rate = BOPEEBO_CHART_RATE;
+		if (game_screen == SCREEN_GAMEPLAY) {
+			(void)feed_stream();
+			if (read_ctx.read_error || underruns)
+				show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
+			samples = Stream_GetSamplesPlayed(&stream);
+			rate = (unsigned)stream.config.sample_rate;
+			uint32_t song_end = TEST_TOTAL_SAMPLES +
+				(uint32_t)(2u * (stream.config.interleave / 16u * 28u));
+			if (!song_finished && samples >= song_end) {
+				Stream_Stop();
+				song_finished = true;
+			}
+			if (samples > TEST_TOTAL_SAMPLES) samples = TEST_TOTAL_SAMPLES;
+			if (game_pressed & PAD_START) {
+				abort_cd_read();
+				Stream_Stop();
+				game_screen = SCREEN_PAUSE;
+			} else if (!song_finished) {
+#if GAME_SCENE_DEMO_DEFAULT
+				update_scene_demo_visuals(samples);
+#else
+				game_update(samples);
+				if (!health_q8 && Stream_IsActive(&stream)) {
+					Stream_Stop();
+					song_finished = true;
+				}
+#endif
+			}
+			if (song_finished) return_to_freeplay();
+		} else if (game_screen == SCREEN_PAUSE) {
+			if (game_pressed & PAD_CROSS) {
+				if (!Stream_Start(&stream, true)) show_error(FAIL_STREAM_START);
+				game_screen = SCREEN_GAMEPLAY;
+			} else if (game_pressed & PAD_CIRCLE) {
+				return_to_freeplay();
+			}
+		} else if (game_screen == SCREEN_TITLE) {
+			if (game_pressed & PAD_START) game_screen = SCREEN_MAIN_MENU;
+		} else if (game_screen == SCREEN_MAIN_MENU) {
+			if (game_pressed & PAD_CROSS) game_screen = SCREEN_FREEPLAY;
+		} else if (game_screen == SCREEN_FREEPLAY) {
+			if (game_pressed & PAD_CIRCLE) game_screen = SCREEN_MAIN_MENU;
+			else if (game_pressed & PAD_CROSS) {
+				if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+				samples = 0;
+			}
+		}
+
+		if (game_screen == SCREEN_GAMEPLAY || game_screen == SCREEN_PAUSE) {
+			uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
+			draw_gameplay(samples);
+			if (game_screen == SCREEN_PAUSE) {
+				draw_menu_screen();
+			} else {
+				draw_rect(32, 39, 208, 9, 18, 16, 25);
+				FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu", (long)score, (unsigned long)combo);
+				FntFlush(hud_font_id);
+				if (diagnostics_visible) {
+					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
+						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
+						milliseconds % 1000u, pad_connected ? "ON" : "OFF");
+					FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u\n",
+						(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size,
+						(unsigned)read_errors, (unsigned)underruns);
+					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
+					FntFlush(diagnostics_font_id);
+				}
+			}
+		} else {
+			draw_menu_screen();
+		}
+		display_frame();
+		menu_ticks++;
+	}
 }
 #endif
 
@@ -1550,10 +1725,12 @@ int main(void)
 	if (CdControlB(CdlPause, 0, 0) != 1)
 		show_error(FAIL_CD_COMMAND);
 
+#if TEST_PLAYABLE_BOPEEBO
+	run_playable_frontend();
+	return 0;
+#else
 	if (!start_stream_from_disc())
 		show_error(failure_code ? failure_code : FAIL_HEADER_FORMAT);
-#if TEST_PLAYABLE_BOPEEBO
-	reset_game_state();
 #endif
 
 	for (;;) {

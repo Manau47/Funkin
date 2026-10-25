@@ -367,6 +367,18 @@ def rgb555_roundtrip(color: tuple[int, int, int]) -> tuple[int, int, int]:
 	return tuple((((value >> shift) & 31) * 255 + 15) // 31 for shift in (0, 5, 10))
 
 
+def reserve_palette_color(palette: list[tuple[int, int, int]], color: tuple[int, int, int]) -> list[tuple[int, int, int]]:
+    """Keep the official right-note red in the 4bpp CLUT without tinting idle art."""
+    if not palette:
+        return [color]
+    # Replace the nearest color, retaining palette ordering and capacity.
+    # This pins the red hue through RGB555 conversion; gray idle pixels still
+    # map to their own gray entries because quantization is per source pixel.
+    nearest = min(range(len(palette)), key=lambda i: sum(
+        (palette[i][channel] - color[channel]) ** 2 for channel in range(3)))
+    return palette[:nearest] + [color] + palette[nearest + 1:]
+
+
 def write_header(output: pathlib.Path,
                  palette8: list[tuple[int, int, int]],
                  palette4: list[tuple[int, int, int]],
@@ -622,6 +634,28 @@ def build(args: argparse.Namespace) -> None:
         frame_sizes[icon_name] = (24, 24)
         icon_names.append(icon_name)
 
+    # Official menu artwork shares the portrait texture page, so title/menu
+    # navigation adds no additional page to the fixed VRAM map.
+    logo_xml = assets / "preload" / "images" / "logoBumpin.xml"
+    logo_png = assets / "preload" / "images" / "logoBumpin.png"
+    logo_frames = atlas_frames(logo_xml).get("logo bumpin")
+    if not logo_frames:
+        raise ValueError("missing official logo bumpin frame in pinned assets")
+    temp_images["menu_logo"] = extract_sparrow_frame(ffmpeg, logo_png, logo_frames[0], (160, 120))
+    frame_sizes["menu_logo"] = (160, 120)
+    freeplay_bg = assets / "preload" / "images" / "freeplay" / "freeplayBGweek1-bf.png"
+    temp_images["menu_freeplay_bg"] = extract_stage(ffmpeg, freeplay_bg, 128, 72)
+    frame_sizes["menu_freeplay_bg"] = (128, 72)
+    freeplay_button_png = assets / "preload" / "images" / "mainmenu" / "freeplay.png"
+    freeplay_button_xml = assets / "preload" / "images" / "mainmenu" / "freeplay.xml"
+    freeplay_buttons = atlas_frames(freeplay_button_xml).get("freeplay selected")
+    if not freeplay_buttons:
+        raise ValueError("missing official Freeplay selection sprite in pinned assets")
+    temp_images["menu_freeplay_button"] = extract_sparrow_frame(
+        ffmpeg, freeplay_button_png, freeplay_buttons[0], (128, 36))
+    frame_sizes["menu_freeplay_button"] = (128, 36)
+    menu_names = ["menu_logo", "menu_freeplay_bg", "menu_freeplay_button"]
+
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
     bf_core_names = [name for name in bf_names if not name.startswith("bf_miss_")]
@@ -632,10 +666,13 @@ def build(args: argparse.Namespace) -> None:
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
     # One shared 8bpp palette fits alongside the BF CLUT in the 320-word
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
-    palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names], 255)
+    palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names + menu_names], 255)
     palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
     palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
                    for d in directions]
+    # The official right-arrow fill is saturated red. Preserve it explicitly
+    # in the constrained CLUT; idle receptor source pixels remain unmodified.
+    palette_ui4[3] = reserve_palette_color(palette_ui4[3], (249, 57, 63))
     palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
     palette_popup4 = median_palette([temp_images[n] for n in popup_names], 15)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
@@ -643,6 +680,20 @@ def build(args: argparse.Namespace) -> None:
     quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
     quantized_ui4 = {name: quantize(temp_images[name], palette_ui4[lane])
                      for lane, direction in enumerate(directions) for name in ui4_by_direction[direction]}
+    right_source = temp_images["ui_note_right"]
+    right_indices = quantized_ui4["ui_note_right"]
+    right_red = 0
+    for pixel, palette_index in enumerate(right_indices):
+        source = pixel * 4
+        if right_source[source + 3] < 128 or right_source[source] < 180 or \
+                right_source[source + 1] > 110 or right_source[source + 2] > 135:
+            continue
+        right_red += 1
+        decoded = rgb555_roundtrip(palette_ui4[3][palette_index - 1])
+        if decoded[0] < 150 or decoded[1] > 130 or decoded[2] > 155:
+            raise ValueError(f"official right-note red was lost in the generated CLUT: {decoded}")
+    if right_red == 0:
+        raise ValueError("official right-note extraction contains no opaque red pixels")
     quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
     quantized_popup4 = {name: quantize(temp_images[name], palette_popup4) for name in popup_names}
     quantized_icon8 = {
@@ -673,8 +724,10 @@ def build(args: argparse.Namespace) -> None:
     pack_8bpp([(n, quantized_bf8[n], *frame_sizes[n]) for n in bf_core_names],
               bf8_first, 2, pages8, descriptors)
     portrait_first_page = len(pages8)
-    pack_8bpp([(name, quantized_icon8[name], *frame_sizes[name]) for name in icon_names],
-              portrait_first_page, 0, pages8, descriptors)
+    pack_8bpp(
+        [(name, quantized_icon8[name], *frame_sizes[name]) for name in icon_names] +
+        [(name, quantized8[name], *frame_sizes[name]) for name in menu_names],
+        portrait_first_page, 0, pages8, descriptors)
     for name in icon_names:
         descriptors[name]["palette"] = 0 if name == "ui_icon_dad" else 2
     # Keep the less frequent miss poses 4bpp; the song-critical idle/sing poses
@@ -747,6 +800,7 @@ def build(args: argparse.Namespace) -> None:
     print(f"BF core idle/sing at {FRAME_W}x{FRAME_H}: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
     print("Official arrows/receptors/holds: 4bpp per direction, 15-color CLUT each; " +
           ", ".join(f"{d} RMSE {rmse(ui4_by_direction[d], palette_ui4[i]):.2f}" for i, d in enumerate(directions)))
+    print(f"Official right-note red preserved in its own CLUT: {right_red} opaque source pixels; idle receptor pixels are not recolored")
     print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
     print("Official health portraits at 24x24 use the 8bpp character CLUTs (Dad/main, BF/BF)")
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,

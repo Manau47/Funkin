@@ -760,3 +760,36 @@ Deux builds PSn00bSDK 0.24 / GCC MIPS 12.3 ont produit BIN/CUE séparés : `bope
 La version démo a été chargée dans DuckStation 0.1-8675 x64, D3D11, sortie logique 320×240. L’émulateur affichait 58–60 IPS pendant les captures. La capture finale intégrée DuckStation dure 60,60 s (640×480, 59,82 fps, piste audio AAC) et montre la scène de la démo caméra. Elle commence à l’horloge musique 27,766 s, montre un autre état animé à 57,766 s et atteint l’état final autour de 81,6 s; les images à 2 et 30 s de la capture sont distinctes. Elle couvre un extrait continu jusque vers la fin du morceau, pas un parcours jouable depuis le début. Les animations et le rendu sont constatés dans cet extrait; aucun retour utilisateur ne valide encore v19 ou la présentation v20.
 
 Restent à rejouer dans un test utilisateur : plusieurs cycles idle complets, Dad/GF/BF en chant et retour idle, pistes Dad visible/masquée, toute la chanson depuis le début, mute BF, tenues, SFX, redémarrage, compteurs CD/underrun et stabilité audio avec cette nouvelle scène. Le cas de changement BPM a été vérifié par conversion synthétique (100 BPM, puis 120 BPM à 60 s → 2 580 480 samples et beat Q16 6 553 600), mais pas exécuté dans DuckStation. Pas de mesure de dérive, d’essai sur CRT/PAL ni de validation console réelle. Référence visuelle examinée : `Screen_Recording_20261025_185817.mp4` (98,219 s, 1200×1080, 120 fps); les poses et compositions sont adaptées, pas une validation de parité visuelle. Les BIN/CUE et la vidéo sont hors Git sous `outputs/FNF-PS1-v20-final/` (mode jouable à la racine, caméra démo dans `camera-demo/`, capture `camera-transitions-v20.mp4`).
+
+## Révision v21 — correction rouge et première navigation menu
+
+Le retour utilisateur approuve globalement v20 et signale la perte du rouge des flèches droite. Le convertisseur réserve explicitement la teinte rouge officielle dans la CLUT 4bpp droite et vérifie le résultat RGB555 : 360 pixels rouges opaques de la note droite sont conservés. Les pixels sources des récepteurs au repos ne sont pas recolorés. Les mêmes assets directionnels sont utilisés par les groupes BF et Dad, les tenues et les confirmations. Cette vérification automatique couvre l’extraction/quantification; l’affichage des quatre directions dans DuckStation n’a pas été observé pour v21.
+
+Le build ajoute un parcours prototype à la manette : Titre (Start) → menu principal (seule entrée active : Freeplay) → Freeplay (`Bopeebo — Normal`, seule entrée jouable) → jeu. Start ouvre une pause minimale; Croix reprend, Rond retourne au Freeplay; la fin du morceau retourne au Freeplay. Le convertisseur réutilise les ressources officielles épinglées du logo, du bouton Freeplay, du fond Freeplay Week 1 et des rigs BF/GF. Les interactions mobiles, achats, Newgrounds et liens web ne sont pas simulés. Story Mode, Options et Crédits ne sont pas rendus actifs. Le catalogue C utilise une entrée, extensible aux prochaines chansons/difficultés.
+
+Cette étape reste incomplète sur trois demandes explicites : la musique et les sons de navigation des menus ne sont pas encore raccordés; les pages de textures menu et gameplay sont encore chargées ensemble au démarrage (elles partagent la page portraits sans accroître le nombre de pages), et ne sont donc pas libérées/réutilisées par écran; les labels utilisent la police SDK plutôt qu’une conversion des textes de menu officiels. Le build compile, mais aucun parcours ni transition répétée n’a été observé dans DuckStation, et aucune vidéo/capture v21 n’a été produite. L’automatisation UI de DuckStation a perdu la fenêtre après le redémarrage du processus; l’ancienne fenêtre affichait l’ancienne session, qui n’est pas une preuve d’exécution v21.
+
+### Budgets mesurés / estimés par écran
+
+Les allocations sont identiques sur les trois écrans de menu et le gameplay, car cette version ne fait pas encore de libération d’assets par écran. Les chiffres ELF proviennent de `mipsel-none-elf-size -A` sur le build final, et comprennent les tables visuelles statiques mais pas la pile, les allocations SDK/heap ni les pointes temporaires.
+
+| Ressource | Titre / menu / Freeplay | Gameplay / pause | Nature |
+|---|---:|---:|---|
+| Code `.text` | 46 888 o | 46 888 o | mesuré |
+| Données statiques `.rodata + .data + .sdata + .sbss + .bss` | 688 094 o | 688 094 o | mesuré; contient les 655 360 o de pages texture et les états |
+| Ring de streaming CD→RAM | 98 304 o | 98 304 o | allocation configurée; présent même menu |
+| RAM suivie code + statiques + ring | 833 286 o (~813,8 Kio) | 833 286 o (~813,8 Kio) | somme mesurée/configurée; pas un high-water |
+| Framebuffers | 307 200 o | 307 200 o | 2×320×240×16bpp |
+| Textures | 655 360 o | 655 360 o | 9×8bpp + 2×4bpp, logo/fond inclus dans pages existantes |
+| CLUT + réserve police | 1 216 + 32 768 o | 1 216 + 32 768 o | tables mesurées + réserve SDK |
+| VRAM suivie | 996 544 o / 1 Mio; marge arithmétique 52 032 o | idem | carte vérifiée par le convertisseur |
+| SPU | 34 304 o; 8/24 voix | 34 304 o; 8/24 voix | tampon musical 32 Kio + SFX 1 536 o; allocation du prototype |
+| Débit CD | 0 octet/s | ~98,3 Ko/s | menus silencieux; musique Bopeebo 4 canaux à 43 008 Hz en jeu |
+
+Le chiffre statique `.rodata + .data + .sdata + .sbss + .bss` vaut 688 094 octets; il ne représente pas des allocations toutes indépendantes. Les textures sont encore embarquées dans le binaire/ROM et chargées ensemble en VRAM : aucune économie de RAM n’est revendiquée. Aucun effet de navigation officiel n’est joué au menu. Cette architecture est un jalon d’interaction, pas le découpage mémoire demandé pour la livraison finale.
+
+### Compilation, exécution et vérifications restantes
+
+Build final PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja dans `C:\Users\Manau47\Documents\Codex\ps1-build-v21-menu` : génération de la conversion, compile/link et image BIN/CUE réussis. Image 10 461 696 octets (4 448 secteurs), CUE 93 octets. Le build réutilise les ressources du sous-module assets à la révision épinglée; aucun SDK ni asset source/généré n’est ajouté au dépôt.
+
+Seule validation automatique visuelle : contrôle du CLUT et du rouge avant compilation, plus vérification des chevauchements framebuffer/textures/palettes. Compilation réussie n’est pas exécution. Les quatre couleurs et états, le parcours menu, le mute, la fin de morceau, pause/reprise/retour, plusieurs cycles et les compteurs audio/CD restent à observer dans DuckStation. Aucune validation PAL/CRT ou console réelle. La vidéo utilisateur a servi à cadrer le flux; aucune nouvelle capture v21 n’a été obtenue.
