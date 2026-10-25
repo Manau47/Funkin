@@ -45,6 +45,23 @@ def main() -> None:
         "static const BopeeboNote bopeebo_notes[BOPEEBO_NOTE_COUNT] = {",
     ]
     body.extend(f"\t{{ {head}u, {tail}u, {lane}u }}," for head, tail, lane in notes)
+    body.extend(["};", "typedef struct { uint32_t sample; int8_t focus; } BopeeboCameraEvent;"])
+    camera_events = []
+    for event in chart.get("events", []):
+        if event.get("e") != "FocusCamera":
+            continue
+        try:
+            time_ms = float(event["t"])
+            focus = int(event["v"])
+        except (KeyError, TypeError, ValueError):
+            raise SystemExit(f"invalid FocusCamera event: {event!r}")
+        if not math.isfinite(time_ms) or time_ms < 0 or focus not in (-1, 0, 1, 2):
+            raise SystemExit(f"unsupported FocusCamera event: {event!r}")
+        camera_events.append((sample_at_ms(time_ms, args.rate), focus))
+    camera_events.sort()
+    body.extend([f"#define BOPEEBO_CAMERA_EVENT_COUNT {len(camera_events)}u",
+                 "static const BopeeboCameraEvent bopeebo_camera_events[BOPEEBO_CAMERA_EVENT_COUNT] = {"])
+    body.extend(f"\t{{ {sample}u, {focus} }}," for sample, focus in camera_events)
     body.extend(["};", "static const uint16_t pbot1_score_by_ms[161] = {"])
     values = []
     for ms in range(161):

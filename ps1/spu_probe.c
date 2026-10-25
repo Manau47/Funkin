@@ -54,6 +54,8 @@
 #define VISUAL_MAX_PRIMS 180u
 #define BOPEEBO_BPM 100u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
+#define CAMERA_FOCUS_TRAVEL_PX 18
+#define CAMERA_FOCUS_TIME_MS 550u
 #ifndef GAME_DAD_LANES_DEFAULT
 #define GAME_DAD_LANES_DEFAULT 1
 #endif
@@ -72,8 +74,8 @@ typedef struct {
 
 /* Separate geometry/state groups preserve the future two-player split. */
 static const NoteGroupLayout note_groups[2] = {
-	{ 14, 78, 18, 14, 24, 0 }, /* Dad/autoplay: compact upper-left */
-	{ 176, 216, 32, 24, 100, 1 } /* BF/player: lower screen */
+	{ 14, 78, 18, 16, 24, 0 }, /* Dad/autoplay: compact upper-left */
+	{ 176, 216, 32, 30, 100, 1 } /* BF/player: lower screen */
 };
 static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
 static int16_t active_hold[4] = { -1, -1, -1, -1 };
@@ -92,9 +94,8 @@ static uint32_t bf_visual_until;
 static uint8_t dad_visual_lane;
 static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
-static uint8_t camera_focus;
-static uint32_t camera_focus_started;
-static uint32_t camera_focus_until;
+static uint8_t last_judgement;
+static uint32_t judgement_until;
 static bool dad_lanes_visible;
 static bool diagnostics_visible;
 static POLY_F4 game_prims[GAME_MAX_PRIMS];
@@ -104,6 +105,7 @@ static unsigned visual_prim_count;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
 static int diagnostics_font_id = -1;
+static int judgement_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
 {
@@ -250,6 +252,7 @@ static void init_video(void)
 	ResetGraph(0);
 	FntLoad(960, 0);
 	hud_font_id = FntOpen(54, 10, 162, 12, 0, 32);
+	judgement_font_id = FntOpen(212, 34, 100, 12, 0, 24);
 	diagnostics_font_id = FntOpen(8, 20, 304, 200, 0, 512);
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -669,9 +672,8 @@ static void game_miss(unsigned index)
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)(bopeebo_notes[index].lane & 3u);
 	bf_visual_until = now + BOPEEBO_CHART_RATE * 350u / 1000u;
-	camera_focus = 2;
-	camera_focus_started = now;
-	camera_focus_until = bf_visual_until;
+	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
+	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
 	play_resident_sfx(false);
 	set_voice_pan();
 }
@@ -686,9 +688,8 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
 	bf_visual_until = now + rate * 350u / 1000u;
-	camera_focus = 2;
-	camera_focus_started = now;
-	camera_focus_until = bf_visual_until;
+	last_judgement = 4u;
+	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
 	play_resident_sfx(false);
 	set_voice_pan();
 }
@@ -705,9 +706,6 @@ static void game_update(uint32_t samples)
 			dad_visual_start = samples;
 			dad_visual_until = bopeebo_notes[i].tail > bopeebo_notes[i].head ?
 				bopeebo_notes[i].tail : samples + rate * 250u / 1000u;
-			camera_focus = 1;
-			camera_focus_started = samples;
-			camera_focus_until = dad_visual_until;
 		}
 		if (bopeebo_notes[i].lane < 4u && !game_note_state[i] &&
 		    samples > bopeebo_notes[i].head &&
@@ -751,9 +749,8 @@ static void game_update(uint32_t samples)
 			bf_visual_state = 2;
 			bf_visual_lane = (uint8_t)lane;
 			bf_visual_until = samples + rate * 350u / 1000u;
-			camera_focus = 2;
-			camera_focus_started = samples;
-			camera_focus_until = bf_visual_until;
+			last_judgement = 4u;
+			judgement_until = samples + rate * 650u / 1000u;
 			continue;
 		}
 		uint32_t head = bopeebo_notes[target].head;
@@ -762,10 +759,11 @@ static void game_update(uint32_t samples)
 		int32_t award = pbot1_score(diff, rate);
 		score += award;
 		uint64_t timing = (uint64_t)diff * 1000u;
-		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); }
-		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); }
-		else if (timing <= (uint64_t)rate * 135u) { combo = 0; }
-		else { combo = 0; add_health(-5); }
+		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); last_judgement = 1u; }
+		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); last_judgement = 2u; }
+		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
+		else { combo = 0; add_health(-5); last_judgement = 4u; }
+		judgement_until = samples + rate * 650u / 1000u;
 		hits++;
 		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
 		bf_miss_silenced = false;
@@ -773,9 +771,6 @@ static void game_update(uint32_t samples)
 		bf_visual_lane = (uint8_t)lane;
 		bf_visual_until = bopeebo_notes[target].tail > samples ?
 			bopeebo_notes[target].tail : samples + rate * 220u / 1000u;
-		camera_focus = 2;
-		camera_focus_started = samples;
-		camera_focus_until = bf_visual_until;
 		if (bopeebo_notes[target].tail > head && (game_buttons & mask) == 0) {
 			active_hold[lane] = (int16_t)target;
 			hold_last_sample[lane] = samples;
@@ -1001,24 +996,29 @@ static void draw_scene(uint32_t samples)
 		(unsigned)(((uint64_t)(pulse_window - beat_phase) * 7u) / pulse_window) : 0u;
 	unsigned zoom_q8 = 256u + pulse_q8;
 	unsigned beat = beat_period ? samples / beat_period : 0u;
-	int target_shift = camera_focus == 1u ? 3 : (camera_focus == 2u ? -3 : 0);
-	int camera_shift = 0;
-	if (samples < camera_focus_until && target_shift) {
-		uint32_t ease_samples = rate * 120u / 1000u;
-		uint32_t in = samples > camera_focus_started ? samples - camera_focus_started : 0u;
-		uint32_t out = camera_focus_until - samples;
-		uint32_t ease = in < ease_samples ? in * 256u / ease_samples : 256u;
-		uint32_t release = out < ease_samples ? out * 256u / ease_samples : 256u;
-		if (release < ease) ease = release;
-		camera_shift = target_shift * (int)ease / 256;
-	}
+	/* Follow official FocusCamera chart sections, not individual note hits. */
+	unsigned event_index = 0;
+	while (event_index + 1u < BOPEEBO_CAMERA_EVENT_COUNT &&
+	       bopeebo_camera_events[event_index + 1u].sample <= samples) event_index++;
+	int previous_shift = event_index ?
+		(bopeebo_camera_events[event_index - 1u].focus == 1 ? CAMERA_FOCUS_TRAVEL_PX :
+		 bopeebo_camera_events[event_index - 1u].focus == 0 ? -CAMERA_FOCUS_TRAVEL_PX : 0) : 0;
+	int target_shift = BOPEEBO_CAMERA_EVENT_COUNT ?
+		(bopeebo_camera_events[event_index].focus == 1 ? CAMERA_FOCUS_TRAVEL_PX :
+		 bopeebo_camera_events[event_index].focus == 0 ? -CAMERA_FOCUS_TRAVEL_PX : 0) : 0;
+	uint32_t transition = BOPEEBO_CHART_RATE * CAMERA_FOCUS_TIME_MS / 1000u;
+	uint32_t elapsed = samples - bopeebo_camera_events[event_index].sample;
+	if (elapsed > transition) elapsed = transition;
+	uint32_t t = transition ? (uint32_t)(((uint64_t)elapsed * 256u) / transition) : 256u;
+	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
+	int camera_shift = previous_shift + (target_shift - previous_shift) * (int)smooth / 256;
 
 	/* Scene zoom/focus is audio-clocked; note groups and HUD remain screen-locked. */
 	draw_visual_frame(VIS_STAGE_BACK_0, 0, 0, camera_shift, zoom_q8, 64, 276);
 	draw_visual_frame(VIS_STAGE_BACK_1, 256, 0, camera_shift, zoom_q8, 64, 276);
 	/* The stage curtain is a backdrop layer; character feet must remain visible. */
-	draw_visual_frame(VIS_STAGE_FRONT_0, 0, 184, camera_shift, zoom_q8, 192, 276);
-	draw_visual_frame(VIS_STAGE_FRONT_1, 256, 184, camera_shift, zoom_q8, 192, 276);
+	draw_visual_frame(VIS_STAGE_FRONT_0, 0, 150, camera_shift, zoom_q8, 192, 276);
+	draw_visual_frame(VIS_STAGE_FRONT_1, 256, 150, camera_shift, zoom_q8, 192, 276);
 
 	unsigned dad_frame;
 	if (samples < dad_visual_until) {
@@ -1031,8 +1031,9 @@ static void draw_scene(uint32_t samples)
 	} else {
 		dad_frame = VIS_DAD_IDLE_0 + (beat / 2u) % 6u;
 	}
-	draw_visual_frame(dad_frame, 24, 62, camera_shift, zoom_q8, 256, 288);
-	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u, 96, 80, camera_shift, zoom_q8, 256, 288);
+	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u, 96, 70, camera_shift, zoom_q8, 256, 288);
+	/* Stage z-order from mainStage.json: GF behind both singers. */
+	draw_visual_frame(dad_frame, 64, 58, camera_shift, zoom_q8, 256, 288);
 
 	unsigned bf_frame;
 	if (bf_visual_state == 2u)
@@ -1041,7 +1042,7 @@ static void draw_scene(uint32_t samples)
 		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
 	else
 		bf_frame = VIS_BF_IDLE_0 + ((beat & 1u) ? 1u : 0u);
-	draw_visual_frame(bf_frame, 232, 80, camera_shift, zoom_q8, 256, 288);
+	draw_visual_frame(bf_frame, 184, 58, camera_shift, zoom_q8, 256, 288);
 }
 
 static void draw_gameplay(uint32_t samples)
@@ -1054,13 +1055,17 @@ static void draw_gameplay(uint32_t samples)
 
 	/* Compact portrait/score/life HUD; only chart diagnostics are textual. */
 	draw_rect(0, 0, 320, 30, 20, 16, 29);
-	draw_hud_icon(VIS_BF_IDLE_0, 7, 7, 48);
-	draw_hud_icon(VIS_DAD_IDLE_0, 26, 7, 44);
-	draw_rect(224, 10, 82, 8, 8, 9, 18);
-	unsigned health_width = (unsigned)health_q8 * 112u / 512u;
-	GameColor life = health_width < 28u ? (GameColor){ 244, 71, 73 } :
-		health_width < 64u ? (GameColor){ 246, 194, 64 } : (GameColor){ 83, 215, 128 };
-	if (health_width) draw_rect(226, 12, (int)(health_width * 78u / 112u), 4, life.r, life.g, life.b);
+	/* FNF-style force balance: red opponent left, green BF right. This is
+	   display-only; health_q8 and game-over logic remain untouched. */
+	draw_rect(97, 8, 126, 12, 18, 18, 24);
+	unsigned player_width = (unsigned)health_q8 * 61u / 512u;
+	unsigned opponent_width = 122u - player_width;
+	if (opponent_width) draw_rect(99, 10, (int)opponent_width, 8, 218, 63, 76);
+	if (player_width) draw_rect(99 + (int)opponent_width, 10, (int)player_width, 8, 76, 211, 121);
+	int boundary = 99 + (int)opponent_width;
+	draw_rect(boundary - 1, 6, 2, 16, 245, 244, 231);
+	draw_hud_icon(VIS_DAD_IDLE_0, 78, 4, 42);
+	draw_hud_icon(VIS_BF_IDLE_0, 220, 4, 42);
 }
 
 static void reset_game_state(void)
@@ -1078,9 +1083,8 @@ static void reset_game_state(void)
 	dad_visual_lane = 0;
 	dad_visual_start = 0;
 	dad_visual_until = 0;
-	camera_focus = 0;
-	camera_focus_started = 0;
-	camera_focus_until = 0;
+	last_judgement = 0;
+	judgement_until = 0;
 	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
 	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0;
 }
@@ -1474,6 +1478,13 @@ int main(void)
 		/* Keep the default HUD to one row so it does not cover character faces. */
 		FntPrint(hud_font_id, "S%05ld C%03lu\n", (long)score, (unsigned long)combo);
 		FntFlush(hud_font_id);
+		{
+			static const char *const labels[] = { "        ", "Sick    ", "Good    ", "Bad     ", "Shit    " };
+			unsigned shown = samples < judgement_until ? last_judgement : 0u;
+			/* Clear the previous transient judgement after its audio-clock lifetime. */
+			FntPrint(judgement_font_id, "%s\n", shown ? labels[shown] : "        ");
+			FntFlush(judgement_font_id);
+		}
 		if (diagnostics_visible) {
 			FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  DAD TRI:%s  SEL:HIDE\n",
 				milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u,

@@ -16,7 +16,7 @@ from animate_preview import Rig
 
 SCENE_W = 320
 STAGE_BACK_H = 176
-STAGE_FRONT_H = 56
+STAGE_FRONT_H = 73
 FRAME_W = 64
 FRAME_H = 96
 PAGE_W = 256
@@ -38,7 +38,10 @@ BF_ANIMS = [
 
 def run_ffmpeg(ffmpeg: str, source: pathlib.Path, filters: str, width: int, height: int) -> bytearray:
     command = [
-        ffmpeg, "-v", "error", "-i", str(source), "-vf", filters,
+        # Keep alpha through crop/pad/scale. Adding format=rgba only at the
+        # end lets FFmpeg negotiate an opaque intermediate for some filters,
+        # turning transparent atlas pixels into black rectangles on the PS1.
+        ffmpeg, "-v", "error", "-i", str(source), "-vf", f"format=rgba,{filters}",
         "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
     ]
     result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -434,7 +437,12 @@ def build(args: argparse.Namespace) -> None:
             for frame_index, source_frame in enumerate(selected):
                 name = (f"ui_receptor_{direction}_{state}" if state != "confirm" else
                         f"ui_receptor_{direction}_confirm_{frame_index}")
-                temp_images[name] = extract_sparrow_frame(ffmpeg, receptor_png, source_frame, (32, 32))
+                # Sparrow receptors use a large logical canvas with negative
+                # frame offsets. Crop the visible atlas rectangle to the same
+                # 32px box as notes instead of shrinking it inside that canvas.
+                temp_images[name] = extract_crop(ffmpeg, receptor_png,
+                    int(source_frame["x"]), int(source_frame["y"]),
+                    int(source_frame["width"]), int(source_frame["height"]), (32, 32))
                 frame_sizes[name] = (32, 32)
                 lane_names.append(name)
 
