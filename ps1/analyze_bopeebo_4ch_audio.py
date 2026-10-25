@@ -17,7 +17,7 @@ PAN = (
     (15464, 5411), (15972, 3646), (16280, 1834), (16383, 0),
 )
 MUSIC_GAIN = 0x2800
-SFX_GAIN = 0x0800
+SFX_POOL_VOLUME_BUDGET = 0x1800
 
 
 def mono_stats(stereo: array) -> tuple[float, float, int]:
@@ -38,8 +38,12 @@ def decode_vag_payload(path: Path) -> array:
     if data[:4] != b"VAGp":
         raise ValueError("SFX file must be a VAGp file")
     size = struct.unpack_from(">I", data, 12)[0]
-    if size != len(data) - 48 or size % 16:
+    rate = struct.unpack_from(">I", data, 16)[0]
+    if size != len(data) - 48 or size % 64 or rate != 22050:
         raise ValueError("invalid VAGp payload size")
+    flags = [data[offset + 1] for offset in range(48, len(data), 16)]
+    if flags[-1] != 0x01 or any(flag != 0 for flag in flags[:-1]):
+        raise ValueError("expected non-looping VAGp blocks and one final end flag")
     result = array("h")
     previous = older = 0
     for offset in range(48, len(data), 16):
@@ -83,8 +87,11 @@ def main() -> None:
 
     effect = decode_vag_payload(args.sfx)
     effect_peak = max(map(abs, effect))
-    sfx_bound = math.ceil(effect_peak * SFX_GAIN * 4 / 0x3FFF)
-    print(f"SFX decoded peak={effect_peak}; 4 simultaneous voices at gain 0x{SFX_GAIN:04x}: <= {sfx_bound} LSB/channel")
+    effect_rms = math.sqrt(sum(sample * sample for sample in effect) / len(effect))
+    sfx_bound = math.ceil(effect_peak * SFX_POOL_VOLUME_BUDGET / 0x3FFF)
+    print(f"SFX 22050 Hz, {len(effect)} decoded samples ({len(effect)/22050:.3f} s), "
+          f"RMS={effect_rms:.1f}, peak={effect_peak}; up to 4 simultaneous voices with "
+          f"aggregate volume budget 0x{SFX_POOL_VOLUME_BUDGET:04x}: <= {sfx_bound} LSB/channel")
 
     music_gain = MUSIC_GAIN / 0x3FFF
     for width in (0, 4, 7):

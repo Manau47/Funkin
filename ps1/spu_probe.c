@@ -35,10 +35,13 @@
 #define TEST_INSTRUMENT_VOLUME 0x2fffu
 #define SONG_MIX_VOLUME 0x2800u
 #define MUSIC_SPAN_GAIN 0x2800u
-#define SFX_VOLUME 0x0800u
+#define SFX_POOL_VOLUME_BUDGET 0x1800u
 #define SFX_SPU_ADDR 0x10000u
 #define SFX_FIRST_VOICE 4u
 #define SFX_VOICE_COUNT 4u
+#define SFX_BUSY_FRAMES 9u
+#define SFX_AUTO_DURING_COUNT 4u
+#define SFX_AUTO_DURING_START_SAMPLES (2u * 43008u)
 
 #if TEST_BOPEEBO_4CH
 #include "bopeebo_sfx_data.h"
@@ -100,9 +103,21 @@ static bool circle_down;
 static bool song_finished;
 #endif
 #if TEST_BOPEEBO_4CH
-static uint8_t pan_width = 7;
+static uint8_t pan_width = 5;
 static uint8_t sfx_voice_cursor;
-static unsigned sfx_trigger_count;
+static uint32_t frame_counter;
+static uint32_t sfx_voice_until_frame[SFX_VOICE_COUNT];
+static bool sfx_voice_active[SFX_VOICE_COUNT];
+static unsigned sfx_last_voice = 0xffu;
+static unsigned sfx_square_press_count;
+static unsigned sfx_manual_trigger_count;
+static unsigned sfx_auto_trigger_count;
+static unsigned sfx_auto_during_count;
+static uint32_t sfx_auto_during_next_frame;
+static bool sfx_auto_during_started;
+static bool sfx_square_down;
+static size_t sfx_write_size;
+static int sfx_transfer_completed;
 static bool sfx_uploaded;
 #endif
 
@@ -220,6 +235,11 @@ static void show_error(int code)
 			(unsigned)read_ctx.last_sync_result[2], (unsigned)read_ctx.last_sync_result[3]);
 		FntPrint(-1, "CAUSE %d: %s\n", (int)read_ctx.error_cause,
 			read_error_name(read_ctx.error_cause));
+#if TEST_BOPEEBO_4CH
+		FntPrint(-1, "SFX WRITE %u/%u DMA %d ADDR %05X\n",
+			(unsigned)sfx_write_size, (unsigned)SFX_SAMPLE_SIZE,
+			sfx_transfer_completed, (unsigned)SFX_SPU_ADDR);
+#endif
 		FntFlush(-1);
 		display_frame();
 	}
@@ -275,31 +295,120 @@ static void set_voice_pan(void)
 	SPU_CH_VOL_R(3) = voices_muted ? 0 : left;
 }
 
-static void play_resident_sfx(void)
+static unsigned active_sfx_voice_count(void)
 {
-	unsigned voice = SFX_FIRST_VOICE + sfx_voice_cursor;
+	unsigned count = 0;
+	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++)
+		count += sfx_voice_active[i] ? 1u : 0u;
+	return count;
+}
+
+static void update_sfx_pool_volumes(void)
+{
+	unsigned count = active_sfx_voice_count();
+	if (!count)
+		return;
+	uint16_t volume = (uint16_t)(SFX_POOL_VOLUME_BUDGET / count);
+	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++) {
+		if (!sfx_voice_active[i])
+			continue;
+		unsigned voice = SFX_FIRST_VOICE + i;
+		SPU_CH_VOL_L(voice) = volume;
+		SPU_CH_VOL_R(voice) = volume;
+	}
+}
+
+static void maintain_sfx_pool(void)
+{
+	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++) {
+		if (sfx_voice_active[i] && frame_counter >= sfx_voice_until_frame[i]) {
+			SpuSetKey(0, 1u << (SFX_FIRST_VOICE + i));
+			sfx_voice_active[i] = false;
+		}
+	}
+	update_sfx_pool_volumes();
+}
+
+static void play_resident_sfx(bool manual)
+{
+	maintain_sfx_pool();
+	unsigned slot = SFX_VOICE_COUNT;
+	for (unsigned offset = 0; offset < SFX_VOICE_COUNT; offset++) {
+		unsigned candidate = (sfx_voice_cursor + offset) % SFX_VOICE_COUNT;
+		if (!sfx_voice_active[candidate]) {
+			slot = candidate;
+			break;
+		}
+	}
+	if (slot == SFX_VOICE_COUNT) {
+		slot = 0;
+		for (unsigned i = 1; i < SFX_VOICE_COUNT; i++) {
+			if (sfx_voice_until_frame[i] < sfx_voice_until_frame[slot])
+				slot = i;
+		}
+		SpuSetKey(0, 1u << (SFX_FIRST_VOICE + slot));
+		sfx_voice_active[slot] = false;
+	}
+	unsigned voice = SFX_FIRST_VOICE + slot;
 	uint32_t key = 1u << voice;
 	SpuSetKey(0, key);
 	SPU_CH_ADDR(voice) = getSPUAddr(SFX_SPU_ADDR);
 	SPU_CH_FREQ(voice) = getSPUSampleRate(SFX_SAMPLE_RATE);
-	SPU_CH_VOL_L(voice) = SFX_VOLUME;
-	SPU_CH_VOL_R(voice) = SFX_VOLUME;
 	SPU_CH_ADSR1(voice) = 0x00ff;
 	SPU_CH_ADSR2(voice) = 0x0000;
+	sfx_voice_active[slot] = true;
+	sfx_voice_until_frame[slot] = frame_counter + SFX_BUSY_FRAMES;
+	update_sfx_pool_volumes();
 	SpuSetKey(1, key);
-	sfx_voice_cursor = (uint8_t)((sfx_voice_cursor + 1u) % SFX_VOICE_COUNT);
-	sfx_trigger_count++;
+	sfx_last_voice = voice;
+	sfx_voice_cursor = (uint8_t)((slot + 1u) % SFX_VOICE_COUNT);
+	if (manual)
+		sfx_manual_trigger_count++;
+	else
+		sfx_auto_trigger_count++;
 }
 
 static bool upload_resident_sfx(void)
 {
 	SpuSetTransferMode(SPU_TRANSFER_BY_DMA);
 	SpuSetTransferStartAddr(SFX_SPU_ADDR);
-	SpuWrite((const uint32_t *)sfx_sample, SFX_SAMPLE_SIZE);
-	if (!SpuIsTransferCompleted(SPU_TRANSFER_WAIT))
+	sfx_write_size = SpuWrite((const uint32_t *)sfx_sample, SFX_SAMPLE_SIZE);
+	sfx_transfer_completed = SpuIsTransferCompleted(SPU_TRANSFER_WAIT);
+	if (sfx_write_size != SFX_SAMPLE_SIZE || !sfx_transfer_completed)
 		return false;
 	sfx_uploaded = true;
 	return true;
+}
+
+static void run_pre_music_sfx_test(void)
+{
+	play_resident_sfx(false);
+	for (unsigned frame = 0; frame < SFX_BUSY_FRAMES + 2u; frame++) {
+		maintain_sfx_pool();
+		FntPrint(-1, "BOPEEBO SFX DIAGNOSTIC\n\n");
+		FntPrint(-1, "AUTOMATIC PRE-MUSIC TEST\n");
+		FntPrint(-1, "TRIGGER SENT  VOICE %u\n", sfx_last_voice);
+		FntPrint(-1, "UPLOAD %u/%u  ADDR %05X\n", (unsigned)sfx_write_size,
+			(unsigned)SFX_SAMPLE_SIZE, (unsigned)SFX_SPU_ADDR);
+		FntPrint(-1, "TRANSFER COMPLETE %d\n", sfx_transfer_completed);
+		FntFlush(-1);
+		display_frame();
+		frame_counter++;
+	}
+}
+
+static void run_during_music_sfx_test(uint32_t samples)
+{
+	if (!sfx_auto_during_started && samples >= SFX_AUTO_DURING_START_SAMPLES) {
+		sfx_auto_during_started = true;
+		sfx_auto_during_next_frame = frame_counter;
+	}
+	if (sfx_auto_during_started && sfx_auto_during_count < SFX_AUTO_DURING_COUNT &&
+	    frame_counter >= sfx_auto_during_next_frame) {
+		play_resident_sfx(false);
+		sfx_auto_during_count++;
+		sfx_auto_during_next_frame = frame_counter + 2u;
+	}
 }
 
 static bool poll_bopeebo4_controls(void)
@@ -312,25 +421,31 @@ static bool poll_bopeebo4_controls(void)
 		previous_pad_buttons = 0xffff;
 		pad_was_connected = false;
 		circle_down = false;
+		sfx_square_down = false;
 		return false;
 	}
 
 	uint16_t buttons = (uint16_t)pad->btn;
 	circle_down = !(buttons & PAD_CIRCLE);
+	sfx_square_down = !(buttons & PAD_SQUARE);
 	if (!pad_was_connected) {
 		previous_pad_buttons = buttons;
 		pad_was_connected = true;
 	} else {
+		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
+			sfx_square_press_count++;
+			if (sfx_uploaded)
+				play_resident_sfx(true);
+		}
 		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
 		if ((previous_pad_buttons & PAD_LEFT) && !(buttons & PAD_LEFT) && pan_width)
 			pan_width--;
 		if ((previous_pad_buttons & PAD_RIGHT) && !(buttons & PAD_RIGHT) && pan_width < 7u)
 			pan_width++;
-		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE) && sfx_uploaded)
-			play_resident_sfx();
 		previous_pad_buttons = buttons;
 	}
+	maintain_sfx_pool();
 	set_voice_pan();
 	return true;
 }
@@ -662,6 +777,7 @@ int main(void)
 #if TEST_BOPEEBO_4CH
 	if (!upload_resident_sfx())
 		show_error(FAIL_SFX_UPLOAD);
+	run_pre_music_sfx_test();
 #endif
 	if (CdControlB(CdlPause, 0, 0) != 1)
 		show_error(FAIL_CD_COMMAND);
@@ -680,6 +796,9 @@ int main(void)
 #endif
 		uint32_t samples = Stream_GetSamplesPlayed(&stream);
 		unsigned rate = (unsigned)stream.config.sample_rate;
+#if TEST_BOPEEBO_4CH
+		run_during_music_sfx_test(samples);
+#endif
 #if TEST_NO_LOOP
 		uint32_t song_end_samples = TEST_TOTAL_SAMPLES +
 			(uint32_t)(2u * (stream.config.interleave / 16u * 28u));
@@ -706,10 +825,17 @@ int main(void)
 		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
 			circle_down ? "DOWN" : "UP");
 		FntPrint(-1, "BF VOICE: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
-		FntPrint(-1, "PAN WIDTH %u/7 (LEFT/RIGHT)\n", (unsigned)pan_width);
-		FntPrint(-1, "SQUARE: PLAY SFX (%u VOICES)\n", (unsigned)SFX_VOICE_COUNT);
-		FntPrint(-1, "SFX TRIGGERS %u  VOLUME %u/16383\n", sfx_trigger_count,
-			(unsigned)SFX_VOLUME);
+		FntPrint(-1, "PAN WIDTH %u/7 (DEFAULT 5)\n", (unsigned)pan_width);
+		FntPrint(-1, "SQUARE %s  PRESSES %u\n", sfx_square_down ? "DOWN" : "UP",
+			(unsigned)sfx_square_press_count);
+		FntPrint(-1, "SFX TRIGGERS MAN %u AUTO %u\n", sfx_manual_trigger_count,
+			(unsigned)sfx_auto_trigger_count);
+		FntPrint(-1, "AUTO DURING %u/%u  LAST VOICE %u\n", sfx_auto_during_count,
+			(unsigned)SFX_AUTO_DURING_COUNT, sfx_last_voice);
+		FntPrint(-1, "SFX ACTIVE %u/%u VOL BUDGET %u\n", active_sfx_voice_count(),
+			(unsigned)SFX_VOICE_COUNT, (unsigned)SFX_POOL_VOLUME_BUDGET);
+		FntPrint(-1, "UPLOAD %u/%u DMA %d\n", (unsigned)sfx_write_size,
+			(unsigned)SFX_SAMPLE_SIZE, sfx_transfer_completed);
 		FntPrint(-1, "PLAYBACK: %s (NO LOOP)\n", song_finished ? "FINISHED" : "PLAYING");
 #elif TEST_CHANNELS == 4
 		FntPrint(-1, "4CH: INST L/R + VOICES L/R\n");
@@ -729,5 +855,8 @@ int main(void)
 #endif
 		FntFlush(-1);
 		display_frame();
+#if TEST_BOPEEBO_4CH
+		frame_counter++;
+#endif
 	}
 }
