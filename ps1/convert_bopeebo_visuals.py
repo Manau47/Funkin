@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import collections
+import json
+import math
 import pathlib
 import re
+import struct
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -14,11 +17,10 @@ import xml.etree.ElementTree as ET
 from animate_preview import Rig
 
 
-SCENE_W = 320
-STAGE_BACK_H = 176
-STAGE_FRONT_H = 73
-FRAME_W = 64
-FRAME_H = 96
+WORLD_DIVISOR = 8
+STAGE_TILE_W = 256
+FRAME_W = 52
+FRAME_H = 52
 PAGE_W = 256
 PAGE_H = 256
 PAGE_BYTES = PAGE_W * PAGE_H // 2
@@ -132,6 +134,86 @@ def extract_stage(ffmpeg: str, png: pathlib.Path, width: int, height: int) -> by
     # preserves thin architecture and curtains without runtime bilinear blur.
     filters = f"scale={width}:{height}:flags=area,format=rgba"
     return run_ffmpeg(ffmpeg, png, filters, width, height)
+
+
+def blend_at(background: bytearray, back_size: tuple[int, int], foreground: bytearray,
+             foreground_size: tuple[int, int], offset: tuple[int, int]) -> None:
+    """Alpha-composite a stage prop at its official, camera-world position."""
+    bw, bh = back_size
+    fw, fh = foreground_size
+    ox, oy = offset
+    for sy in range(fh):
+        dy = oy + sy
+        if not 0 <= dy < bh:
+            continue
+        for sx in range(fw):
+            dx = ox + sx
+            if not 0 <= dx < bw:
+                continue
+            si = (sy * fw + sx) * 4
+            di = (dy * bw + dx) * 4
+            alpha = foreground[si + 3]
+            if not alpha:
+                continue
+            if alpha == 255:
+                background[di:di + 4] = foreground[si:si + 4]
+                continue
+            inv = 255 - alpha
+            for channel in range(3):
+                background[di + channel] = (foreground[si + channel] * alpha +
+                                            background[di + channel] * inv) // 255
+            background[di + 3] = alpha + background[di + 3] * inv // 255
+
+
+def load_stage_layout(assets: pathlib.Path) -> tuple[dict, tuple[int, int, int, int]]:
+    stage_path = assets / "preload" / "data" / "stages" / "mainStage.json"
+    stage = json.loads(stage_path.read_text(encoding="utf-8"))
+    props = {prop["name"]: prop for prop in stage["props"]}
+    chars = stage["characters"]
+    def rounded_world(value: float) -> int:
+        return math.floor(value / WORLD_DIVISOR + 0.5)
+    layout = {
+        # The 1/8 art/world conversion is brought to the reference camera
+        # scale for the 4:3 viewport; 2.5x includes mainStage's 1.1 zoom.
+        "camera_zoom_q8": round(float(stage.get("cameraZoom", 1.0)) * 640 / 1.1),
+    }
+    for name, source in (("dad", "dad"), ("gf", "gf"), ("bf", "bf")):
+        item = chars[source]
+        layout[f"{name}_x"] = rounded_world(float(item["position"][0]))
+        layout[f"{name}_y"] = rounded_world(float(item["position"][1]))
+        layout[f"{name}_camera_x"] = rounded_world(float(item["cameraOffsets"][0]))
+        layout[f"{name}_camera_y"] = rounded_world(float(item["cameraOffsets"][1]))
+    # Compose stageback, stagefront and curtains in official z-order at the
+    # same 1/8 world scale used for character placement. No aspect stretching.
+    source_images = assets / "shared" / "images"
+    back_png = source_images / "stageback.png"
+    front_png = source_images / "stagefront.png"
+    curtains_png = source_images / "stagecurtains.png"
+    def prop_geom(name: str, image_size: tuple[int, int]):
+        prop = props[name]
+        scale = prop.get("scale", [1.0, 1.0])
+        if not isinstance(scale, list):
+            scale = [scale, scale]
+        x = rounded_world(float(prop["position"][0]))
+        y = rounded_world(float(prop["position"][1]))
+        w = max(1, round(image_size[0] * float(scale[0]) / WORLD_DIVISOR))
+        h = max(1, round(image_size[1] * float(scale[1]) / WORLD_DIVISOR))
+        return x, y, w, h
+    back_w, back_h = 320, 175
+    front_w, front_h = 352, 80
+    curtains_w, curtains_h = 288, 158
+    geoms = {
+        "stageBack": prop_geom("stageBack", (2560, 1400)),
+        "stageFront": prop_geom("stageFront", (2560, 581)),
+        "stageCurtains": prop_geom("stageCurtains", (2560, 1400)),
+    }
+    x0 = min(geoms[k][0] for k in geoms)
+    y0 = min(geoms[k][1] for k in geoms)
+    x1 = max(geoms["stageBack"][0] + back_w, geoms["stageFront"][0] + front_w,
+             geoms["stageCurtains"][0] + curtains_w)
+    y1 = max(geoms["stageBack"][1] + back_h, geoms["stageFront"][1] + front_h,
+             geoms["stageCurtains"][1] + curtains_h)
+    return {**layout, "scene_x": x0, "scene_y": y0}, (x0, y0, x1 - x0, y1 - y0)
 
 
 def alpha_over(background: bytearray, foreground: bytearray) -> bytearray:
@@ -290,6 +372,8 @@ def write_header(output: pathlib.Path,
                  palette4: list[tuple[int, int, int]],
                  palette_bf8: list[tuple[int, int, int]],
                  palette_ui4: list[list[tuple[int, int, int]]],
+                 palette_popup4: list[tuple[int, int, int]],
+                 stage_layout: dict[str, int], scene_bounds: tuple[int, int, int, int],
                  pages8: list[bytearray], pages4: list[bytearray],
                  page_table: list[tuple[int, int, int]],
                  descriptors: dict[str, dict]) -> None:
@@ -301,13 +385,28 @@ def write_header(output: pathlib.Path,
              f"#define BOPEEBO_VISUAL_PAGE_COUNT {len(page_table)}u",
              f"#define BOPEEBO_VISUAL_PAGE8_COUNT {len(pages8)}u",
              f"#define BOPEEBO_VISUAL_PAGE4_COUNT {len(pages4)}u",
-             f"#define BOPEEBO_VISUAL_FRAME_COUNT {len(descriptors)}u"]
+             f"#define BOPEEBO_VISUAL_FRAME_COUNT {len(descriptors)}u",
+             f"#define BOPEEBO_STAGE_SCENE_X ({scene_bounds[0]})",
+             f"#define BOPEEBO_STAGE_SCENE_Y ({scene_bounds[1]})",
+             f"#define BOPEEBO_STAGE_SCENE_W {scene_bounds[2]}u",
+             f"#define BOPEEBO_STAGE_SCENE_H {scene_bounds[3]}u",
+             f"#define BOPEEBO_STAGE_CAMERA_ZOOM_Q8 {stage_layout['camera_zoom_q8']}u",
+             "#define BOPEEBO_DAD_FRAME_W 53u", "#define BOPEEBO_DAD_FRAME_H 96u",
+             "#define BOPEEBO_GF_FRAME_W 87u", "#define BOPEEBO_GF_FRAME_H 79u",
+             f"#define BOPEEBO_BF_FRAME_W {FRAME_W}u", f"#define BOPEEBO_BF_FRAME_H {FRAME_H}u"]
+    for name in ("dad", "gf", "bf"):
+        for component in ("x", "y", "camera_x", "camera_y"):
+            lines.append(f"#define BOPEEBO_{name.upper()}_{component.upper()} ({stage_layout[f'{name}_{component}']})")
     for i, name in enumerate(descriptors):
         lines.append(f"#define VIS_{re.sub('[^A-Z0-9]+', '_', name.upper())} {i}u")
     lines.append("static const BopeeboVisualPage bopeebo_visual_page_table[BOPEEBO_VISUAL_PAGE_COUNT] = {")
     for x, y, depth in page_table:
         lines.append(f"\t{{{x}, {y}, {depth}}},")
     lines.append("};")
+    values = [0] + [rgb555(c) for c in palette_popup4[:15]]
+    values += [0] * (16 - len(values))
+    lines.append("static const uint16_t bopeebo_visual_palette_popup4[16] = {" +
+                  ",".join(f"0x{x:04x}" for x in values) + "};")
     values = [0] + [rgb555(c) for c in palette8[:255]]
     values += [0] * (256 - len(values))
     lines.append("static const uint16_t bopeebo_visual_palette8[256] = {" +
@@ -354,24 +453,37 @@ def build(args: argparse.Namespace) -> None:
     shared_images = assets / "shared" / "images"
     chars = assets / "shared" / "images" / "characters"
     ffmpeg = str(pathlib.Path(args.ffmpeg).resolve())
+    stage_layout, scene_bounds = load_stage_layout(assets)
     temp_images: dict[str, bytearray] = {}
     frame_sizes: dict[str, tuple[int, int]] = {}
 
-    # Background and curtains are composited on the PC. Front rail remains a
-    # separate layer; four 8bpp pages retain far more architectural detail.
-    back = extract_stage(ffmpeg, shared_images / "stageback.png", SCENE_W, STAGE_BACK_H)
-    curtains = extract_stage(ffmpeg, shared_images / "stagecurtains.png", SCENE_W, STAGE_BACK_H)
-    for name, pixels, height in (("stage_back", alpha_over(back, curtains), STAGE_BACK_H),
-                                 ("stage_front", extract_stage(ffmpeg, shared_images / "stagefront.png", SCENE_W, STAGE_FRONT_H), STAGE_FRONT_H)):
-        for tile, x0 in enumerate((0, 256)):
-            width = min(256, SCENE_W - x0)
-            crop = bytearray()
-            for y in range(height):
-                start = (y * SCENE_W + x0) * 4
-                crop.extend(pixels[start:start + width * 4])
-            frame_name = f"{name}_{tile}"
-            temp_images[frame_name] = crop
-            frame_sizes[frame_name] = (width, height)
+    # Composite the official stage props at their mainStage.json transforms
+    # and z-order, then let one camera transform move/zoom the whole artwork.
+    props = {prop["name"]: prop for prop in json.loads(
+        (assets / "preload" / "data" / "stages" / "mainStage.json").read_text(encoding="utf-8"))["props"]}
+    scene_x, scene_y, scene_w, scene_h = scene_bounds
+    scene = bytearray(scene_w * scene_h * 4)
+    back = extract_stage(ffmpeg, shared_images / "stageback.png", 320, 175)
+    front = extract_stage(ffmpeg, shared_images / "stagefront.png", 352, 80)
+    curtains = extract_stage(ffmpeg, shared_images / "stagecurtains.png", 288, 158)
+    def prop_origin(name: str) -> tuple[int, int]:
+        position = props[name]["position"]
+        return (math.floor(float(position[0]) / WORLD_DIVISOR + 0.5),
+                math.floor(float(position[1]) / WORLD_DIVISOR + 0.5))
+    for name, pixels, size in (("stageBack", back, (320, 175)),
+                               ("stageFront", front, (352, 80)),
+                               ("stageCurtains", curtains, (288, 158))):
+        px, py = prop_origin(name)
+        blend_at(scene, (scene_w, scene_h), pixels, size, (px - scene_x, py - scene_y))
+    for tile, x0 in enumerate((0, STAGE_TILE_W)):
+        width = min(STAGE_TILE_W, scene_w - x0)
+        crop = bytearray()
+        for y in range(scene_h):
+            start = (y * scene_w + x0) * 4
+            crop.extend(scene[start:start + width * 4])
+        frame_name = f"stage_scene_{tile}"
+        temp_images[frame_name] = crop
+        frame_sizes[frame_name] = (width, scene_h)
 
     bf_groups = atlas_frames(chars / "BOYFRIEND.xml")
     bf_png = chars / "BOYFRIEND.png"
@@ -390,16 +502,16 @@ def build(args: argparse.Namespace) -> None:
     for direction, first in (("up", 12), ("down", 18), ("left", 24), ("right", 30)):
         dad_pose_frames.extend(((f"dad_{direction}_0", first + 1), (f"dad_{direction}_1", first + 4)))
     dad_source_ids = [frame for _, frame in dad_pose_frames]
-    dad_anchored = fit_anchored_rig(dad_rig, dad_source_ids, 72, 112)
+    dad_anchored = fit_anchored_rig(dad_rig, dad_source_ids, 53, 96)
     for name, source_frame in dad_pose_frames:
         temp_images[name] = dad_anchored[source_frame]
-        frame_sizes[name] = (72, 112)
+        frame_sizes[name] = (53, 96)
 
     gf_source_ids = (0, 4, 8, 11, 15, 19, 22, 26)
-    gf_anchored = fit_anchored_rig(gf_rig, list(gf_source_ids), 128, 120)
+    gf_anchored = fit_anchored_rig(gf_rig, list(gf_source_ids), 87, 79)
     for i, source_frame in enumerate(gf_source_ids):
         temp_images[f"gf_dance_{i}"] = gf_anchored[source_frame]
-        frame_sizes[f"gf_dance_{i}"] = (128, 120)
+        frame_sizes[f"gf_dance_{i}"] = (87, 79)
 
     # Bopeebo's standard note style uses these pinned official sprites, not
     # the older NOTE_assets chart-editor atlas or generated geometric arrows.
@@ -409,6 +521,7 @@ def build(args: argparse.Namespace) -> None:
     receptor_png = shared_images / "noteStrumline.png"
     receptor_groups = atlas_frames(shared_images / "noteStrumline.xml")
     ui4_by_direction: dict[str, list[str]] = {}
+    popup_names: list[str] = []
     for lane, direction in enumerate(directions):
         note_frames = note_groups.get(f"note{direction.title()}")
         if not note_frames:
@@ -458,6 +571,27 @@ def build(args: argparse.Namespace) -> None:
             lane_names.append(name)
         ui4_by_direction[direction] = lane_names
 
+    # Official Funkin judgement lettering and health icons, kept in a compact
+    # dedicated CLUT. The two BF icon frames match the health-bar state.
+    popup_dir = assets / "preload" / "images" / "ui" / "popup" / "funkin"
+    for name in ("sick", "good", "bad", "shit"):
+        source = popup_dir / f"{name}.png"
+        with source.open("rb") as image:
+            image.seek(16)
+            src_w, src_h = struct.unpack(">II", image.read(8))
+        size = (max(1, round(src_w * 0.16)), max(1, round(src_h * 0.16)))
+        temp_images[f"ui_judgement_{name}"] = extract_stage(ffmpeg, source, *size)
+        frame_sizes[f"ui_judgement_{name}"] = size
+        popup_names.append(f"ui_judgement_{name}")
+    icon_dir = assets / "preload" / "images" / "icons"
+    for name, source, x in (("dad", "icon-dad.png", 0),
+                            ("bf_win", "icon-bf.png", 0),
+                            ("bf_lose", "icon-bf.png", 150)):
+        icon_png = icon_dir / source
+        temp_images[f"ui_icon_{name}"] = extract_crop(ffmpeg, icon_png, x, 0, 150, 150, (16, 16))
+        frame_sizes[f"ui_icon_{name}"] = (16, 16)
+        popup_names.append(f"ui_icon_{name}")
+
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
     bf_core_names = [name for name in bf_names if not name.startswith("bf_miss_")]
@@ -465,6 +599,7 @@ def build(args: argparse.Namespace) -> None:
     ui_names = [name for names in ui4_by_direction.values() for name in names]
     dad_names = [name for name in temp_images if name.startswith("dad_")]
     gf_names = [name for name in temp_images if name.startswith("gf_")]
+    popup_names = [name for name in popup_names]
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
     # One shared 8bpp palette fits alongside the BF CLUT in the 320-word
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
@@ -473,12 +608,14 @@ def build(args: argparse.Namespace) -> None:
     palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
                    for d in directions]
     palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
+    palette_popup4 = median_palette([temp_images[n] for n in popup_names], 15)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
                   if not name.startswith(("bf_", "ui_"))}
     quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
     quantized_ui4 = {name: quantize(temp_images[name], palette_ui4[lane])
                      for lane, direction in enumerate(directions) for name in ui4_by_direction[direction]}
     quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
+    quantized_popup4 = {name: quantize(temp_images[name], palette_popup4) for name in popup_names}
     descriptors: dict[str, dict] = {}
     pages8: list[bytearray] = []
     pages4: list[bytearray] = []
@@ -486,9 +623,8 @@ def build(args: argparse.Namespace) -> None:
     # using the otherwise empty vertical space under the wide image.
     for _ in range(2):
         pages8.append(bytearray(PAGE_W * PAGE_H))
-    stage_layout = (("stage_back_0", 0, 0, 0), ("stage_front_1", 0, 0, STAGE_BACK_H),
-                    ("stage_back_1", 1, 0, 0), ("stage_front_0", 1, 0, STAGE_BACK_H))
-    for name, page_no, x, y in stage_layout:
+    stage_tiles = (("stage_scene_0", 0, 0, 0), ("stage_scene_1", 1, 0, 0))
+    for name, page_no, x, y in stage_tiles:
         indices = quantized8[name]
         width, height = frame_sizes[name]
         for py in range(height):
@@ -505,8 +641,11 @@ def build(args: argparse.Namespace) -> None:
               bf8_first, 2, pages8, descriptors)
     # Keep the less frequent miss poses 4bpp; the song-critical idle/sing poses
     # get a dedicated 8bpp CLUT and the two remaining 8bpp texture pages.
-    pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names],
+    pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names] +
+              [(n, quantized_popup4[n], *frame_sizes[n]) for n in popup_names],
               0, 1, pages4, descriptors)
+    for name in popup_names:
+        descriptors[name]["palette"] = 7
     ui_first_page = len(pages4)
     pack_page([(n, quantized_ui4[n], *frame_sizes[n]) for n in ui_names],
               ui_first_page, 1, pages4, descriptors)
@@ -536,7 +675,8 @@ def build(args: argparse.Namespace) -> None:
     # framebuffers, all texture pages, CLUT rows and the SDK font reservation.
     vram_regions = [("framebuffer0", 0, 0, 320, 240), ("framebuffer1", 0, 240, 320, 240),
                     ("palette8", 0, 496, 256, 1), ("palette4", 256, 496, 16, 1),
-                    ("palette_bf8", 0, 480, 256, 1), ("font_reservation", 960, 0, 64, 256)]
+                    ("palette_bf8", 0, 480, 256, 1), ("palette_popup4", 272, 480, 16, 1),
+                    ("font_reservation", 960, 0, 64, 256)]
     vram_regions.extend((f"palette_ui4_{i}", (256 if i == 3 else 272 + i * 16),
                          (480 if i == 3 else 496), 16, 1) for i in range(4))
     for i, (x, y, depth) in enumerate(page_table):
@@ -566,10 +706,12 @@ def build(args: argparse.Namespace) -> None:
         return (squared / count) ** 0.5 if count else 0.0
     print(f"stage palette loss: 15-color RMSE {rmse(stage_names, stage_palette_old):.2f}; shared 255-color RMSE {rmse(stage_names, palette8):.2f} RGB levels")
     print(f"Dad/GF combined palette RMSE: Dad {rmse(dad_names, palette8):.2f}, GF {rmse(gf_names, palette8):.2f} RGB levels")
-    print(f"BF core idle/sing at 64x96: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
+    print(f"BF core idle/sing at {FRAME_W}x{FRAME_H}: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
     print("Official arrows/receptors/holds: 4bpp per direction, 15-color CLUT each; " +
           ", ".join(f"{d} RMSE {rmse(ui4_by_direction[d], palette_ui4[i]):.2f}" for i, d in enumerate(directions)))
+    print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
+                 palette_popup4, stage_layout, scene_bounds,
                  pages8, pages4, page_table, descriptors)
     print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance; BF {len(bf_names)} official Sparrow frames")
     print(f"VRAM map verified: {len(pages8)}x8bpp + {len(pages4)}x4bpp, framebuffers, CLUTs and font reserve are in bounds without overlap")
