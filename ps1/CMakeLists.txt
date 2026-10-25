@@ -184,6 +184,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}")
 	option(FUNKIN_PS1_DAD_LANES_DEFAULT "Show Dad's autoplay lanes when Bopeebo starts" ON)
 	option(FUNKIN_PS1_DIAGNOSTICS_DEFAULT "Show the PS1 diagnostics overlay at startup" OFF)
+	option(FUNKIN_PS1_SCENE_DEMO_DEFAULT "Build a camera-only scene demo without gameplay penalties" OFF)
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
 	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
 	set(_psn00bsdk_cdstream_dir
@@ -207,6 +208,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	endif()
 	set(_playable_visual_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_visual_data.h")
 	set(_visual_asset_dependencies
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/mainStage.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stageback.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagefront.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stagecurtains.png"
@@ -216,7 +218,13 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/notes.xml"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/noteStrumline.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/noteStrumline.xml"
-		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/NOTE_hold_assets.png")
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/NOTE_hold_assets.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-dad.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-bf.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/sick.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/good.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/bad.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/shit.png")
 	add_custom_command(
 		OUTPUT "${_playable_visual_header}"
 		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
@@ -243,6 +251,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
 		GAME_DAD_LANES_DEFAULT=$<BOOL:${FUNKIN_PS1_DAD_LANES_DEFAULT}>
 		GAME_DIAGNOSTICS_DEFAULT=$<BOOL:${FUNKIN_PS1_DIAGNOSTICS_DEFAULT}>
+		GAME_SCENE_DEMO_DEFAULT=$<BOOL:${FUNKIN_PS1_SCENE_DEMO_DEFAULT}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
 	target_include_directories(funkin-ps1-bopeebo-playable PRIVATE
 		"${_psn00bsdk_cdstream_dir}" "${CMAKE_CURRENT_BINARY_DIR}")
