@@ -182,6 +182,8 @@ endif()
 # generated C table; neither chart data nor official audio is vendored here.
 if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_JSON}" AND
 	DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH AND EXISTS "${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}")
+	option(FUNKIN_PS1_DAD_LANES_DEFAULT "Show Dad's autoplay lanes when Bopeebo starts" ON)
+	option(FUNKIN_PS1_DIAGNOSTICS_DEFAULT "Show the PS1 diagnostics overlay at startup" OFF)
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
 	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
 	set(_psn00bsdk_cdstream_dir
@@ -234,6 +236,8 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bopeebo-sfx)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
+		GAME_DAD_LANES_DEFAULT=$<BOOL:${FUNKIN_PS1_DAD_LANES_DEFAULT}>
+		GAME_DIAGNOSTICS_DEFAULT=$<BOOL:${FUNKIN_PS1_DIAGNOSTICS_DEFAULT}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
 	target_include_directories(funkin-ps1-bopeebo-playable PRIVATE
 		"${_psn00bsdk_cdstream_dir}" "${CMAKE_CURRENT_BINARY_DIR}")

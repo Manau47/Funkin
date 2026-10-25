@@ -328,9 +328,15 @@ def rgb555(color: tuple[int, int, int]) -> int:
     return packed or 1  # RGB=0 is transparent on the PS1.
 
 
+def rgb555_roundtrip(color: tuple[int, int, int]) -> tuple[int, int, int]:
+	value = rgb555(color)
+	return tuple((((value >> shift) & 31) * 255 + 15) // 31 for shift in (0, 5, 10))
+
+
 def write_header(output: pathlib.Path,
                  palette8: list[tuple[int, int, int]],
                  palette4: list[tuple[int, int, int]],
+                 palette_bf8: list[tuple[int, int, int]],
                  pages8: list[bytearray], pages4: list[bytearray],
                  page_table: list[tuple[int, int, int]],
                  descriptors: dict[str, dict]) -> None:
@@ -356,6 +362,10 @@ def write_header(output: pathlib.Path,
     values = [0] + [rgb555(c) for c in palette4[:15]]
     values += [0] * (16 - len(values))
     lines.append("static const uint16_t bopeebo_visual_palette4[16] = {" +
+                  ",".join(f"0x{x:04x}" for x in values) + "};")
+    values = [0] + [rgb555(c) for c in palette_bf8[:255]]
+    values += [0] * (256 - len(values))
+    lines.append("static const uint16_t bopeebo_visual_palette_bf8[256] = {" +
                   ",".join(f"0x{x:04x}" for x in values) + "};")
     lines.append("static const BopeeboVisualFrame bopeebo_visual_frames[BOPEEBO_VISUAL_FRAME_COUNT] = {")
     for name, frame in descriptors.items():
@@ -436,16 +446,20 @@ def build(args: argparse.Namespace) -> None:
 
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
+    bf_core_names = [name for name in bf_names if not name.startswith("bf_miss_")]
+    bf_miss_names = [name for name in bf_names if name.startswith("bf_miss_")]
     dad_names = [name for name in temp_images if name.startswith("dad_")]
     gf_names = [name for name in temp_images if name.startswith("gf_")]
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
     # One shared 8bpp palette fits alongside the BF CLUT in the 320-word
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
     palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names], 255)
-    palette4 = median_palette([temp_images[n] for n in bf_names], 15)
+    palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
+    palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
                   if not name.startswith("bf_")}
-    quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_names}
+    quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
+    quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
     descriptors: dict[str, dict] = {}
     pages8: list[bytearray] = []
     pages4: list[bytearray] = []
@@ -467,13 +481,15 @@ def build(args: argparse.Namespace) -> None:
     pack_8bpp([(n, quantized8[n], *frame_sizes[n]) for n in dad_names], dad_first, 0, pages8, descriptors)
     gf_first = len(pages8)
     pack_8bpp([(n, quantized8[n], *frame_sizes[n]) for n in gf_names], gf_first, 0, pages8, descriptors)
-    # Pack 4bpp images before constructing page_table so their allocated
-    # texture pages receive VRAM coordinates as well as storage.
-    pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_names],
+    bf8_first = len(pages8)
+    pack_8bpp([(n, quantized_bf8[n], *frame_sizes[n]) for n in bf_core_names],
+              bf8_first, 2, pages8, descriptors)
+    # Keep the less frequent miss poses 4bpp; the song-critical idle/sing poses
+    # get a dedicated 8bpp CLUT and the two remaining 8bpp texture pages.
+    pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names],
               0, 1, pages4, descriptors)
-    # Place aligned 8bpp pages in free columns to the right of both display
-    # buffers; the font stays at x=960,y=0. BF 4bpp pages fill the lower-right
-    # row. These coordinates are checked against the 1 MiB VRAM.
+    # Place aligned 8bpp pages right of the framebuffers (font at x=960,y=0).
+    # 4bpp pages use the free strip x=320..383 beside both 320-word framebuffers.
     if len(pages8) > 9 or len(pages4) > 4:
         raise ValueError(f"visual page layout exceeds free VRAM: {len(pages8)}x8bpp, {len(pages4)}x4bpp")
     page_table: list[tuple[int, int, int]] = []
@@ -482,17 +498,34 @@ def build(args: argparse.Namespace) -> None:
     for i in range(len(pages8)):
         x, y = row0[i] if i < 4 else row1[i - 4]
         page_table.append((x, y, 1))
-    # 8bpp page bases align to 128 VRAM words. Four top-row and three
-    # lower-row pages are used; BF 4bpp pages then start at x=768.
-    first4x = 768
+    # 8bpp page bases align to 128 VRAM words. Four top-row and up to five
+    # lower-row pages are available. 4bpp pages use the unused horizontal
+    # strip immediately right of both 320-word framebuffers (x=320..383).
+    first4x = 320
     for i in range(len(pages4)):
         x = first4x + i * 64
         if x + 64 > 1024:
             raise ValueError("4bpp pages collide with the framebuffer or exceed VRAM width")
+        # Texture-page Y is quantized by getTPage to 0 or 256; keep the
+        # 4bpp page aligned at 256 so runtime UVs address the uploaded data.
         page_table.append((x, 256, 0))
     if len(page_table) != len(pages8) + len(pages4):
         raise ValueError("generated VRAM page table does not cover all texture pages")
-    for name in bf_names:
+
+    # Validate the actual 1024x512-word VRAM rectangles, including both
+    # framebuffers, all texture pages, CLUT rows and the SDK font reservation.
+    vram_regions = [("framebuffer0", 0, 0, 320, 240), ("framebuffer1", 0, 240, 320, 240),
+                    ("palette8", 0, 496, 256, 1), ("palette4", 256, 496, 16, 1),
+                    ("palette_bf8", 0, 480, 256, 1), ("font_reservation", 960, 0, 64, 256)]
+    for i, (x, y, depth) in enumerate(page_table):
+        vram_regions.append((f"texture_page_{i}", x, y, 128 if depth else 64, 256))
+    for i, (name, x, y, width, height) in enumerate(vram_regions):
+        if x < 0 or y < 0 or x + width > 1024 or y + height > 512:
+            raise ValueError(f"VRAM region {name} exceeds the 1024x512 map")
+        for other_name, ox, oy, ow, oh in vram_regions[:i]:
+            if x < ox + ow and ox < x + width and y < oy + oh and oy < y + height:
+                raise ValueError(f"VRAM regions {name} and {other_name} overlap")
+    for name in bf_miss_names:
         descriptors[name]["page"] += len(pages8)
 
     # Keep quantization losses visible in the build log to guide art choices.
@@ -504,15 +537,17 @@ def build(args: argparse.Namespace) -> None:
             for i, index in enumerate(q):
                 if not index:
                     continue
-                color = palette[index - 1]
+                color = rgb555_roundtrip(palette[index - 1])
                 base = i * 4
                 squared += sum((source[base + c] - color[c]) ** 2 for c in range(3))
                 count += 3
         return (squared / count) ** 0.5 if count else 0.0
     print(f"stage palette loss: 15-color RMSE {rmse(stage_names, stage_palette_old):.2f}; shared 255-color RMSE {rmse(stage_names, palette8):.2f} RGB levels")
     print(f"Dad/GF combined palette RMSE: Dad {rmse(dad_names, palette8):.2f}, GF {rmse(gf_names, palette8):.2f} RGB levels")
-    write_header(pathlib.Path(args.output), palette8, palette4, pages8, pages4, page_table, descriptors)
+    print(f"BF core idle/sing at 64x96: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
+    write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, pages8, pages4, page_table, descriptors)
     print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance; BF {len(bf_names)} official Sparrow frames")
+    print(f"VRAM map verified: {len(pages8)}x8bpp + {len(pages4)}x4bpp, framebuffers, CLUTs and font reserve are in bounds without overlap")
     print(f"VRAM textures: {len(pages8)}x8bpp + {len(pages4)}x4bpp = {len(pages8)*65536+len(pages4)*32768} bytes; generated header {pathlib.Path(args.output).stat().st_size} bytes")
 
 

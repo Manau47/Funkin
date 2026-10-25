@@ -52,9 +52,32 @@
 #define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
 #define GAME_MAX_PRIMS 220u
 #define BOPEEBO_BPM 100u
+#define GAME_SCROLL_PIXELS_PER_SECOND 176u
+#ifndef GAME_DAD_LANES_DEFAULT
+#define GAME_DAD_LANES_DEFAULT 1
+#endif
+#ifndef GAME_DIAGNOSTICS_DEFAULT
+#define GAME_DIAGNOSTICS_DEFAULT 0
+#endif
+
+typedef struct {
+	int16_t first_center_x;
+	int16_t receptor_y;
+	int16_t lane_step;
+	uint8_t arrow_size;
+	uint8_t top_clip;
+	uint8_t lane_group;
+} NoteGroupLayout;
+
+/* Separate geometry/state groups preserve the future two-player split. */
+static const NoteGroupLayout note_groups[2] = {
+	{ 14, 78, 18, 14, 24, 0 }, /* Dad/autoplay: compact upper-left */
+	{ 176, 216, 32, 24, 100, 1 } /* BF/player: lower screen */
+};
 static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
 static int16_t active_hold[4] = { -1, -1, -1, -1 };
 static uint32_t hold_last_sample[4];
+static uint32_t receiver_flash_until[2][4];
 static uint32_t hold_drops;
 static int32_t score;
 static uint32_t combo;
@@ -69,6 +92,7 @@ static uint8_t dad_visual_lane;
 static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t camera_focus;
+static uint32_t camera_focus_started;
 static uint32_t camera_focus_until;
 static bool dad_lanes_visible;
 static bool diagnostics_visible;
@@ -76,6 +100,8 @@ static POLY_F4 game_prims[GAME_MAX_PRIMS];
 static unsigned game_prim_count;
 static POLY_FT4 visual_prims[16];
 static unsigned visual_prim_count;
+static int hud_font_id = -1;
+static int diagnostics_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
 {
@@ -221,7 +247,8 @@ static void init_video(void)
 {
 	ResetGraph(0);
 	FntLoad(960, 0);
-	FntOpen(8, 16, 304, 208, 0, 512);
+	hud_font_id = FntOpen(54, 10, 162, 12, 0, 32);
+	diagnostics_font_id = FntOpen(8, 20, 304, 200, 0, 512);
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
 		SetDefDispEnv(&frames[i].display, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -250,6 +277,8 @@ static void load_bopeebo_visuals(void)
 	/* The second 320x240 framebuffer ends at y=495; keep CLUTs below it. */
 	RECT palette8_rect = { 0, 496, 256, 1 };
 	LoadImage(&palette8_rect, (uint32_t *)bopeebo_visual_palette8);
+	RECT bf_palette8_rect = { 0, 480, 256, 1 };
+	LoadImage(&bf_palette8_rect, (uint32_t *)bopeebo_visual_palette_bf8);
 	RECT bf_palette_rect = { 256, 496, 16, 1 };
 	LoadImage(&bf_palette_rect, (uint32_t *)bopeebo_visual_palette4);
 	DrawSync(0);
@@ -622,6 +651,7 @@ static int find_player_note(unsigned lane, uint32_t samples)
 
 static void game_miss(unsigned index)
 {
+	uint32_t now = Stream_GetSamplesPlayed(&stream);
 	game_note_state[index] = 2;
 	misses++;
 	combo = 0;
@@ -630,8 +660,9 @@ static void game_miss(unsigned index)
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)(bopeebo_notes[index].lane & 3u);
-	bf_visual_until = Stream_GetSamplesPlayed(&stream) + BOPEEBO_CHART_RATE * 350u / 1000u;
+	bf_visual_until = now + BOPEEBO_CHART_RATE * 350u / 1000u;
 	camera_focus = 2;
+	camera_focus_started = now;
 	camera_focus_until = bf_visual_until;
 	play_resident_sfx(false);
 	set_voice_pan();
@@ -639,14 +670,16 @@ static void game_miss(unsigned index)
 
 static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t rate)
 {
+	uint32_t now = Stream_GetSamplesPlayed(&stream);
 	hold_drops++;
 	combo = 0;
 	score -= (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
-	bf_visual_until = Stream_GetSamplesPlayed(&stream) + rate * 350u / 1000u;
+	bf_visual_until = now + rate * 350u / 1000u;
 	camera_focus = 2;
+	camera_focus_started = now;
 	camera_focus_until = bf_visual_until;
 	play_resident_sfx(false);
 	set_voice_pan();
@@ -660,10 +693,12 @@ static void game_update(uint32_t samples)
 		if (bopeebo_notes[i].lane >= 4u && !game_note_state[i] && samples >= bopeebo_notes[i].head) {
 			game_note_state[i] = 3; /* Dad chart lane: audio stem performs the note. */
 			dad_visual_lane = (uint8_t)(bopeebo_notes[i].lane & 3u);
+			receiver_flash_until[0][dad_visual_lane] = samples + rate * 140u / 1000u;
 			dad_visual_start = samples;
 			dad_visual_until = bopeebo_notes[i].tail > bopeebo_notes[i].head ?
 				bopeebo_notes[i].tail : samples + rate * 250u / 1000u;
 			camera_focus = 1;
+			camera_focus_started = samples;
 			camera_focus_until = dad_visual_until;
 		}
 		if (bopeebo_notes[i].lane < 4u && !game_note_state[i] &&
@@ -709,6 +744,7 @@ static void game_update(uint32_t samples)
 			bf_visual_lane = (uint8_t)lane;
 			bf_visual_until = samples + rate * 350u / 1000u;
 			camera_focus = 2;
+			camera_focus_started = samples;
 			camera_focus_until = bf_visual_until;
 			continue;
 		}
@@ -723,12 +759,14 @@ static void game_update(uint32_t samples)
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; }
 		else { combo = 0; add_health(-5); }
 		hits++;
+		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
 		bf_miss_silenced = false;
 		bf_visual_state = 1;
 		bf_visual_lane = (uint8_t)lane;
 		bf_visual_until = bopeebo_notes[target].tail > samples ?
 			bopeebo_notes[target].tail : samples + rate * 220u / 1000u;
 		camera_focus = 2;
+		camera_focus_started = samples;
 		camera_focus_until = bf_visual_until;
 		if (bopeebo_notes[target].tail > head && (game_buttons & mask) == 0) {
 			active_hold[lane] = (int16_t)target;
@@ -750,18 +788,30 @@ static void draw_rect(int x, int y, int width, int height, uint8_t r, uint8_t g,
 	DrawPrim((uint32_t *)p);
 }
 
+static void draw_triangle(int x0, int y0, int x1, int y1, int x2, int y2,
+	uint8_t r, uint8_t g, uint8_t b)
+{
+	if (game_prim_count >= GAME_MAX_PRIMS) return;
+	POLY_F3 *p = (POLY_F3 *)&game_prims[game_prim_count++];
+	setPolyF3(p);
+	setRGB0(p, r, g, b);
+	setXY3(p, x0, y0, x1, y1, x2, y2);
+	DrawPrim((uint32_t *)p);
+}
+
 static void draw_visual_frame(unsigned frame, int x, int y, int camera_shift,
-	unsigned zoom_q8, unsigned parallax_q8)
+	unsigned zoom_q8, unsigned parallax_q8, unsigned scale_q8)
 {
 	if (visual_prim_count >= 16u || frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	int shift = camera_shift * (int)parallax_q8 / 256;
-	int x0 = 160 + ((x - 160) * (int)zoom_q8) / 256 + shift;
-	int y0 = 96 + ((y - 96) * (int)zoom_q8) / 256;
-	int w = ((int)visual->w * (int)zoom_q8) / 256;
-	int h = ((int)visual->h * (int)zoom_q8) / 256;
+	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
+	int x0 = 160 + ((x - 160) * (int)combined_scale) / 256 + shift;
+	int y0 = 124 + ((y - 124) * (int)combined_scale) / 256;
+	int w = ((int)visual->w * (int)combined_scale) / 256;
+	int h = ((int)visual->h * (int)combined_scale) / 256;
 	setPolyFT4(p);
 	setRGB0(p, 128, 128, 128);
 	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
@@ -770,11 +820,165 @@ static void draw_visual_frame(unsigned frame, int x, int y, int camera_shift,
 		visual->u, (uint8_t)(visual->v + visual->h - 1u),
 		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
 	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	setClut(p, visual->palette == 1u ? 256 : 0, 496);
+	setClut(p, visual->palette == 1u ? 256 : 0,
+		visual->palette == 2u ? 480 : 496);
 	DrawPrim((uint32_t *)p);
 }
 
-static void draw_stage_scene(uint32_t samples)
+static void draw_hud_icon(unsigned frame, int x, int y, unsigned scale_q8)
+{
+	if (visual_prim_count >= 16u || frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	int w = ((int)visual->w * (int)scale_q8) / 256;
+	int h = ((int)visual->h * (int)scale_q8) / 256;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + w, y, x, y + h, x + w, y + h);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, visual->palette == 1u ? 256 : 0,
+		visual->palette == 2u ? 480 : 496);
+	DrawPrim((uint32_t *)p);
+}
+
+typedef struct { uint8_t r, g, b; } GameColor;
+
+static const GameColor lane_colors[4] = {
+	{ 56, 184, 250 }, { 249, 196, 64 }, { 97, 226, 121 }, { 215, 116, 246 }
+};
+
+static void rotate_arrow_point(int x, int y, int size, unsigned direction, int *out_x, int *out_y)
+{
+	if (direction == 1u) { *out_x = y; *out_y = size - x; }
+	else if (direction == 2u) { *out_x = size - y; *out_y = x; }
+	else if (direction == 3u) { *out_x = size - x; *out_y = size - y; }
+	else { *out_x = x; *out_y = y; }
+}
+
+static void draw_arrow_triangle(int x, int y, int size, unsigned direction, GameColor color)
+{
+	int a_x, a_y, b_x, b_y, c_x, c_y;
+	rotate_arrow_point(size / 32, size / 2, size, direction, &a_x, &a_y);
+	rotate_arrow_point(size * 13 / 32, size / 12, size, direction, &b_x, &b_y);
+	rotate_arrow_point(size * 13 / 32, size * 11 / 12, size, direction, &c_x, &c_y);
+	draw_triangle(x + a_x, y + a_y, x + b_x, y + b_y, x + c_x, y + c_y,
+		color.r, color.g, color.b);
+}
+
+static void draw_arrow_rect(int x, int y, int size, unsigned direction, GameColor color)
+{
+	int x0, y0, x1, y1;
+	int ax, ay, bx, by, cx, cy, dx, dy;
+	rotate_arrow_point(size * 10 / 32, size * 11 / 32, size, direction, &ax, &ay);
+	rotate_arrow_point(size * 31 / 32, size * 11 / 32, size, direction, &bx, &by);
+	rotate_arrow_point(size * 31 / 32, size * 21 / 32, size, direction, &cx, &cy);
+	rotate_arrow_point(size * 10 / 32, size * 21 / 32, size, direction, &dx, &dy);
+	x0 = ax; if (bx < x0) x0 = bx; if (cx < x0) x0 = cx; if (dx < x0) x0 = dx;
+	x1 = ax; if (bx > x1) x1 = bx; if (cx > x1) x1 = cx; if (dx > x1) x1 = dx;
+	y0 = ay; if (by < y0) y0 = by; if (cy < y0) y0 = cy; if (dy < y0) y0 = dy;
+	y1 = ay; if (by > y1) y1 = by; if (cy > y1) y1 = cy; if (dy > y1) y1 = dy;
+	draw_rect(x + x0, y + y0, x1 - x0, y1 - y0, color.r, color.g, color.b);
+}
+
+static void draw_arrow(int x, int y, unsigned size, unsigned direction, GameColor fill)
+{
+	draw_arrow_rect(x, y, (int)size, direction, (GameColor){ 8, 9, 18 });
+	draw_arrow_triangle(x, y, (int)size, direction, (GameColor){ 8, 9, 18 });
+	draw_arrow_rect(x + 2, y + 2, (int)size - 4, direction, fill);
+	draw_arrow_triangle(x + 2, y + 2, (int)size - 4, direction, fill);
+}
+
+static GameColor dim_color(GameColor color)
+{
+	color.r = (uint8_t)(color.r / 3u);
+	color.g = (uint8_t)(color.g / 3u);
+	color.b = (uint8_t)(color.b / 3u);
+	return color;
+}
+
+static int note_screen_y(uint32_t target, uint32_t samples, const NoteGroupLayout *layout,
+	uint32_t rate)
+{
+	int64_t delta = (int64_t)target - (int64_t)samples;
+	uint32_t speed = layout->lane_group ? GAME_SCROLL_PIXELS_PER_SECOND : 124u;
+	return layout->receptor_y - (int)((delta * speed) / rate);
+}
+
+static void draw_hold_body(int center_x, int y0, int y1, unsigned size, GameColor color,
+	int top_clip, int bottom_clip)
+{
+	int top = y0 < y1 ? y0 : y1;
+	int bottom = y0 > y1 ? y0 : y1;
+	if (top < top_clip) top = top_clip;
+	if (bottom > bottom_clip) bottom = bottom_clip;
+	if (bottom <= top) return;
+	int outer_w = size / 2u;
+	int inner_w = size / 4u;
+	draw_rect(center_x - outer_w / 2, top, outer_w, bottom - top, 8, 9, 18);
+	draw_rect(center_x - inner_w / 2, top + 1, inner_w, bottom - top - 2,
+		color.r, color.g, color.b);
+}
+
+static void draw_note_group(uint32_t samples, unsigned group_index)
+{
+	const NoteGroupLayout *layout = &note_groups[group_index];
+	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	if (group_index == 0u && !dad_lanes_visible) return;
+	int bottom_clip = layout->receptor_y + (int)layout->arrow_size / 2 + 4;
+	for (unsigned lane = 0; lane < 4u; lane++) {
+		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
+		uint16_t mask = (uint16_t[]){ PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT }[lane];
+		bool pressed = group_index == 1u && !(game_buttons & mask);
+		bool confirmed = samples < receiver_flash_until[group_index][lane];
+		GameColor receptor = dim_color(lane_colors[lane]);
+		if (pressed) receptor = lane_colors[lane];
+		if (confirmed) receptor = (GameColor){ 255, 245, 220 };
+		draw_arrow(center_x - layout->arrow_size / 2, layout->receptor_y - layout->arrow_size / 2,
+			layout->arrow_size, lane, receptor);
+	}
+
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		const BopeeboNote *note = &bopeebo_notes[i];
+		bool dad_note = note->lane >= 4u;
+		if ((group_index == 0u) != dad_note) continue;
+		unsigned lane = note->lane & 3u;
+		unsigned color_lane = lane;
+		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
+		uint32_t state = game_note_state[i];
+		bool holding = !dad_note && active_hold[lane] == (int16_t)i;
+		if (state == 2u || (state == 1u && !holding) || (dad_note && state == 3u && samples >= note->tail))
+			continue;
+
+		if (note->tail > note->head && (state == 0u || holding || (dad_note && state == 3u))) {
+			uint32_t visible_start = samples > note->head && (holding || (dad_note && state == 3u)) ?
+				samples : note->head;
+			int y0 = note_screen_y(visible_start, samples, layout, rate);
+			int y1 = note_screen_y(note->tail, samples, layout, rate);
+			draw_hold_body(center_x, y0, y1, layout->arrow_size, lane_colors[color_lane],
+				layout->top_clip, bottom_clip);
+			if (y1 >= layout->top_clip && y1 <= bottom_clip) {
+				int end_w = layout->arrow_size / 2;
+				draw_rect(center_x - end_w / 2, y1 - 2, end_w, 4, 8, 9, 18);
+				draw_rect(center_x - end_w / 2 + 2, y1 - 1, end_w - 4, 2,
+					lane_colors[color_lane].r, lane_colors[color_lane].g, lane_colors[color_lane].b);
+			}
+		}
+
+		if (state != 0u) continue;
+		int y = note_screen_y(note->head, samples, layout, rate);
+		int top = y - layout->arrow_size / 2;
+		if (top + layout->arrow_size <= layout->top_clip || top >= bottom_clip) continue;
+		draw_arrow(center_x - layout->arrow_size / 2, top, layout->arrow_size, lane,
+			lane_colors[color_lane]);
+	}
+}
+
+static void draw_scene(uint32_t samples)
 {
 	uint32_t rate = BOPEEBO_CHART_RATE;
 	uint32_t beat_period = rate * 60u / BOPEEBO_BPM;
@@ -784,14 +988,21 @@ static void draw_stage_scene(uint32_t samples)
 		(unsigned)(((uint64_t)(pulse_window - beat_phase) * 7u) / pulse_window) : 0u;
 	unsigned zoom_q8 = 256u + pulse_q8;
 	unsigned beat = beat_period ? samples / beat_period : 0u;
+	int target_shift = camera_focus == 1u ? 3 : (camera_focus == 2u ? -3 : 0);
 	int camera_shift = 0;
-	if (samples < camera_focus_until && camera_focus == 1u) camera_shift = 5;
-	else if (samples < camera_focus_until && camera_focus == 2u) camera_shift = -5;
+	if (samples < camera_focus_until && target_shift) {
+		uint32_t ease_samples = rate * 120u / 1000u;
+		uint32_t in = samples > camera_focus_started ? samples - camera_focus_started : 0u;
+		uint32_t out = camera_focus_until - samples;
+		uint32_t ease = in < ease_samples ? in * 256u / ease_samples : 256u;
+		uint32_t release = out < ease_samples ? out * 256u / ease_samples : 256u;
+		if (release < ease) ease = release;
+		camera_shift = target_shift * (int)ease / 256;
+	}
 
-	/* Composite stage background retains its 256-color palette. Subtle
-	 * parallax/beat zoom applies only to scenery; note lanes stay screen-locked. */
-	draw_visual_frame(VIS_STAGE_BACK_0, 0, 0, camera_shift, zoom_q8, 72);
-	draw_visual_frame(VIS_STAGE_BACK_1, 256, 0, camera_shift, zoom_q8, 72);
+	/* Scene zoom/focus is audio-clocked; note groups and HUD remain screen-locked. */
+	draw_visual_frame(VIS_STAGE_BACK_0, 0, 0, camera_shift, zoom_q8, 64, 276);
+	draw_visual_frame(VIS_STAGE_BACK_1, 256, 0, camera_shift, zoom_q8, 64, 276);
 
 	unsigned dad_frame;
 	if (samples < dad_visual_until) {
@@ -804,64 +1015,45 @@ static void draw_stage_scene(uint32_t samples)
 	} else {
 		dad_frame = VIS_DAD_IDLE_0 + (beat / 2u) % 6u;
 	}
-	draw_visual_frame(dad_frame, 16, 60, camera_shift, zoom_q8, 256);
-	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u, 96, 64, camera_shift, zoom_q8, 256);
+	draw_visual_frame(dad_frame, 24, 88, camera_shift, zoom_q8, 256, 288);
+	draw_visual_frame(VIS_GF_DANCE_0 + beat % 8u, 96, 80, camera_shift, zoom_q8, 256, 288);
 
 	unsigned bf_frame;
-	if (bf_visual_state == 2u) {
+	if (bf_visual_state == 2u)
 		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
-	} else if (bf_visual_state == 1u) {
+	else if (bf_visual_state == 1u)
 		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
-	} else {
+	else
 		bf_frame = VIS_BF_IDLE_0 + ((beat & 1u) ? 1u : 0u);
-	}
-	draw_visual_frame(bf_frame, 234, 60, camera_shift, zoom_q8, 256);
+	draw_visual_frame(bf_frame, 232, 85, camera_shift, zoom_q8, 256, 288);
 
-	/* The official foreground stage rail stays behind the readable note lanes. */
-	draw_visual_frame(VIS_STAGE_FRONT_0, 0, 184, camera_shift, zoom_q8, 208);
-	draw_visual_frame(VIS_STAGE_FRONT_1, 256, 184, camera_shift, zoom_q8, 208);
+	draw_visual_frame(VIS_STAGE_FRONT_0, 0, 184, camera_shift, zoom_q8, 192, 276);
+	draw_visual_frame(VIS_STAGE_FRONT_1, 256, 184, camera_shift, zoom_q8, 192, 276);
 }
 
 static void draw_gameplay(uint32_t samples)
 {
 	game_prim_count = 0;
 	visual_prim_count = 0;
-	draw_stage_scene(samples);
-	for (unsigned side = 0; side < 2; side++) {
-		if (side == 0u && !dad_lanes_visible) continue;
-		int origin = side ? 170 : 20;
-		for (unsigned lane = 0; lane < 4; lane++) {
-			int x = origin + (int)lane * 24;
-			draw_rect(x, 124, 20, 92, 16, 18, 31);
-			draw_rect(x, 199, 20, 3, 104, 104, 128);
-			/* Dad is drawn on the left; BF is on the right. Chart lanes stay unchanged. */
-			draw_rect(x + 2, 197, 16, 7, side ? 52 : 224, side ? 198 : 118, side ? 240 : 74);
-		}
-	}
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		const BopeeboNote *note = &bopeebo_notes[i];
-		int is_dad = note->lane >= 4u;
-		if (is_dad && !dad_lanes_visible) continue;
-		unsigned lane = note->lane & 3u;
-		int x = (is_dad ? 20 : 170) + (int)lane * 24 + 3;
-		int y = 200 - (int)(((int64_t)note->head - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
-		int tail_y = 200 - (int)(((int64_t)note->tail - (int64_t)samples) * 40 / (int64_t)BOPEEBO_CHART_RATE);
-		if (note->tail > note->head) {
-			int top = y < tail_y ? y : tail_y;
-			int bottom = y > tail_y ? y : tail_y;
-			if (bottom > 124 && top < 216)
-				draw_rect(x + 4, top < 124 ? 124 : top, 8, (bottom > 216 ? 216 : bottom) - (top < 124 ? 124 : top),
-					is_dad ? 176 : 48, is_dad ? 78 : 158, is_dad ? 56 : 220);
-		}
-		if (game_note_state[i] == 1u || game_note_state[i] == 2u || (is_dad && game_note_state[i] == 3u)) continue;
-		if (y >= 124 && y <= 216)
-			draw_rect(x, y - 5, 18, 10, is_dad ? 248 : 80, is_dad ? 145 : 220, is_dad ? 96 : 255);
-	}
+	draw_scene(samples);
+	draw_note_group(samples, 0);
+	draw_note_group(samples, 1);
+
+	/* Compact portrait/score/life HUD; only chart diagnostics are textual. */
+	draw_rect(0, 0, 320, 30, 20, 16, 29);
+	draw_hud_icon(VIS_BF_IDLE_0, 7, 7, 48);
+	draw_hud_icon(VIS_DAD_IDLE_0, 26, 7, 44);
+	draw_rect(224, 10, 82, 8, 8, 9, 18);
+	unsigned health_width = (unsigned)health_q8 * 112u / 512u;
+	GameColor life = health_width < 28u ? (GameColor){ 244, 71, 73 } :
+		health_width < 64u ? (GameColor){ 246, 194, 64 } : (GameColor){ 83, 215, 128 };
+	if (health_width) draw_rect(226, 12, (int)(health_width * 78u / 112u), 4, life.r, life.g, life.b);
 }
 
 static void reset_game_state(void)
 {
 	memset(game_note_state, 0, sizeof(game_note_state));
+	memset(receiver_flash_until, 0, sizeof(receiver_flash_until));
 	for (unsigned lane = 0; lane < 4; lane++) active_hold[lane] = -1;
 	score = combo = misses = hits = 0;
 	hold_drops = 0;
@@ -874,9 +1066,10 @@ static void reset_game_state(void)
 	dad_visual_start = 0;
 	dad_visual_until = 0;
 	camera_focus = 0;
+	camera_focus_started = 0;
 	camera_focus_until = 0;
-	dad_lanes_visible = true;
-	diagnostics_visible = false;
+	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
+	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0;
 }
 
 static bool restart_bopeebo(void)
@@ -1252,8 +1445,6 @@ int main(void)
 		unsigned beat_phase_samples = beat_period_samples ? samples % beat_period_samples : 0;
 #if TEST_PLAYABLE_BOPEEBO
 		draw_gameplay(samples);
-		draw_rect(20, 220, 264, 6, 48, 48, 58);
-		draw_rect(20, 220, (int)((uint32_t)health_q8 * 132u / 256u), 6, 80, 210, 112);
 #endif
 #if !TEST_PLAYABLE_BOPEEBO
 		FntPrint(-1, "SPU STREAM / VAGi\n\n");
@@ -1268,21 +1459,24 @@ int main(void)
 #if TEST_BOPEEBO_4CH
 #if TEST_PLAYABLE_BOPEEBO
 		/* Keep the default HUD to one row so it does not cover character faces. */
-		FntPrint(-1, "BOPEEBO %02u:%02u  TRI DAD %s  SEL INFO\n",
-			milliseconds / 60000u, (milliseconds / 1000u) % 60u,
-			dad_lanes_visible ? "ON" : "OFF");
+		FntPrint(hud_font_id, "S%05ld C%03lu\n", (long)score, (unsigned long)combo);
+		FntFlush(hud_font_id);
 		if (diagnostics_visible) {
-			FntPrint(-1, "BUF %u/%u CD %u U %u PAD %s\n", (unsigned)stream.buffer.length,
+			FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  DAD TRI:%s  SEL:HIDE\n",
+				milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u,
+				dad_lanes_visible ? "ON" : "OFF");
+			FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u PAD %s\n", (unsigned)stream.buffer.length,
 				(unsigned)stream.config.buffer_size, (unsigned)read_errors, (unsigned)underruns,
 				pad_connected ? "ON" : "OFF");
-			FntPrint(-1, "SCORE %ld COMBO %lu HIT %lu MISS %lu DROP %lu\n",
+			FntPrint(diagnostics_font_id, "SCORE %ld COMBO %lu HIT %lu MISS %lu DROP %lu\n",
 				(long)score, (unsigned long)combo, (unsigned long)hits,
 				(unsigned long)misses, (unsigned long)hold_drops);
-			FntPrint(-1, "HP %u.%02u BF %s PAN %u/7 SFX %u\n",
+			FntPrint(diagnostics_font_id, "HP %u.%02u BF %s PAN %u/7 SFX %u\n",
 				(unsigned)(health_q8 / 256u), (unsigned)((health_q8 % 256u) * 100u / 256u),
 				(voices_muted || bf_miss_silenced) ? "MUTED" : "LIVE",
 				(unsigned)pan_width, (unsigned)sfx_manual_trigger_count);
-			FntPrint(-1, "D-PAD PLAY C MUTE L1/R1 PAN J SFX\n");
+			FntPrint(diagnostics_font_id, "D-PAD PLAY C MUTE L1/R1 PAN J SFX  START:RESTART\n");
+			FntFlush(diagnostics_font_id);
 		}
 #else
 		FntPrint(-1, "BOPEEBO 4CH  INST / DAD-L / BF-R\n");
