@@ -662,3 +662,38 @@ La build démo v15 a démarré dans DuckStation 0.1-8675, rendu 320×240 logique
 **Observé dans cette exécution :** boot, affichage de scène, notes, focus et transitions dans les deux sens. **Non vérifié :** lecture sonore à l’écoute dans ce passage, compteurs CD/underrun (masqués pendant la capture), parcours complet, contrôles Triangle/Select/mute/notes/holds/SFX/restart sur cette révision, stabilité audio sur une chanson entière, mesure de dérive, validation visuelle utilisateur et exécution sur console réelle. Les validations précédentes de gameplay et d’audio restent des retours sur leurs commits respectifs et ne sont pas automatiquement transférées à cette révision.
 
 Pour reproduire la configuration caméra, suivre les commandes de build de v13 ci-dessus et ajouter `-DFUNKIN_PS1_SCENE_DEMO_DEFAULT=ON -DFUNKIN_PS1_DIAGNOSTICS_DEFAULT=OFF`. Pour la build jouable, mettre `FUNKIN_PS1_SCENE_DEMO_DEFAULT=OFF`. `Select` est le contrôle documenté pour afficher les compteurs sur la démo; cette bascule reste à confirmer sur l’image v15.
+
+## Révision v18 — portraits de vie et lisibilité CRT
+
+La composition de scène, la caméra et les ancres v15 restent inchangées. Les règles de santé (valeur, pertes/gains, seuils et game over) ne changent pas.
+
+### Portraits et ordre GPU
+
+Les commandes du HUD sont soumises en ordre direct par `DrawPrim`: fond, remplissage et repère de la barre précèdent les portraits. La capture DuckStation de la build v18 montre les portraits Dad et BF au premier plan, au-dessus du remplissage. L'ordre du code était donc correct; le problème se trouvait dans le chemin texture/CLUT 4bpp utilisé par les petites icônes. La conversion v18 les place en 8bpp sur leur page préchargée et réutilise les palettes 8bpp des personnages (palette scène/Dad et palette BF). Ce choix utilise une page VRAM supplémentaire, mais évite une palette dédiée de 16 couleurs et n'ajoute aucune lecture CD concurrente.
+
+Les portraits officiels sont extraits à 24×24. Le texte score/combo est en police SDK 8×8, à y=39 sous les portraits (fin y=37). Aucun contour ou flou artificiel n'a été ajouté. Les sources visuelles restent celles du sous-module officiel épinglé; les pixels générés ne sont pas commités.
+
+### Zone sûre et mode vidéo
+
+Le HUD est contenu dans x=16..303 et y=12..47. Les guides diagnostic donnent deux repères estimatifs: titre 95 % (x=8..311, y=6..233) et action 90 % (x=16..303, y=12..227). Ils sont dessinés seulement lorsque les diagnostics sont visibles; `Select` masque/réaffiche l'ensemble avec les compteurs. Une variante de diagnostic démarre avec ces repères actifs pour faciliter leur inspection, tandis que l'image jouable normale les masque.
+
+Essai effectué dans DuckStation 0.1-8675 x64 avec le rendu D3D11. La barre d'état a indiqué le mode du jeu 320×240 et une cadence émulateur de 59–60 IPS pendant les observations. C'est une exécution en émulateur de classe 60 Hz; cela ne mesure pas la fréquence de sortie console ni les timings électriques NTSC. Aucun essai PAL, moniteur CRT ou console réelle n'a été réalisé. Les marges 95/90 sont des guides de composition, pas une certification d'overscan pour un téléviseur donné. La capture intégrée DuckStation a été exportée à 800×610; les PNG 320×240 fournis sont obtenus par recadrage 800×600 et réduction nearest-neighbor, sans interpolation, à partir de cette image de jeu.
+
+### Mesures du prototype et livrables
+
+| Ressource | v18 mesuré/calculé | Portée et limite |
+|---|---:|---|
+| ELF text+data+BSS | 668 650 o (`646 196 + 2 262 + 20 192`), `mipsel-none-elf-size` | Mesure du binaire jouable; contient code, tables visuelles/chart/SFX. |
+| Ring CD→RAM | 98 304 o | Allocation configurée, hors pile/heap/SDK et allocations non instrumentées. |
+| RAM principale suivie | 766 954 o (~749 Kio) | Somme ELF + ring; pas un maximum d'utilisation mesuré. |
+| Double framebuffer | 307 200 o | 2×320×240×16bpp. |
+| Textures | 589 824 o | 8 pages 8bpp + 2 pages 4bpp; comprend la page portraits additionnelle. |
+| CLUT | 1 184 o | Palettes générées; les portraits réutilisent les palettes personnage. |
+| Police réservée | 32 768 o | Réservation estimative du SDK. |
+| VRAM suivie | 930 976 o utilisés; 117 600 o libres par calcul | 1 Mio total; les allocations runtime non déclarées restent à mesurer. |
+| SPU / voix | 34 304 o; 8/24 voix | Inchangé: musique quatre canaux et pool SFX du prototype. |
+| CD | 98 304 o/s | Flux quatre canaux à 43 008 Hz; pas de changement audio dans cette révision. |
+
+Image jouable, hors Git: `ps1/build/bopeebo-crt-v18/funkin-ps1-bopeebo-playable.bin` et `.cue` (BIN 10 384 080 octets, 4 415 secteurs). Une seconde image `ps1/build/bopeebo-crt-v18-diagnostics/` démarre diagnostics et guides visibles. Captures 320×240: `ps1/build/bopeebo-crt-v18/captures/gameplay-native-320x240.png` et `safe-guides-native-320x240.png`; les captures source DuckStation 800×610 sont conservées dans le même dossier pour la traçabilité du recadrage.
+
+Compilation PSn00bSDK 0.24/GCC MIPS réussie pour les deux variantes. Exécution DuckStation observée: scène, portraits devant la barre et guides titre/action visibles. Ce passage ne valide pas une écoute audio, la chanson entière, une stabilité audio prolongée, le rendu sur CRT/PAL, ni la console réelle. Les tests à refaire sur matériel comprennent la lisibilité selon l'overscan du téléviseur, niveaux/contrastes, scintillement des détails, cadence PAL/NTSC et stabilité audio/commandes.

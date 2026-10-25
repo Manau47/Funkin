@@ -571,8 +571,8 @@ def build(args: argparse.Namespace) -> None:
             lane_names.append(name)
         ui4_by_direction[direction] = lane_names
 
-    # Official Funkin judgement lettering and health icons, kept in a compact
-    # dedicated CLUT. The two BF icon frames match the health-bar state.
+    # Official Funkin judgement lettering uses a compact CLUT. Health icons
+    # reuse the character palettes to preserve their color identity.
     popup_dir = assets / "preload" / "images" / "ui" / "popup" / "funkin"
     for name in ("sick", "good", "bad", "shit"):
         source = popup_dir / f"{name}.png"
@@ -583,14 +583,16 @@ def build(args: argparse.Namespace) -> None:
         temp_images[f"ui_judgement_{name}"] = extract_stage(ffmpeg, source, *size)
         frame_sizes[f"ui_judgement_{name}"] = size
         popup_names.append(f"ui_judgement_{name}")
+    icon_names: list[str] = []
     icon_dir = assets / "preload" / "images" / "icons"
     for name, source, x in (("dad", "icon-dad.png", 0),
                             ("bf_win", "icon-bf.png", 0),
                             ("bf_lose", "icon-bf.png", 150)):
         icon_png = icon_dir / source
-        temp_images[f"ui_icon_{name}"] = extract_crop(ffmpeg, icon_png, x, 0, 150, 150, (16, 16))
-        frame_sizes[f"ui_icon_{name}"] = (16, 16)
-        popup_names.append(f"ui_icon_{name}")
+        icon_name = f"ui_icon_{name}"
+        temp_images[icon_name] = extract_crop(ffmpeg, icon_png, x, 0, 150, 150, (24, 24))
+        frame_sizes[icon_name] = (24, 24)
+        icon_names.append(icon_name)
 
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
@@ -599,7 +601,6 @@ def build(args: argparse.Namespace) -> None:
     ui_names = [name for names in ui4_by_direction.values() for name in names]
     dad_names = [name for name in temp_images if name.startswith("dad_")]
     gf_names = [name for name in temp_images if name.startswith("gf_")]
-    popup_names = [name for name in popup_names]
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
     # One shared 8bpp palette fits alongside the BF CLUT in the 320-word
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
@@ -616,6 +617,10 @@ def build(args: argparse.Namespace) -> None:
                      for lane, direction in enumerate(directions) for name in ui4_by_direction[direction]}
     quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
     quantized_popup4 = {name: quantize(temp_images[name], palette_popup4) for name in popup_names}
+    quantized_icon8 = {
+        name: quantize(temp_images[name], palette_bf8 if name != "ui_icon_dad" else palette8)
+        for name in icon_names
+    }
     descriptors: dict[str, dict] = {}
     pages8: list[bytearray] = []
     pages4: list[bytearray] = []
@@ -639,6 +644,11 @@ def build(args: argparse.Namespace) -> None:
     bf8_first = len(pages8)
     pack_8bpp([(n, quantized_bf8[n], *frame_sizes[n]) for n in bf_core_names],
               bf8_first, 2, pages8, descriptors)
+    portrait_first_page = len(pages8)
+    pack_8bpp([(name, quantized_icon8[name], *frame_sizes[name]) for name in icon_names],
+              portrait_first_page, 0, pages8, descriptors)
+    for name in icon_names:
+        descriptors[name]["palette"] = 0 if name == "ui_icon_dad" else 2
     # Keep the less frequent miss poses 4bpp; the song-critical idle/sing poses
     # get a dedicated 8bpp CLUT and the two remaining 8bpp texture pages.
     pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names] +
@@ -687,7 +697,7 @@ def build(args: argparse.Namespace) -> None:
         for other_name, ox, oy, ow, oh in vram_regions[:i]:
             if x < ox + ow and ox < x + width and y < oy + oh and oy < y + height:
                 raise ValueError(f"VRAM regions {name} and {other_name} overlap")
-    for name in bf_miss_names + ui_names:
+    for name in bf_miss_names + ui_names + popup_names:
         descriptors[name]["page"] += len(pages8)
 
     # Keep quantization losses visible in the build log to guide art choices.
@@ -710,6 +720,7 @@ def build(args: argparse.Namespace) -> None:
     print("Official arrows/receptors/holds: 4bpp per direction, 15-color CLUT each; " +
           ", ".join(f"{d} RMSE {rmse(ui4_by_direction[d], palette_ui4[i]):.2f}" for i, d in enumerate(directions)))
     print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
+    print("Official health portraits at 24x24 use the 8bpp character CLUTs (Dad/main, BF/BF)")
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
                  palette_popup4, stage_layout, scene_bounds,
                  pages8, pages4, page_table, descriptors)
@@ -729,3 +740,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

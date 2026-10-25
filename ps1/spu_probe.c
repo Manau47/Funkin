@@ -255,8 +255,8 @@ static void init_video(void)
 	ResetGraph(0);
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
-	hud_font_id = FntOpen(70, 18, 210, 12, 0, 40);
-	diagnostics_font_id = FntOpen(8, 20, 304, 200, 0, 512);
+		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
+		diagnostics_font_id = FntOpen(24, 56, 272, 164, 0, 512);
 #endif
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -1075,27 +1075,39 @@ static void draw_gameplay(uint32_t samples)
 	draw_note_group(samples, 1);
 
 	/* HUD and transient judgment sprites are screen-space, independent of camera. */
-	draw_rect(0, 0, 320, 32, 20, 16, 29);
+	draw_rect(16, 12, 288, 36, 20, 16, 29);
 	/* FNF-style force balance: red opponent left, green BF right. This is
 	   display-only; health_q8 and game-over logic remain untouched. */
-	draw_rect(96, 4, 128, 12, 18, 18, 24);
+	draw_rect(94, 19, 132, 16, 18, 18, 24);
 	unsigned player_width = (unsigned)health_q8 * 62u / 512u;
 	unsigned opponent_width = 124u - player_width;
-	if (opponent_width) draw_rect(98, 6, (int)opponent_width, 8, 218, 63, 76);
-	if (player_width) draw_rect(98 + (int)opponent_width, 6, (int)player_width, 8, 76, 211, 121);
+	if (opponent_width) draw_rect(98, 23, (int)opponent_width, 8, 218, 63, 76);
+	if (player_width) draw_rect(98 + (int)opponent_width, 23, (int)player_width, 8, 76, 211, 121);
 	int boundary = 98 + (int)opponent_width;
-	draw_rect(boundary - 1, 2, 2, 16, 245, 244, 231);
-	draw_textured_frame(VIS_UI_ICON_DAD, boundary - 18, 0, 16, 16);
+	draw_rect(boundary - 1, 18, 2, 18, 245, 244, 231);
+	/* Submit through the same textured-primitive path used by visible arrows. */
+	draw_textured_frame(VIS_UI_ICON_DAD, boundary - 28, 13, 24, 24);
 	draw_textured_frame(health_q8 >= 256u ? VIS_UI_ICON_BF_WIN : VIS_UI_ICON_BF_LOSE,
-		boundary + 2, 0, 16, 16);
+		boundary + 4, 13, 24, 24);
 	if (samples < judgement_until && last_judgement) {
 		static const uint8_t popup_frame[5] = {
 			0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
 			VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 		};
 		const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-		draw_textured_frame(popup_frame[last_judgement],
-			(SCREEN_W - popup->w) / 2, 42, popup->w, popup->h);
+			draw_textured_frame(popup_frame[last_judgement],
+				(SCREEN_W - popup->w) / 2, 54, popup->w, popup->h);
+	}
+	if (diagnostics_visible) {
+		/* Approximate title/action-safe frames for 4:3 CRT setup checks. */
+		draw_rect(8, 6, 304, 1, 48, 96, 112);
+		draw_rect(8, 233, 304, 1, 48, 96, 112);
+		draw_rect(8, 6, 1, 228, 48, 96, 112);
+		draw_rect(311, 6, 1, 228, 48, 96, 112);
+		draw_rect(16, 12, 288, 1, 96, 160, 128);
+		draw_rect(16, 227, 288, 1, 96, 160, 128);
+		draw_rect(16, 12, 1, 216, 96, 160, 128);
+		draw_rect(303, 12, 1, 216, 96, 160, 128);
 	}
 }
 
@@ -1542,16 +1554,17 @@ int main(void)
 		{
 			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
 			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
-			FntPrint(hud_font_id, "SCENE DEMO %s %02u.%03u\n", focus_names[focus_index],
+		FntPrint(hud_font_id, "CAMERA DEMO %s %02u.%03u\n", focus_names[focus_index],
 				milliseconds / 1000u, milliseconds % 1000u);
 		}
 #else
-		FntPrint(hud_font_id, "S%05ld C%03lu\n", (long)score, (unsigned long)combo);
+		FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu\n", (long)score, (unsigned long)combo);
 #endif
 		FntFlush(hud_font_id);
 		if (diagnostics_visible) {
 			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
 			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
+			FntPrint(diagnostics_font_id, "CRT SAFE 95/90 SELECT:HIDE\n");
 			FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u FOCUS %s%s  TRI:%s\n",
 				milliseconds / 60000u, (milliseconds / 1000u) % 60u, milliseconds % 1000u,
 				focus_names[focus_index], camera_transitioning ? " ->" : "",
@@ -1615,3 +1628,4 @@ int main(void)
 #endif
 	}
 }
+
