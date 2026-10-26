@@ -66,7 +66,7 @@
 /* Keep dedicated headroom beyond the busiest chart frame for HUD portraits,
    judgement art, and the optional QA sheet. A full note field must not drop
    these later screen-space elements. */
-#define VISUAL_MAX_PRIMS 384u
+#define VISUAL_MAX_PRIMS 512u
 #define BOPEEBO_BPM 100u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
@@ -84,6 +84,12 @@
 #endif
 #ifndef GAME_ARROW_DIAGNOSTIC_DEFAULT
 #define GAME_ARROW_DIAGNOSTIC_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_TEST_DEFAULT
+#define GAME_JUDGEMENT_TEST_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+#define GAME_JUDGEMENT_VISUAL_TEST_DEFAULT 0
 #endif
 
 typedef struct {
@@ -136,6 +142,18 @@ static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t last_judgement;
 static uint32_t judgement_until;
+static uint32_t last_judgement_delta_ms;
+static bool judgement_drawn;
+#if GAME_JUDGEMENT_TEST_DEFAULT || GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+static uint8_t judgement_test_next;
+static uint8_t judgement_test_hits;
+#endif
+#if GAME_JUDGEMENT_TEST_DEFAULT
+static int judgement_test_font_id = -1;
+#endif
+#if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+static int judgement_visual_font_id = -1;
+#endif
 static uint8_t camera_focus_display;
 static bool camera_transitioning;
 static bool dad_lanes_visible;
@@ -823,9 +841,8 @@ static int find_player_note(unsigned lane, uint32_t samples)
 	return best;
 }
 
-static void game_miss(unsigned index)
+static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 {
-	uint32_t now = Stream_GetSamplesPlayed(&stream);
 	game_note_state[index] = 2;
 	misses++;
 	combo = 0;
@@ -834,27 +851,29 @@ static void game_miss(unsigned index)
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)(bopeebo_notes[index].lane & 3u);
-	bf_visual_until = now + BOPEEBO_CHART_RATE * 350u / 1000u;
+	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
-	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
-	bf_visual_start = now;
+	last_judgement_delta_ms = 0xffffffffu;
+	judgement_until = samples + rate * 650u / 1000u;
+	bf_visual_start = samples;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
 
-static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t rate)
+static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t rate,
+	uint32_t samples)
 {
-	uint32_t now = Stream_GetSamplesPlayed(&stream);
 	hold_drops++;
 	combo = 0;
 	score -= (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
-	bf_visual_start = now;
-	bf_visual_until = now + rate * 350u / 1000u;
+	bf_visual_start = samples;
+	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u;
-	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
+	last_judgement_delta_ms = 0xffffffffu;
+	judgement_until = samples + rate * 650u / 1000u;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
@@ -875,7 +894,7 @@ static void game_update(uint32_t samples)
 		if (bopeebo_notes[i].lane < 4u && !game_note_state[i] &&
 		    samples > bopeebo_notes[i].head &&
 		    (uint64_t)(samples - bopeebo_notes[i].head) * 1000u > (uint64_t)rate * 160u)
-			game_miss(i);
+			game_miss(i, samples, rate);
 	}
 
 	for (unsigned lane = 0; lane < 4; lane++) {
@@ -896,7 +915,7 @@ static void game_update(uint32_t samples)
 			} else if (!down) {
 				uint32_t remaining = end - samples;
 				if (hold_release_is_miss(remaining, rate))
-					game_hold_drop(lane, remaining, rate);
+					game_hold_drop(lane, remaining, rate, samples);
 				active_hold[lane] = -1;
 			}
 		}
@@ -916,6 +935,7 @@ static void game_update(uint32_t samples)
 			bf_visual_start = samples;
 			bf_visual_until = samples + rate * 350u / 1000u;
 			last_judgement = 4u;
+			last_judgement_delta_ms = 0xffffffffu;
 			judgement_until = samples + rate * 650u / 1000u;
 			continue;
 		}
@@ -925,6 +945,7 @@ static void game_update(uint32_t samples)
 		int32_t award = pbot1_score(diff, rate);
 		score += award;
 		uint64_t timing = (uint64_t)diff * 1000u;
+		last_judgement_delta_ms = (uint32_t)(timing / rate);
 		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); last_judgement = 1u; }
 		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); last_judgement = 2u; }
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
@@ -946,6 +967,34 @@ static void game_update(uint32_t samples)
 	game_pressed = 0;
 	set_voice_pan();
 }
+
+#if GAME_JUDGEMENT_TEST_DEFAULT || GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+/* Separate no-controller QA image: press four chart taps through the normal
+   game_update path, at offsets that deterministically map to Sick/Good/Bad/Shit. */
+static void inject_judgement_test_hit(uint32_t samples, uint32_t rate)
+{
+	static const uint8_t note_indices[4] = { 3u, 9u, 16u, 22u };
+	static const uint8_t offsets_ms[4] = { 0u, 60u, 110u, 150u };
+	if (judgement_test_next >= 4u) return;
+	/* Retire unrelated BF notes only in this QA build so their misses cannot
+	   replace a popup before its 650 ms visual window has elapsed. */
+	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
+		if (bopeebo_notes[i].lane >= 4u) continue;
+		bool scheduled = false;
+		for (unsigned j = judgement_test_next; j < 4u; j++)
+			if (note_indices[j] == i) scheduled = true;
+		if (!scheduled && !game_note_state[i]) game_note_state[i] = 1u;
+	}
+	const BopeeboNote *note = &bopeebo_notes[note_indices[judgement_test_next]];
+	if (note->lane >= 4u || note->tail != note->head) return;
+	uint32_t target = note->head + (uint32_t)(((uint64_t)rate * offsets_ms[judgement_test_next]) / 1000u);
+	if (samples < target) return;
+	static const uint16_t masks[4] = { PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT };
+	game_buttons = 0xffffu;
+	game_pressed = masks[note->lane];
+	judgement_test_next++;
+}
+#endif
 
 static void draw_rect(int x, int y, int width, int height, uint8_t r, uint8_t g, uint8_t b)
 {
@@ -1305,6 +1354,7 @@ static void draw_gameplay(uint32_t samples)
 {
 	game_prim_count = 0;
 	visual_prim_count = 0;
+	judgement_drawn = false;
 	draw_scene(samples);
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
@@ -1369,7 +1419,7 @@ static void draw_gameplay(uint32_t samples)
 		   render at 2x to restore legibility at native 320x240 output. */
 		int popup_w = popup->w * 2;
 		int popup_h = popup->h * 2;
-		draw_textured_frame(popup_frame[last_judgement],
+		judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
 			(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 	}
 	if (diagnostics_visible) {
@@ -1442,6 +1492,11 @@ static void reset_game_state(void)
 	dad_visual_until = 0;
 	last_judgement = 0;
 	judgement_until = 0;
+	last_judgement_delta_ms = 0;
+#if GAME_JUDGEMENT_TEST_DEFAULT
+	judgement_test_next = 0;
+	judgement_test_hits = 0;
+#endif
 	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
 	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0 || GAME_ARROW_DIAGNOSTIC_DEFAULT != 0;
 }
@@ -1575,6 +1630,9 @@ static void run_playable_frontend(void)
 	/* QA-only disc mode: enter the real Bopeebo stream without requiring input,
 	   so the official arrow atlas can be inspected in its gameplay path. */
 	if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+#elif GAME_JUDGEMENT_TEST_DEFAULT
+	judgement_test_font_id = FntOpen(16, 208, 288, 28, 0, 80);
+	if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
 #endif
 	for (;;) {
 		bool pad_connected = poll_bopeebo4_controls();
@@ -1610,7 +1668,14 @@ static void run_playable_frontend(void)
 #if GAME_SCENE_DEMO_DEFAULT
 				update_scene_demo_visuals(samples);
 #else
+				#if GAME_JUDGEMENT_TEST_DEFAULT
+				uint32_t hits_before_test = hits;
+				inject_judgement_test_hit(samples, rate);
+				#endif
 				game_update(samples);
+				#if GAME_JUDGEMENT_TEST_DEFAULT
+				if (hits > hits_before_test) judgement_test_hits++;
+				#endif
 				if (!health_q8 && Stream_IsActive(&stream)) {
 					Stream_Stop();
 					song_finished = true;
@@ -1669,9 +1734,21 @@ static void run_playable_frontend(void)
 						visual_prim_count, VISUAL_MAX_PRIMS, (unsigned)last_judgement,
 						(unsigned long)(samples < judgement_until ? judgement_until - samples : 0u),
 						misses + hold_drops);
+					FntPrint(diagnostics_font_id, "J DRAW %u\n", (unsigned)judgement_drawn);
 					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
 					FntFlush(diagnostics_font_id);
 				}
+#if GAME_JUDGEMENT_TEST_DEFAULT
+				static const char *const judgement_names[] = { "NONE", "SICK", "GOOD", "BAD", "SHIT" };
+				FntPrint(judgement_test_font_id, "AUTO HITS %u/4  %s  DRAW %u\nT %u.%03u  DELTA %lu MS LEFT %lu",
+					(unsigned)judgement_test_hits,
+					last_judgement <= 4u ? judgement_names[last_judgement] : "INVALID",
+					(unsigned)judgement_drawn, milliseconds / 1000u, milliseconds % 1000u,
+					(unsigned long)last_judgement_delta_ms,
+					(unsigned long)(samples < judgement_until ?
+						((uint64_t)(judgement_until - samples) * 1000u) / rate : 0u));
+				FntFlush(judgement_test_font_id);
+#endif
 			}
 		} else {
 			draw_menu_screen();
@@ -1680,6 +1757,51 @@ static void run_playable_frontend(void)
 		menu_ticks++;
 	}
 }
+
+#if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+/* No-audio visual isolation disc. Uses the same atlas loader, CLUT setup,
+   primitive helper and gameplay renderer; it never opens or overlays the game. */
+static void run_judgement_visual_test(void)
+{
+	static const char *const names[4] = { "SICK", "GOOD", "BAD", "SHIT" };
+	static const uint8_t note_indices[4] = { 3u, 9u, 16u, 22u };
+	static const uint8_t offsets_ms[4] = { 0u, 60u, 110u, 150u };
+	static const uint16_t lane_masks[4] = { PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT };
+	const uint32_t rate = BOPEEBO_CHART_RATE;
+	uint32_t frame = 0;
+	uint32_t test_sample = 0;
+	unsigned active_phase = 4u;
+	game_screen = SCREEN_GAMEPLAY;
+	judgement_visual_font_id = FntOpen(16, 208, 288, 28, 0, 80);
+	for (;;) {
+		unsigned phase = (frame / 150u) & 3u;
+		unsigned phase_frame = frame % 150u;
+		if (phase != active_phase) {
+			active_phase = phase;
+			reset_game_state();
+			for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++)
+				if (bopeebo_notes[i].lane < 4u && i != note_indices[phase])
+					game_note_state[i] = 1u;
+			const BopeeboNote *note = &bopeebo_notes[note_indices[phase]];
+			test_sample = note->head + (uint32_t)(((uint64_t)rate * offsets_ms[phase]) / 1000u);
+			game_buttons = 0xffffu;
+			game_pressed = lane_masks[note->lane];
+			game_update(test_sample);
+			if (hits) judgement_test_hits++;
+		}
+		/* Quarter-speed synthetic sample clock keeps the real 650 ms audio-time
+		   lifetime intact while giving the visual QA result a capture window. */
+		uint32_t samples = test_sample + (uint32_t)(((uint64_t)phase_frame * rate) / 240u);
+		draw_gameplay(samples);
+		FntPrint(judgement_visual_font_id, "GAME UPDATE QA x0.25 %u/4  %s  DRAW %u\nDELTA %lu MS",
+			phase + 1u, names[phase], (unsigned)judgement_drawn,
+			(unsigned long)last_judgement_delta_ms);
+		FntFlush(judgement_visual_font_id);
+		display_frame();
+		frame++;
+	}
+}
+#endif
 #endif
 
 static void reset_spu_channels(void)
@@ -1979,6 +2101,10 @@ int main(void)
 #if TEST_PLAYABLE_BOPEEBO
 	load_bopeebo_visuals();
 	load_menu_visuals();
+#if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+	run_judgement_visual_test();
+	return 0;
+#endif
 #endif
 	SpuInit();
 	reset_spu_channels();
