@@ -1541,13 +1541,10 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 	int popup_x = (SCREEN_W - popup_w) / 2;
 	int y_delta = -(int)(40u * elapsed_ms / 1000u) + (int)(70u * elapsed_ms * elapsed_ms / 1000000u);
 	int popup_y = 57 + y_delta;
-	uint8_t tint = 128u;
-	if (elapsed_ms > 450u) {
-		uint32_t fade_ms = elapsed_ms >= 650u ? 200u : elapsed_ms - 450u;
-		tint = (uint8_t)(128u - (fade_ms * 128u) / 200u);
-	}
-	judgement_drawn = draw_textured_frame_tinted(popup_frame[last_judgement],
-		popup_x, popup_y, popup_w, popup_h, tint, tint, tint);
+	/* Keep the official artwork at normal modulation through its full window;
+	   the prior fade-to-black made this brief popup too easy to miss. */
+	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
+		popup_x, popup_y, popup_w, popup_h);
 }
 
 static void draw_score_display(void)
