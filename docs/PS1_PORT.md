@@ -967,3 +967,9 @@ Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE distincts dans outp
 La capture de diagnostic fournie ne permet pas de conclure que le renderer a raté le popup : LEFT 0 signifie que la fenêtre était déjà expirée. Correction de lecture des diagnostics : DMS est l’écart du hit (timing delta), pas l’âge écoulé depuis le popup. La durée fixe de 650 ms utilisée jusque-là était également plus courte que le code original PopUpStuff, qui retarde son fondu d’un beat puis 200 ms. v35 calcule donc la fenêtre par tempo au moment de l’événement : 60 000 / BPM + 200 ms; à 100 BPM sur Bopeebo, cela donne 800 ms. Le popup reste à pleine modulation et conserve son mouvement/entrée en taille; la durée est un paramètre d’affichage uniquement. Le combo conserve sa propre durée de deux beats + 200 ms.
 
 Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE dans outputs/FNF-PS1-v35-original-popup-window/; BIN 23 324 784 octets, CUE 93 octets, SHA-256 CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E. Pas encore exécuté dans DuckStation : l’apparition du jugement dans la fenêtre active reste à vérifier. Pas de console réelle.
+
+## v36 — popups au-dessus du panneau de diagnostic
+
+La capture utilisateur montre le panneau de diagnostic opaque recouvrant le centre du jeu. Le popup Sick/Good/Bad/Shit était soumis avant le flush de la police de diagnostic : Select activé, celle-ci le dessinait donc au-dessus. v36 déplace le rendu des popups après le flush; aucun jugement ou règle de gameplay ne change. La durée reste celle de v35 (un beat + 200 ms).
+
+Build PSn00bSDK 0.24 / GCC MIPS 12.3 compilé : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`, sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Le build corrigé n’a pas encore été exécuté dans DuckStation; vérifier les hits avec diagnostics actifs et masqués. Pas de validation console réelle.
