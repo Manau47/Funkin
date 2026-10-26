@@ -267,3 +267,9 @@ Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE
 Les captures v36 ne montrent toujours pas le popup. v37 restaure le placement et l’échelle fixe v32, observés auparavant visibles, et retire l’animation de mouvement/zoom du jugement. Fenêtre audio v35 conservée; règles inchangées.
 
 BIN/CUE compilés avec PSn00bSDK 0.24 / GCC MIPS 12.3 sous `outputs/FNF-PS1-v37-stable-judgement-display/`; BIN 23 324 784 octets, SHA-256 `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`. Démarré dans DuckStation jusqu’à l’écran titre (60 IPS affichés); essai du popup en gameplay impossible faute d’entrée Start disponible dans cette session. Pas de test console réelle.
+
+## v38 — fenêtre de jugement plus facile à observer
+
+La capture v37 ne montre pas le popup et indique `J DRAW 0` à l’image capturée. v38 conserve l’asset fixe v32 et étend l’affichage à deux beats + 200 ms (1,4 s à 100 BPM); `LEFT` indique maintenant des millisecondes. Cela ne modifie aucune règle de gameplay.
+
+BIN/CUE compilés avec PSn00bSDK 0.24 / GCC MIPS 12.3 sous `outputs/FNF-PS1-v38-longer-judgement-window/`; BIN 23 324 784 octets, SHA-256 `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`. Pas encore observé en gameplay DuckStation; pas de test console.
