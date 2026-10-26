@@ -203,3 +203,10 @@ Build normal : [BIN](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bop
 ## v28 — jugement plus compact et tenue orientée
 
 L’utilisateur valide le rendu v27 et confirme les jugements visibles. v28 réduit les popups de 18 % sans changer leur durée ou leur logique, et dessine les terminaisons des tenues en haut, derrière les corps qui les recouvrent légèrement. Le build normal garde diagnostics et QA désactivés. [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). Compilation vérifiée; cette nouvelle image n’a pas encore été observée dans DuckStation ou sur console.
+
+
+## v29 — points affichés près du jugement
+
+Le jeu affiche désormais près du popup le delta de score de l’événement lui-même, avec son signe : points gagnés au hit ou pénalité existante en cas de miss/drop. Le total et les règles de score restent inchangés. Pour une tenue, l’étiquette indique les points attribués à sa tête; l’accumulation durant le maintien continue séparément.
+
+Build normal compilé, diagnostics masqués : [BIN](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.cue). Pas encore observé dans DuckStation ou sur console; visibilité et placement du nombre doivent être vérifiés dans le jeu.
