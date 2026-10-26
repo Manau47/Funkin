@@ -844,8 +844,8 @@ static uint32_t judgement_popup_duration(uint32_t samples, uint32_t rate)
 		bopeebo_tempo_changes[tempo_index + 1u].sample <= samples)
 		tempo_index++;
 	uint32_t bpm_centi = bopeebo_tempo_changes[tempo_index].bpm_centi;
-	uint64_t beat_samples = bpm_centi ? (uint64_t)rate * 6000u / bpm_centi : (uint64_t)rate;
-	return (uint32_t)(beat_samples + rate / 5u);
+	uint64_t two_beats = bpm_centi ? (uint64_t)rate * 12000u / bpm_centi : (uint64_t)rate * 2u;
+	return (uint32_t)(two_beats + rate / 5u);
 }
 
 static void update_combo_popup(uint32_t previous_combo, uint32_t current_combo,
@@ -1902,9 +1902,10 @@ static void run_playable_frontend(void)
 					FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u\n",
 						(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size,
 						(unsigned)read_errors, (unsigned)underruns);
-					FntPrint(diagnostics_font_id, "VIS %u/%u J %u LEFT %lu MISS %u\n",
+					FntPrint(diagnostics_font_id, "VIS %u/%u J %u LEFT %lums MISS %u\n",
 						visual_prim_count, VISUAL_MAX_PRIMS, (unsigned)last_judgement,
-						(unsigned long)(samples < judgement_until ? judgement_until - samples : 0u),
+						(unsigned long)(samples < judgement_until && rate ?
+							((uint64_t)(judgement_until - samples) * 1000u) / rate : 0u),
 						misses + hold_drops);
 					FntPrint(diagnostics_font_id, "WORLD %u HIGH %u DROP %u\n",
 						gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected);
