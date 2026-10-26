@@ -249,3 +249,9 @@ BIN v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playab
 Retour utilisateur : score v33 bien placé, popup de jugement invisible. v34 retire son fondu RGB jusqu’au noir et conserve mouvement, entrée en taille et fenêtre 650 ms, afin que l’illustration officielle reste à modulation normale pendant toute son apparition. Les règles ne changent pas. Le combo conserve son animation séparée.
 
 BIN v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.bin; CUE v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A; CUE 93 octets. Compilation réussie; la visibilité en jeu après un hit reste à confirmer dans DuckStation.
+
+## v35 — durée originale du popup
+
+Correction du diagnostic : DMS indique l’écart de timing du hit, tandis que LEFT 0 signifie que le popup avait expiré à l’image capturée. Le jugement suit maintenant la durée du moteur original (un beat + 200 ms), soit 800 ms à 100 BPM pour Bopeebo. L’image garde sa modulation entière et son mouvement; seule sa fenêtre d’affichage change.
+
+BIN v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.bin; CUE v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E; CUE 93 octets. Compilation réussie; test DuckStation du popup normal reste à faire.
