@@ -1901,8 +1901,6 @@ static void run_playable_frontend(void)
 				draw_menu_screen();
 			} else {
 				draw_score_display();
-				draw_judgement_popup(samples, rate);
-				draw_combo_popup(samples, rate);
 				if (diagnostics_visible) {
 					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
 						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
@@ -1924,6 +1922,10 @@ static void run_playable_frontend(void)
 					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
 					FntFlush(diagnostics_font_id);
 				}
+				/* The diagnostic font uses an opaque background. Keep popup art
+				   above that layer so Select cannot hide a live judgement. */
+				draw_judgement_popup(samples, rate);
+				draw_combo_popup(samples, rate);
 #if GAME_JUDGEMENT_TEST_DEFAULT
 				static const char *const judgement_names[] = { "NONE", "SICK", "GOOD", "BAD", "SHIT" };
 				FntPrint(judgement_test_font_id, "AUTO HITS %u/4  %s  DRAW %u\nT %u.%03u  DELTA %lu MS LEFT %lu",
