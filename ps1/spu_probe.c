@@ -150,6 +150,13 @@ static uint32_t combo_popup_start_samples;
 static uint32_t combo_popup_until;
 static uint32_t last_judgement_delta_ms;
 static bool judgement_drawn;
+/* Keep the last submitted frame separate from judgement_drawn, which is reset
+   before every scene render and therefore cannot be printed as current state
+   by the diagnostic text pass that runs before the popup is submitted. */
+static bool judgement_last_draw_attempted;
+static bool judgement_last_draw_submitted;
+static uint32_t judgement_last_draw_frame;
+static uint32_t gameplay_frame_counter;
 static uint16_t last_game_pressed;
 #if GAME_JUDGEMENT_TEST_DEFAULT || GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
 static uint8_t judgement_test_next;
@@ -349,7 +356,8 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
-		/* Keep the 96 px score row below the life-bar frame (y=19..35). */
+		/* Put the score on a second row under the life bar. The previous top-row
+		   placement overlapped the bar's right edge at 320x240. */
 		score_font_id = FntOpen(208, 37, 96, 9, 0, 16);
 		diagnostics_font_id = FntOpen(
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
@@ -837,6 +845,8 @@ static int32_t pbot1_score(uint32_t delta_samples, uint32_t rate)
 	return a + (b - a) * (int32_t)remainder / (int32_t)rate;
 }
 
+/* Keep each judgement available for two beats plus the original 200 ms fade.
+   The fixed 800 ms window was too brief to observe reliably in user captures. */
 static uint32_t judgement_popup_duration(uint32_t samples, uint32_t rate)
 {
 	unsigned tempo_index = 0;
@@ -907,7 +917,7 @@ static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
 	last_judgement_delta_ms = 0xffffffffu;
 	judgement_duration_samples = judgement_popup_duration(samples, rate);
-		judgement_until = samples + judgement_duration_samples;
+	judgement_until = samples + judgement_duration_samples;
 	bf_visual_start = samples;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
@@ -930,7 +940,7 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	last_judgement = 4u;
 	last_judgement_delta_ms = 0xffffffffu;
 	judgement_duration_samples = judgement_popup_duration(samples, rate);
-		judgement_until = samples + judgement_duration_samples;
+	judgement_until = samples + judgement_duration_samples;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
@@ -997,7 +1007,7 @@ static void game_update(uint32_t samples)
 			last_judgement = 4u;
 			last_judgement_delta_ms = 0xffffffffu;
 			judgement_duration_samples = judgement_popup_duration(samples, rate);
-		judgement_until = samples + judgement_duration_samples;
+			judgement_until = samples + judgement_duration_samples;
 			continue;
 		}
 		uint32_t head = bopeebo_notes[target].head;
@@ -1013,8 +1023,8 @@ static void game_update(uint32_t samples)
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
 		else { combo = 0; add_health(-5); last_judgement = 4u; }
 		update_combo_popup(previous_combo, combo, samples, rate);
-	judgement_duration_samples = judgement_popup_duration(samples, rate);
-	judgement_until = samples + judgement_duration_samples;
+		judgement_duration_samples = judgement_popup_duration(samples, rate);
+		judgement_until = samples + judgement_duration_samples;
 		hits++;
 		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
 		bf_miss_silenced = false;
@@ -1541,6 +1551,9 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 {
 	(void)rate;
 	judgement_drawn = false;
+	judgement_last_draw_attempted = false;
+	judgement_last_draw_submitted = false;
+	judgement_last_draw_frame = gameplay_frame_counter;
 	if (samples >= judgement_until || !last_judgement || last_judgement > 4u)
 		return;
 	static const uint8_t popup_frame[5] = {
@@ -1553,8 +1566,10 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 	   the judgement art stable until its audio-clock lifetime expires. */
 	int popup_w = ((int)popup->w * 164 + 50) / 100;
 	int popup_h = ((int)popup->h * 164 + 50) / 100;
+	judgement_last_draw_attempted = true;
 	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
 		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
+	judgement_last_draw_submitted = judgement_drawn;
 }
 
 static void draw_score_display(void)
@@ -1589,10 +1604,11 @@ static void draw_combo_popup(uint32_t samples, uint32_t rate)
 	while (count < 3u) digits[count++] = 0;
 	uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)(samples - combo_popup_start_samples) * 1000u) / rate) : 0u;
 	uint32_t remaining_ms = rate ? (uint32_t)(((uint64_t)(combo_popup_until - samples) * 1000u) / rate) : 0u;
-	/* Match the official float-up/gravity tween; fade across the final 200 ms. */
+	/* The original digits float upward, ease under gravity, then fade. */
 	int y_delta = -(int)(36u * elapsed_ms / 1000u) + (int)(34u * elapsed_ms * elapsed_ms / 1000000u);
 	uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
 	uint8_t tint = remaining_ms >= 200u ? 128u : (uint8_t)(remaining_ms * 128u / 200u);
+	/* Match PopUpStuff's least-significant digit on the right and modest overlap. */
 	for (unsigned i = 0; i < count; i++) {
 		unsigned frame = combo_frames[digits[i]];
 		const BopeeboVisualFrame *digit = &bopeebo_visual_frames[frame];
@@ -1663,6 +1679,10 @@ static void reset_game_state(void)
 	last_judgement = 0;
 	judgement_until = 0;
 	judgement_duration_samples = 0;
+	judgement_drawn = false;
+	judgement_last_draw_attempted = false;
+	judgement_last_draw_submitted = false;
+	judgement_last_draw_frame = gameplay_frame_counter;
 	combo_popup_value = -1;
 	combo_popup_start_samples = 0;
 	combo_popup_until = 0;
@@ -1909,16 +1929,19 @@ static void run_playable_frontend(void)
 						misses + hold_drops);
 					FntPrint(diagnostics_font_id, "WORLD %u HIGH %u DROP %u\n",
 						gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected);
-					FntPrint(diagnostics_font_id, "SCORE FONT %u J DRAW %u\n",
-						(unsigned)score_text_flushed, (unsigned)judgement_drawn);
+					FntPrint(diagnostics_font_id, "SCORE FONT %u J LAST %u/%u F%lu\n",
+						(unsigned)score_text_flushed,
+						(unsigned)judgement_last_draw_attempted,
+						(unsigned)judgement_last_draw_submitted,
+						(unsigned long)judgement_last_draw_frame);
 					FntPrint(diagnostics_font_id, "HITS %u EDGE %04x J %u DMS %lu\n",
 						(unsigned)hits, (unsigned)last_game_pressed, (unsigned)last_judgement,
 						(unsigned long)last_judgement_delta_ms);
 					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
 					FntFlush(diagnostics_font_id);
 				}
-				/* The diagnostic font uses an opaque background. Keep popup art
-				   above that layer so Select cannot hide a live judgement. */
+				/* Diagnostics use an opaque bitmap-font background. Submit popup
+				   sprites after that layer so enabling Select cannot hide them. */
 				draw_judgement_popup(samples, rate);
 				draw_combo_popup(samples, rate);
 #if GAME_JUDGEMENT_TEST_DEFAULT
@@ -1937,6 +1960,7 @@ static void run_playable_frontend(void)
 			draw_menu_screen();
 		}
 		display_frame();
+		gameplay_frame_counter++;
 		menu_ticks++;
 	}
 }
@@ -1972,7 +1996,8 @@ static void run_judgement_visual_test(void)
 			game_update(test_sample);
 			if (hits) judgement_test_hits++;
 		}
-		/* Quarter-speed synthetic sample clock scales the beat-plus-fade lifetime while giving the visual QA result a capture window. */
+		/* Quarter-speed synthetic sample clock scales the beat-plus-fade lifetime
+		   while giving the visual QA result a capture window. */
 		uint32_t samples = test_sample + (uint32_t)(((uint64_t)phase_frame * rate) / 240u);
 		draw_gameplay(samples);
 		draw_judgement_popup(samples, rate);
