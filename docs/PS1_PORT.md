@@ -888,7 +888,6 @@ La cible `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` est séparée du jeu norm
 
 BIN/CUE QA et normal sont livrés dans des dossiers distincts sous `outputs/`, hors du commit Git. Les menus fidèles, Game Over/retry et résultats restent les jalons suivants.
 
-
 ## v27 — couche finale des jugements et inversion des tenues
 
 Inspection du chemin complet : le poll manette détecte un front d’appui (bits PAD actifs bas), transmet `game_pressed` à `game_update()`, qui résout le hit, met à jour `last_judgement` et `judgement_until`, puis efface l’événement d’entrée à la fin de la mise à jour. Le même `samples` d’`Stream_GetSamplesPlayed()` alimente cette mise à jour et le rendu; l’expiration est de 650 ms à la fréquence effective du flux. `reset_game_state()` est appelé à l’entrée/redémarrage du morceau, pas à chaque frame. Les seuils de hit et l’horloge restent inchangés.
@@ -907,7 +906,6 @@ Les corps et terminaisons des notes tenues utilisent désormais des UV inversés
 
 Le résultat précédent demeure : v26 QA a montré les quatre illustrations; cela ne vaut pas validation du hit manette. Le BIN v27 est jouable par configuration et conserve les diagnostics masqués, mais la correction visuelle du hit normal reste en attente de confirmation d’exécution. Les menus fidèles, Game Over/retry et résultats restent ultérieurs.
 
-
 ## v28 — échelle des jugements et capuchon des tenues
 
 L’utilisateur confirme que le jugement est désormais visible dans le build v27 et valide le reste de cette version, sous réserve de deux ajustements visuels. Le popup Sick/Good/Bad/Shit est réduit de 18 % par rapport à la taille v27, reste centré et conserve sa durée pilotée par l’horloge audio. Les données et règles de jugement ne changent pas.
@@ -916,13 +914,11 @@ La terminaison officielle de chaque tenue est maintenant dessinée à son extré
 
 Le BIN/CUE v28 est compilé avec diagnostics et cibles QA masqués par défaut : [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). La modification de source est vérifiée et compilée; DuckStation n’a pas été relancé pour cette passe, donc taille/raccord des jugements et orientation nouvelle des tenues restent à confirmer visuellement par l’utilisateur. Aucun test console réelle.
 
-
 ## v29 — points affichés près du jugement
 
 Le popup affiche maintenant le delta de score réellement appliqué lors du dernier événement : valeur positive sur un hit, valeur négative pour miss/ghost miss/drop de tenue. Pour une tenue, la valeur affichée au jugement est le score de la tête; les points accumulés pendant son maintien restent attribués comme auparavant. Le total, la table de score, les pénalités et l’horloge du popup ne sont pas modifiés. Le nombre signé apparaît à droite du jugement, sans panneau.
 
 Build jouable normal PSn00bSDK 0.24 / GCC MIPS 12.3 : [BIN](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.cue). BIN 23 322 432 octets, CUE 93 octets, SHA-256 `A9EF856C58A68D2481819543401308594D1B0C8FCFCBB99E88C5BC244F0928E3`. Diagnostics, QA et scène démo désactivés par défaut. Compilation réussie. Cette nouvelle image n’a pas encore été observée dans DuckStation; proximité/lisibilité du nombre restent à confirmer à l’écran, puis à ajuster si besoin. Pas de validation console réelle.
-
 
 ## v30 — compteur de combo et score VCR
 
@@ -934,7 +930,7 @@ Build normal PSn00bSDK 0.24 / GCC MIPS 12.3 compilé avec diagnostics/QA masqué
 
 ## v31 — réserve de primitives pour score et jugements
 
-Le retour sur v30 (« score et jugement invisibles ») est cohérent avec le partage du tableau de 512 primitives texturées : le chemin score v30 soumettait deux quads par glyphe, puis le jugement et le combo passaient dans le même helper qui refuse silencieusement les appels après la limite. Le code source confirme ce risque de budget et le mauvais point de défaillance; aucun compteur v30 n’a cependant mesuré qu’une frame utilisateur avait réellement atteint 512, donc la saturation de cette session n’est pas affirmée comme observation.
+L’hypothèse initiale de saturation du tableau était erronée pour le run fourni. La capture v31 montre 253/640 primitives, WORLD 35, HIGH 55 et DROP 0 : la réserve de 32 n’était pas consommée. Elle montre également 14 glyphes VCR soumis sans rendu visible. La cause de l’absence du score est donc ailleurs; aucun diagnostic de palette/commande GPU ne l’a encore isolée.
 
 v31 augmente le tableau à 640 primitives, limite la passe scène/notes à 608 et réserve ainsi 32 soumissions aux couches finales. Le score dessine chaque glyphe VCR une seule fois au lieu d’ajouter un quad d’ombre par caractère. Les diagnostics Select exposent maintenant le nombre de primitives du monde, le high-water, les rejets, les glyphes score effectivement soumis et l’état de soumission du jugement. Ils restent masqués par défaut. Gameplay, positionnement et timing des jugements ne changent pas. La réserve ajoute 5 120 octets au tableau RAM (estimation directe de la différence d’allocation statique); carte VRAM inchangée.
 
@@ -950,38 +946,47 @@ Build v32 normal compilé avec diagnostics masqués au démarrage : BIN 23 322 4
 
 ## v33 — score sous la barre et mouvement des popups
 
-L’utilisateur confirme par capture que le score SDK de v32 et un popup de jugement sont visibles dans le jeu normal. Il signale que le score mord légèrement sur la barre de vie. v33 déplace donc la zone de score à (208,37), sous le cadre de vie (y=19..35), et borne sa largeur à 96 px dans la marge CRT droite. La valeur, la police, le calcul du score et les jugements ne changent pas.
+L’utilisateur confirme par capture que le score SDK de v32 et un popup de jugement sont visibles dans le jeu normal. Il signale que le score mord légèrement sur la barre de vie. v33 déplace donc la zone de score à `(208,37)`, sous le cadre de vie (`y=19..35`), et borne sa largeur à 96 px dans la marge CRT droite. La valeur, la police, le calcul du score et les jugements ne changent pas.
 
-Les PNG officiels de jugement et les chiffres officiels combo de assets/preload/images/ui/popup/funkin/ sont des dessins individuels, pas des atlas d’images animées. Leur animation originale est définie par code dans source/funkin/play/components/PopUpStuff.hx : vélocité verticale, accélération, délai de fondu et tween d’alpha. v33 reproduit un flottement vertical déterministe, une entrée légèrement réduite qui atteint sa taille normale, et un fondu final par modulation de couleur jusqu’au noir. Les chiffres combo ont leur propre mouvement et fondu. Le temps écoulé vient des échantillons audio; aucune règle de hit/combo n’est changée. Compromis : le fondu GPU assombrit les pixels opaques jusqu’au noir au lieu d’animer un alpha continu; la fenêtre de vie Sick/Good/Bad/Shit reste les 650 ms déjà utilisées, même si le code original retarde le fondu d’une durée de beat puis 200 ms.
+Les PNG officiels de jugement et les chiffres officiels combo de `assets/preload/images/ui/popup/funkin/` sont des dessins individuels, pas des atlas d’images animées. Leur animation originale est définie par code dans `source/funkin/play/components/PopUpStuff.hx`: vélocité verticale, accélération, délai de fondu et tween d’alpha. v33 reproduit un flottement vertical déterministe, une entrée légèrement réduite qui atteint sa taille normale, et un fondu final par modulation de couleur jusqu’au noir. Les chiffres combo ont leur propre mouvement et fondu. Le temps écoulé vient des échantillons audio; aucune règle de hit/combo n’est changée. Compromis : le fondu GPU assombrit les pixels opaques au lieu d’animer un alpha continu; la fenêtre de vie Sick/Good/Bad/Shit reste les 650 ms déjà utilisées, même si le code original retarde le fondu d’une durée de beat puis 200 ms.
 
-Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. Nouveau BIN/CUE dans outputs/FNF-PS1-v33-popup-motion-score-layout/; BIN 23 324 784 octets, CUE 93 octets, SHA-256 97A8C06BF8D6DDBC1E46BDB62D55446B819A5103082BFE1A92CE3E993346910E. Pas encore exécuté dans DuckStation : l’emplacement du score, le mouvement/fondu des popups et la stabilité du jeu après ce changement restent à observer. La capture utilisateur valide seulement le score et le popup de v32; aucune console réelle n’a été testée.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. Nouveau BIN/CUE dans `outputs/FNF-PS1-v33-popup-motion-score-layout/`; BIN 23 324 784 octets, CUE 93 octets, SHA-256 `97A8C06BF8D6DDBC1E46BDB62D55446B819A5103082BFE1A92CE3E993346910E`. Pas encore exécuté dans DuckStation : l’emplacement du score, le mouvement/fondu des popups et la stabilité du jeu après ce changement restent à observer. La capture utilisateur valide seulement le score et le popup de v32; aucune console réelle n’a été testée.
 
 ## v34 — popup de jugement à pleine intensité
 
 Retour utilisateur : le placement du score v33 est approuvé, mais le popup de jugement n’est plus visible. Le fondu RGB de v33 atteignait le noir durant les 200 dernières ms; comme le popup reste limité à 650 ms, cette modulation pouvait le rendre trop difficile à percevoir. v34 supprime uniquement le fondu du jugement : l’image officielle garde sa modulation normale pendant toute la fenêtre existante, avec le mouvement vertical et la petite entrée en taille conservés. Score, durée, jugement, combo et gameplay ne changent pas. Le combo conserve son animation séparée.
 
-Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE distincts dans outputs/FNF-PS1-v34-judgement-visible/; BIN 23 324 784 octets, CUE 93 octets, SHA-256 0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A. Non exécuté dans DuckStation après le correctif; la capture fournie n’indique pas l’événement de hit ni son âge musical. La visibilité après un hit réel reste à confirmer dans cette build. Pas de test console réelle.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE distincts dans `outputs/FNF-PS1-v34-judgement-visible/`; BIN 23 324 784 octets, CUE 93 octets, SHA-256 `0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A`. Non exécuté dans DuckStation après le correctif; la capture fournie n’indique pas l’événement de hit ni son âge musical. La visibilité après un hit réel reste à confirmer dans cette build. Pas de test console réelle.
 
 ## v35 — fenêtre de popup alignée au moteur
 
-La capture de diagnostic fournie ne permet pas de conclure que le renderer a raté le popup : LEFT 0 signifie que la fenêtre était déjà expirée. Correction de lecture des diagnostics : DMS est l’écart du hit (timing delta), pas l’âge écoulé depuis le popup. La durée fixe de 650 ms utilisée jusque-là était également plus courte que le code original PopUpStuff, qui retarde son fondu d’un beat puis 200 ms. v35 calcule donc la fenêtre par tempo au moment de l’événement : 60 000 / BPM + 200 ms; à 100 BPM sur Bopeebo, cela donne 800 ms. Le popup reste à pleine modulation et conserve son mouvement/entrée en taille; la durée est un paramètre d’affichage uniquement. Le combo conserve sa propre durée de deux beats + 200 ms.
+La capture de diagnostic fournie ne permet pas de conclure que le renderer a raté le popup : `LEFT 0` signifie que la fenêtre était déjà expirée. Correction de lecture des diagnostics : `DMS` est l’écart du hit (timing delta), pas l’âge écoulé depuis le popup. La durée fixe de 650 ms utilisée jusque-là était également plus courte que le code original `PopUpStuff`, qui retarde son fondu d’un beat puis 200 ms. v35 calcule donc la fenêtre par tempo au moment de l’événement : `60 000 / BPM + 200 ms`; à 100 BPM sur Bopeebo, cela donne 800 ms. Le popup reste à pleine modulation et conserve son mouvement/entrée en taille; la durée est un paramètre d’affichage uniquement. Le combo conserve sa propre durée de deux beats + 200 ms.
 
-Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE dans outputs/FNF-PS1-v35-original-popup-window/; BIN 23 324 784 octets, CUE 93 octets, SHA-256 CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E. Pas encore exécuté dans DuckStation : l’apparition du jugement dans la fenêtre active reste à vérifier. Pas de console réelle.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE dans `outputs/FNF-PS1-v35-original-popup-window/`; BIN 23 324 784 octets, CUE 93 octets, SHA-256 `CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E`. Pas encore exécuté dans DuckStation : l’apparition du jugement dans la fenêtre active reste à vérifier. Pas de console réelle.
 
 ## v36 — popups au-dessus du panneau de diagnostic
 
-La capture utilisateur montre le panneau de diagnostic opaque recouvrant le centre du jeu. Le popup Sick/Good/Bad/Shit était soumis avant le flush de la police de diagnostic : Select activé, celle-ci le dessinait donc au-dessus. v36 déplace le rendu des popups après le flush; aucun jugement ou règle de gameplay ne change. La durée reste celle de v35 (un beat + 200 ms).
+La nouvelle capture utilisateur montre que le panneau de diagnostic opaque recouvre presque toute la zone de jeu. Le rendu soumettait Sick/Good/Bad/Shit avant `FntFlush(diagnostics_font_id)`, donc le panneau était dessiné par-dessus les jugements lorsque Select activait les diagnostics. v36 conserve l’événement, la fenêtre de v35 et les règles de jugement, mais dessine les popups après le flush des diagnostics. Le panneau ne peut ainsi plus les masquer.
 
-Build PSn00bSDK 0.24 / GCC MIPS 12.3 compilé : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`, sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Le build corrigé n’a pas encore été exécuté dans DuckStation; vérifier les hits avec diagnostics actifs et masqués. Pas de validation console réelle.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`. Fichiers dans `outputs/FNF-PS1-v36-popup-over-diagnostics/`. La capture qui a permis d’identifier le recouvrement n’est pas une preuve que le correctif v36 a été exécuté. Il reste à vérifier un hit dans DuckStation avec Select activé puis désactivé. Aucune validation console réelle.
 
 ## v37 — rendu fixe du jugement restauré
 
-Retour utilisateur : les captures v36 ne montrent toujours pas le popup; le changement de couche seul n’a pas résolu le problème. v37 retire la transformation animée du jugement et restaure le placement fixe et l’échelle v32, précédemment observés visibles. La fenêtre v35 reste fondée sur l’horloge audio (un beat + 200 ms; 800 ms à 100 BPM). La logique de jugement et de score ne change pas; le combo garde son animation séparée.
+Retour utilisateur : les captures v36 ne montrent toujours pas le popup. Le correctif d’ordre des calques seul n’a donc pas résolu le problème. v37 retire la transformation animée propre au popup (mouvement/variation d’échelle) et revient au placement fixe et à l’échelle v32, auparavant observés visibles. La fenêtre audio v35 (un beat + 200 ms; 800 ms à 100 BPM) et les données de jugement restent inchangées. Le combo garde son animation séparée. Ce build doit encore être observé sur un hit réel; aucune validation n’est revendiquée.
 
-Build local PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`, sous `outputs/FNF-PS1-v37-stable-judgement-display/`. Le CUE v37 démarre dans DuckStation 0.1-8675 x64 et atteint l’écran titre; la fenêtre indique 60 IPS. La progression vers Bopeebo n’a pas été testée : aucune entrée Start utilisable n’était disponible dans cette session, donc le popup n’a pas été observé en jeu. Pas de validation console réelle.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`. Le CUE v37 démarre dans DuckStation 0.1-8675 x64 et atteint l’écran titre; la fenêtre indique 60 IPS. La progression vers Bopeebo n’a pas été testée : aucune entrée Start utilisable n’était disponible dans cette session, donc le popup n’a pas été observé en jeu. Pas de validation console réelle.
 
-## v38 — fenêtre de jugement étendue
+## v38 — fenêtre de jugement étendue et diagnostic en millisecondes
 
-Retour utilisateur : v37 n’affiche toujours pas de popup; `J DRAW 0` est visible dans la capture au moment observé. v38 conserve l’image fixe v32 mais étend sa fenêtre visuelle à deux beats + 200 ms (1,4 s à 100 BPM), pour la rendre plus facile à observer. `LEFT` du diagnostic est désormais en millisecondes. Aucun calcul de score ou de jugement ne change.
+Retour utilisateur : v37 n’affiche toujours pas de popup. La capture de diagnostic indique `J DRAW 0` à l’instant capturé; cette valeur était en outre retardée d’une image puisqu’elle était imprimée avant le rendu courant. Pour rendre le popup moins facile à manquer, v38 conserve l’image fixe v32 mais étend sa fenêtre d’affichage, uniquement visuelle, à deux beats + 200 ms (1,4 s à 100 BPM). La ligne `LEFT` du diagnostic est maintenant exprimée en millisecondes. Aucun score, jugement, timing, santé, SFX ou événement de gameplay ne change.
 
-Build compilé avec PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`, sous `outputs/FNF-PS1-v38-longer-judgement-window/`. Compilation réussie; exécution gameplay non vérifiée. Pas de test console réelle.
+Build PSn00bSDK 0.24 / GCC MIPS 12.3 compilé : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`, dans `outputs/FNF-PS1-v38-longer-judgement-window/`. Exécution et visibilité en gameplay non vérifiées; test DuckStation requis. Aucun test console réelle.
+
+## v39 — trace du popup sur le chemin de jeu normal
+
+Le nouveau traçage confirme que `J DRAW` était lu avant l’appel de rendu de l’image courante; ce zéro ne permettait donc pas de conclure que la primitive avait échoué. La QA isolée et le jeu normal utilisent les mêmes pages d’assets (jugements sur la page 4bpp 9, CLUT popup dédiée) et le même helper GPU. L’écran normal appelle bien `game_update()` avant `draw_gameplay()` puis `draw_judgement_popup()`. La page popup est chargée par `load_bopeebo_visuals()` et n’est pas la page menu libérée à l’entrée du morceau. Ces vérifications éliminent le timer, la page menu et une absence évidente d’appel comme causes établies; elles ne prouvent toujours pas que le hit manette laisse l’état actif jusqu’au rendu, ni que DuckStation affiche la primitive.
+
+v39 garde le mode jouable normal, masque les diagnostics au démarrage et remplace la métrique trompeuse par `J LAST a/s Fnn`: résultat mémorisé du dernier rendu de popup (`a` = tentative, `s` = primitive soumise), avec numéro de frame. Il s’agit d’un diagnostic de soumission GPU, pas d’une preuve de pixels visibles. La durée visuelle v38 est conservée pour ne pas changer plusieurs variables en même temps. Il faut capturer un hit manuel avec Select activé puis désactivé; interpréter `LEFT` (état actif) et `J LAST` ensemble. Aucun correctif visuel n’est déclaré avant cette observation.
+
+Build v39 compilé avec PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 `F4F97A9301F656E7DD1C44EE0C98348B16DF22C932FD965A3DA2CB3A3B388CB6`, fichiers sous `outputs/FNF-PS1-v39-judgement-render-trace/`. Le démarrage et le hit manuel de cette image ne sont pas observés dans DuckStation. Aucun test console réelle.
+
