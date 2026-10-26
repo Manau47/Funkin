@@ -227,3 +227,11 @@ v30 soumettait deux primitives par glyphe du score puis les jugements dans le m�
 v31 porte le tableau à 640, plafonne la scène/les notes à 608 et réserve 32 primitives aux couches finales. Le score VCR utilise une primitive par caractère. Select affiche les compteurs de charge/rejet HUD en diagnostic; tout reste masqué par défaut. RAM statique estimée en hausse de 5 120 octets; VRAM et gameplay inchangés.
 
 [BIN v31](../outputs/FNF-PS1-v31-hud-primitive-reserve/funkin-ps1-bopeebo-playable.bin) · [CUE v31](../outputs/FNF-PS1-v31-hud-primitive-reserve/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `D0EA4FF0F23041FC7CBAC5D31269D42913A6EC2D41433CF1D9477DD66E42426B`; CUE 93 octets. Build compilé, affichage encore à observer dans DuckStation.
+
+## v32 — score via le bitmap SDK
+
+Les captures v31 montrent toujours le score absent malgré 14 glyphes VCR soumis. v32 remplace le score texturé par `FntPrint/FntFlush` à droite de la barre de vie, en s’appuyant sur le chemin font SDK visible dans les diagnostics. La police est la bitmap PSn00bSDK, car les glyphes VCR du jeu ne se sont pas affichés dans l’essai utilisateur; leur extraction reste dans les ressources converties mais le score normal ne les emploie plus.
+
+La capture diagnostic indique aussi `J 4 LEFT 0` et `DMS 1010`. Le jugement dure 650 ms audio et avait déjà expiré au moment de la capture. Le code garde cette durée; il faut observer un hit dans la fenêtre active pour confirmer le popup sur v32.
+
+[BIN v32](../outputs/FNF-PS1-v32-score-font-fallback/funkin-ps1-bopeebo-playable.bin) · [CUE v32](../outputs/FNF-PS1-v32-score-font-fallback/funkin-ps1-bopeebo-playable.cue). BIN 23 322 432 octets; SHA-256 `6C421D812E3AAF99E3535B7939B88C31A493F6E4D6D00E90ABC55B63457F4C0B`; CUE 93 octets. Compilé, pas encore observé dans DuckStation.
