@@ -176,9 +176,10 @@ static unsigned visual_prim_limit = VISUAL_MAX_PRIMS;
 static unsigned visual_prim_high_water;
 static unsigned visual_prim_rejected;
 static unsigned gameplay_visual_prim_count;
-static unsigned score_glyphs_drawn;
+static bool score_text_flushed;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
+static int score_font_id = -1;
 static int diagnostics_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
@@ -346,6 +347,7 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
+		score_font_id = FntOpen(216, 20, 88, 9, 0, 16);
 		diagnostics_font_id = FntOpen(
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
@@ -1533,63 +1535,16 @@ static void draw_judgement_popup(uint32_t samples)
 		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 }
 
-static unsigned score_glyph_frame(char character)
-{
-	switch (character) {
-	case 'S': return VIS_UI_SCORE_GLYPH_83;
-	case 'c': return VIS_UI_SCORE_GLYPH_99;
-	case 'o': return VIS_UI_SCORE_GLYPH_111;
-	case 'r': return VIS_UI_SCORE_GLYPH_114;
-	case 'e': return VIS_UI_SCORE_GLYPH_101;
-	case ':': return VIS_UI_SCORE_GLYPH_58;
-	case ',': return VIS_UI_SCORE_GLYPH_44;
-	case '-': return VIS_UI_SCORE_GLYPH_45;
-	case '0': return VIS_UI_SCORE_GLYPH_48;
-	case '1': return VIS_UI_SCORE_GLYPH_49;
-	case '2': return VIS_UI_SCORE_GLYPH_50;
-	case '3': return VIS_UI_SCORE_GLYPH_51;
-	case '4': return VIS_UI_SCORE_GLYPH_52;
-	case '5': return VIS_UI_SCORE_GLYPH_53;
-	case '6': return VIS_UI_SCORE_GLYPH_54;
-	case '7': return VIS_UI_SCORE_GLYPH_55;
-	case '8': return VIS_UI_SCORE_GLYPH_56;
-	case '9': return VIS_UI_SCORE_GLYPH_57;
-	default: return BOPEEBO_VISUAL_FRAME_COUNT;
-	}
-}
-
 static void draw_score_display(void)
 {
-	char digits[12];
-	char label[24] = "Score: ";
-	snprintf(digits, sizeof(digits), "%ld", (long)score);
-	size_t digit_count = strlen(digits);
-	size_t first_digit = digits[0] == '-' ? 1u : 0u;
-	if (first_digit) strncat(label, "-", sizeof(label) - strlen(label) - 1u);
-	for (size_t i = first_digit; i < digit_count; i++) {
-		if (i > first_digit && (digit_count - i) % 3u == 0u)
-			strncat(label, ",", sizeof(label) - strlen(label) - 1u);
-		char character[2] = { digits[i], '\0' };
-		strncat(label, character, sizeof(label) - strlen(label) - 1u);
-	}
-	size_t length = strlen(label);
-	int x = 307 - (int)length * 5;
-	score_glyphs_drawn = 0;
-	for (size_t i = 0; i < length; i++) {
-		if (label[i] == ' ') {
-			x += 5;
-			continue;
-		}
-		unsigned frame = score_glyph_frame(label[i]);
-		if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) {
-			x += 5;
-			continue;
-		}
-		const BopeeboVisualFrame *glyph = &bopeebo_visual_frames[frame];
-		if (draw_textured_frame(frame, x, 21, glyph->w, glyph->h))
-			score_glyphs_drawn++;
-		x += 5; /* VCR BMFont x-advance 10 at the 1/2 PS1 UI scale. */
-	}
+	/* The VCR atlas quads are present in the atlas but are not visible in the
+	   current GPU output. Use the SDK bitmap-font path that is already visible
+	   in diagnostics, keeping the score at the right end of the life-bar row. */
+	score_text_flushed = false;
+	if (score_font_id < 0) return;
+	FntPrint(score_font_id, "SCORE %ld", (long)score);
+	FntFlush(score_font_id);
+	score_text_flushed = true;
 }
 
 static void draw_combo_popup(uint32_t samples)
@@ -1922,8 +1877,8 @@ static void run_playable_frontend(void)
 						misses + hold_drops);
 					FntPrint(diagnostics_font_id, "WORLD %u HIGH %u DROP %u\n",
 						gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected);
-					FntPrint(diagnostics_font_id, "HUD GLYPHS %u J DRAW %u\n",
-						score_glyphs_drawn, (unsigned)judgement_drawn);
+					FntPrint(diagnostics_font_id, "SCORE FONT %u J DRAW %u\n",
+						(unsigned)score_text_flushed, (unsigned)judgement_drawn);
 					FntPrint(diagnostics_font_id, "HITS %u EDGE %04x J %u DMS %lu\n",
 						(unsigned)hits, (unsigned)last_game_pressed, (unsigned)last_judgement,
 						(unsigned long)last_judgement_delta_ms);
@@ -2427,7 +2382,7 @@ int main(void)
 				(unsigned long)misses, (unsigned long)hold_drops);
 			FntPrint(diagnostics_font_id, "VIS WORLD %u HIGH %u DROP %u HUD %u J %u\n",
 				gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected,
-				score_glyphs_drawn, (unsigned)judgement_drawn);
+				(unsigned)score_text_flushed, (unsigned)judgement_drawn);
 			FntPrint(diagnostics_font_id, "HP REAL %u%% HUD %u%% EDGE X=%d\n",
 				hud_actual_health_percent, hud_display_health_percent, hud_health_boundary_x);
 			FntPrint(diagnostics_font_id, "ICONS D=%d BF=%d SAFE 16..280\n", hud_dad_icon_x, hud_bf_icon_x);
