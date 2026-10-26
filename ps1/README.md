@@ -198,3 +198,8 @@ La cible QA `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` simule quatre appuis c
 La primitive Sick/Good/Bad/Shit est maintenant soumise après le HUD principal dans une passe indépendante. `Select` active les diagnostics en jeu : ils indiquent hits, dernier front de direction, jugement, delta, temps restant et soumission GPU. Tous les diagnostics restent masqués au démarrage. Les corps et capuchons de notes tenues utilisent un flip UV 180°; les flèches/récepteurs ne tournent pas et les règles des tenues sont inchangées.
 
 Build normal : [BIN](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.cue). Compilé avec diagnostics, tests QA et planche masqués. Le jeu normal n’a pas encore été observé dans DuckStation après ces corrections; valider les jugements sur hits manette et l’orientation des tenues avant de considérer ce correctif visuel accepté.
+
+
+## v28 — jugement plus compact et tenue orientée
+
+L’utilisateur valide le rendu v27 et confirme les jugements visibles. v28 réduit les popups de 18 % sans changer leur durée ou leur logique, et dessine les terminaisons des tenues en haut, derrière les corps qui les recouvrent légèrement. Le build normal garde diagnostics et QA désactivés. [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). Compilation vérifiée; cette nouvelle image n’a pas encore été observée dans DuckStation ou sur console.
