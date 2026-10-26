@@ -99,6 +99,13 @@ def extract_crop(ffmpeg: str, png: pathlib.Path, x: int, y: int, width: int, hei
     return run_ffmpeg(ffmpeg, png, filters, out_w, out_h)
 
 
+def png_size(source: pathlib.Path) -> tuple[int, int]:
+    data = source.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise ValueError(f"not a PNG with a leading IHDR: {source}")
+    return struct.unpack(">II", data[16:24])
+
+
 def fit_anchored_rig(rig: Rig, frame_ids: list[int], out_w: int, out_h: int) -> dict[int, bytearray]:
     """Fit a rig's poses together, keeping their source-space origin and floor."""
     rendered = {frame: rig.render_positioned(frame) for frame in frame_ids}
@@ -623,6 +630,39 @@ def build(args: argparse.Namespace) -> None:
         temp_images[f"ui_judgement_{name}"] = extract_stage(ffmpeg, source, *size)
         frame_sizes[f"ui_judgement_{name}"] = size
         popup_names.append(f"ui_judgement_{name}")
+
+    # The original PopUpStuff uses three individual official combo-number
+    # sprites (least-significant digit on the right), while PlayState uses the
+    # VCR bitmap font for its score line. Keep both on the shared popup CLUT.
+    combo_names: list[str] = []
+    for digit in range(10):
+        source = popup_dir / f"num{digit}.png"
+        src_w, src_h = png_size(source)
+        size = (max(1, round(src_w * 0.12)), max(1, round(src_h * 0.12)))
+        name = f"ui_combo_num_{digit}"
+        temp_images[name] = extract_crop(ffmpeg, source, 0, 0, src_w, src_h, size)
+        frame_sizes[name] = size
+        combo_names.append(name)
+
+    score_glyph_names: dict[str, str] = {}
+    score_font_png = assets / "fonts" / "vcr-bmp.png"
+    score_font_desc = ET.parse(assets / "fonts" / "vcr-bmp.fnt").getroot()
+    score_glyphs = {int(glyph.attrib["id"]): glyph.attrib for glyph in score_font_desc.findall("./chars/char")}
+    for char in "Score: ,0123456789-":
+        if char == " ":
+            continue
+        glyph = score_glyphs.get(ord(char))
+        if not glyph or int(glyph["width"]) <= 0 or int(glyph["height"]) <= 0:
+            raise ValueError(f"missing visible VCR bitmap glyph for score character {char!r}")
+        src_w, src_h = int(glyph["width"]), int(glyph["height"])
+        size = (max(1, round(src_w * 0.5)), max(1, round(src_h * 0.5)))
+        name = f"ui_score_glyph_{ord(char)}"
+        temp_images[name] = extract_crop(ffmpeg, score_font_png,
+            int(glyph["x"]), int(glyph["y"]), src_w, src_h, size)
+        frame_sizes[name] = size
+        score_glyph_names[char] = name
+        popup_names.append(name)
+    popup_names.extend(combo_names)
     icon_names: list[str] = []
     icon_dir = assets / "preload" / "images" / "icons"
     for name, source, x in (("dad", "icon-dad.png", 0),
@@ -796,7 +836,7 @@ def build(args: argparse.Namespace) -> None:
     for name, desc in descriptors.items():
         page_index = int(desc["page"])
         depth4 = name.startswith(("ui_note_", "ui_receptor_", "ui_hold_",
-                                  "ui_judgement_", "bf_miss_"))
+                                  "ui_judgement_", "ui_combo_num_", "ui_score_glyph_", "bf_miss_"))
         page_count = len(page_table)
         if not 0 <= page_index < page_count:
             raise ValueError(f"{name} references invalid texture page {page_index}")
@@ -833,6 +873,7 @@ def build(args: argparse.Namespace) -> None:
     print(f"Right-note red shares the right-lane CLUT with receptors/holds: {right_red} opaque source pixels; palette RMSE includes the full right-lane set")
     print(f"All {len(descriptors)} atlas rectangles have valid page depth/UV bounds with no packed-frame overlap")
     print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
+    print("Official combo digits and VCR score glyphs: nearest-neighbor 4bpp in shared popup CLUT")
     print("Official health portraits at 24x24 use the 8bpp character CLUTs (Dad/main, BF/BF)")
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
                  palette_popup4, stage_layout, scene_bounds,
