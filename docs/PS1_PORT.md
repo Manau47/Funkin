@@ -901,7 +901,7 @@ Les corps et terminaisons des notes tenues utilisent désormais des UV inversés
 |---|---|
 | Inspecté | Entrée PAD active bas → `game_pressed` → hit/résultat → durée samples → passes GPU; constantes de build QA et normale; pages/CLUT déjà chargées avant la transition menu→jeu. Aucune remise à zéro du jugement par frame n’existe dans le chemin étudié. |
 | Implémenté | Popup après le HUD principal; instrumentation accessible avec Select, masquée au lancement normal; rotation 180° UV des corps et terminaisons de tenues. |
-| Compilé | Cibles jeu normal et probe audio quatre canaux avec PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja. BIN normal 23 322 432 octets, CUE 93 octets; flags diagnostics, planche flèches, QA jugement et démo scène tous OFF. Fichiers sous `outputs/FNF-PS1-v27-judgement-final-layer/`. |
+| Compilé | Cibles jeu normal et probe audio quatre canaux avec PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja; la cible QA visuelle avec `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` compile également. QA non exécutée après le changement. BIN normal 23 322 432 octets, CUE 93 octets; flags diagnostics, planche flèches, QA jugement et démo scène tous OFF. Fichiers sous `outputs/FNF-PS1-v27-judgement-final-layer/`. |
 | Exécution | Pas observée dans DuckStation pour ce build. La tentative de contrôle UI de l’émulateur a été bloquée par l’accès Parsec; aucun screenshot récent ne prouve la correction runtime. |
 | À vérifier | Hit manette dans le build normal avec Select pour lire `HITS/J/LEFT/DRAW`, visibilité du popup après HUD, quatre directions, tenues tournées, stabilité audio et non-régression des fautes rapprochées/sons officiels. Pas de test console réelle. |
 
