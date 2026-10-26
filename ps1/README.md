@@ -191,3 +191,10 @@ Build v25c : cibles jouable et audio secondaire compilées avec PSn00bSDK 0.24/G
 
 La cible QA `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` simule quatre appuis chart (0/60/110/150 ms) via `game_update()` puis le vrai renderer. Elle affiche les assets officiels Sick/Good/Bad/Shit sans entrée manette ni audio; l’horloge synthétique avance à ¼ vitesse pour exposer la fenêtre réelle de 650 ms musicaux. Ne pas activer ce flag dans l’image jouable. Le build normal v26 garde diagnostics, planche et modes QA masqués. BIN/CUE et capture QA sont livrés dans `outputs/FNF-PS1-v26g-judgement-hitpath-qa/`; le BIN/CUE normal et sa capture de gameplay dans `outputs/FNF-PS1-v26-normal-judgements/`. La QA a été observée dans DuckStation; une capture de jugement par hit manette pendant le flux normal reste à vérifier. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v26--chaîne-de-rendu-des-jugements-et-cible-qa-déterministe).
 
+
+
+## v27 — dernière passe de jugement et tenues
+
+La primitive Sick/Good/Bad/Shit est maintenant soumise après le HUD principal dans une passe indépendante. `Select` active les diagnostics en jeu : ils indiquent hits, dernier front de direction, jugement, delta, temps restant et soumission GPU. Tous les diagnostics restent masqués au démarrage. Les corps et capuchons de notes tenues utilisent un flip UV 180°; les flèches/récepteurs ne tournent pas et les règles des tenues sont inchangées.
+
+Build normal : [BIN](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.cue). Compilé avec diagnostics, tests QA et planche masqués. Le jeu normal n’a pas encore été observé dans DuckStation après ces corrections; valider les jugements sur hits manette et l’orientation des tenues avant de considérer ce correctif visuel accepté.
