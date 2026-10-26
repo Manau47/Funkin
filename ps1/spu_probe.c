@@ -141,6 +141,7 @@ static uint8_t dad_visual_lane;
 static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t last_judgement;
+static int32_t last_judgement_points;
 static uint32_t judgement_until;
 static uint32_t last_judgement_delta_ms;
 static bool judgement_drawn;
@@ -171,6 +172,7 @@ static unsigned visual_prim_count;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
 static int diagnostics_font_id = -1;
+static int judgement_points_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
 {
@@ -337,6 +339,7 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
+		judgement_points_font_id = FntOpen(218, 72, 96, 12, 0, 16);
 		diagnostics_font_id = FntOpen(
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
@@ -848,6 +851,7 @@ static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 	misses++;
 	combo = 0;
 	score -= 100;
+	last_judgement_points = -100;
 	add_health(-20);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
@@ -866,7 +870,9 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 {
 	hold_drops++;
 	combo = 0;
-	score -= (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
+	int32_t hold_penalty = (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
+	score -= hold_penalty;
+	last_judgement_points = -hold_penalty;
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
@@ -930,6 +936,7 @@ static void game_update(uint32_t samples)
 		if (target < 0) {
 			combo = 0;
 			score -= 10;
+			last_judgement_points = -10;
 			add_health(-20);
 			play_resident_sfx(false, SFX_KIND_GHOST_MISS);
 			bf_visual_state = 2;
@@ -946,6 +953,7 @@ static void game_update(uint32_t samples)
 		game_note_state[target] = 1;
 		int32_t award = pbot1_score(diff, rate);
 		score += award;
+		last_judgement_points = award;
 		uint64_t timing = (uint64_t)diff * 1000u;
 		last_judgement_delta_ms = (uint32_t)(timing / rate);
 		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); last_judgement = 1u; }
@@ -1466,6 +1474,11 @@ static void draw_judgement_popup(uint32_t samples)
 	int popup_h = ((int)popup->h * 164 + 50) / 100;
 	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
 		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
+	if (judgement_drawn) {
+		/* Display the same score delta already applied for this chart event. */
+		FntPrint(judgement_points_font_id, "%+ld", (long)last_judgement_points);
+		FntFlush(judgement_points_font_id);
+	}
 }
 
 static void draw_menu_screen(void)
@@ -1524,6 +1537,7 @@ static void reset_game_state(void)
 	dad_visual_start = 0;
 	dad_visual_until = 0;
 	last_judgement = 0;
+	last_judgement_points = 0;
 	judgement_until = 0;
 	last_judgement_delta_ms = 0;
 #if GAME_JUDGEMENT_TEST_DEFAULT
