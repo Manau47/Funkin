@@ -596,7 +596,7 @@ static void play_resident_sfx(bool manual, unsigned kind)
 	};
 	static const uint32_t miss_frames[3] = {
 		MISS_SFX_MISSNOTE1_FRAMES, MISS_SFX_MISSNOTE2_FRAMES, MISS_SFX_MISSNOTE3_FRAMES
-	};	
+	};
 	if (kind == SFX_KIND_MISS || kind == SFX_KIND_GHOST_MISS) {
 		unsigned variant = next_sfx_random() % 3u;
 		sample_offset = miss_offsets[variant];
