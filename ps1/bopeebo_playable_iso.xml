@@ -6,6 +6,7 @@
 			<file name="SYSTEM.CNF" type="data" source="${PROJECT_SOURCE_DIR}/system.cnf" />
 			<file name="FUNKIN.EXE" type="data" source="funkin-ps1-bopeebo-playable.exe" />
 			<file name="STREAM.VAG" type="data" source="${PROJECT_BINARY_DIR}/stream-playable.vag" />
+			<file name="MENU.VAG" type="data" source="${PROJECT_BINARY_DIR}/menu.vag" />
 			<dummy sectors="128" />
 		</directory_tree>
 	</track>

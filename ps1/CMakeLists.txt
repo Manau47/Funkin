@@ -236,6 +236,10 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayBGweek1-bf.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/freeplay.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/freeplay.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/music/freakyMenu/freakyMenu.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/scrollMenu.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/confirmMenu.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/cancelMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/sick.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/good.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/bad.png"
@@ -258,10 +262,25 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	)
 	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}"
 		"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag" COPYONLY)
+	set(_menu_audio_header "${CMAKE_CURRENT_BINARY_DIR}/menu_audio_data.h")
+	set(_menu_audio_vagi "${CMAKE_CURRENT_BINARY_DIR}/menu.vag")
+	add_custom_command(
+		OUTPUT "${_menu_audio_header}" "${_menu_audio_vagi}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_menu_audio.py"
+			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			--assets "${FUNKIN_PS1_ASSETS_DIR}"
+			--music "${_menu_audio_vagi}"
+			--header "${_menu_audio_header}"
+		DEPENDS generate_ps1_menu_audio.py convert_bopeebo_to_vagi.py ${_visual_asset_dependencies}
+		VERBATIM
+	)
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c"
-		"${_playable_chart_header}" "${_playable_visual_header}" "${_bopeebo_sfx_header}")
+		"${_playable_chart_header}" "${_playable_visual_header}"
+		"${_bopeebo_sfx_header}" "${_menu_audio_header}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bopeebo-sfx)
+	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}")
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
 		GAME_DAD_LANES_DEFAULT=$<BOOL:${FUNKIN_PS1_DAD_LANES_DEFAULT}>
@@ -276,7 +295,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		bopeebo_playable_iso.xml
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
-			"${_bopeebo_sfx_vag}")
+			"${_bopeebo_sfx_vag}" "${_menu_audio_vagi}")
 elseif(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON OR DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
 	message(FATAL_ERROR "Playable Bopeebo requires both FUNKIN_PS1_BOPEEBO_CHART_JSON and FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH to name existing files")
 endif()

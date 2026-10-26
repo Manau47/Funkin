@@ -101,18 +101,20 @@ def encode_channel(samples: list[int], chunk_count: int) -> bytes:
     return bytes(encoded)
 
 
-def write_vagi(path: Path, channels: list[bytes], rate: int, sample_count: int) -> None:
+def write_vagi(path: Path, channels: list[bytes], rate: int, sample_count: int,
+               name: bytes = b"FNF BOPEEBO") -> None:
     channel_count = len(channels)
-    channel_bytes = len(channels[0])
-    if channel_count != 6 or channel_bytes % INTERLEAVE or any(len(c) != channel_bytes for c in channels):
-        raise ValueError("expected six equally sized, interleave-aligned channels")
+    channel_bytes = len(channels[0]) if channels else 0
+    if channel_count not in (2, 4, 6) or channel_bytes % INTERLEAVE or \
+            any(len(c) != channel_bytes for c in channels):
+        raise ValueError("expected 2, 4, or 6 equally sized, interleave-aligned channels")
     header = bytearray(b"VAGi")
     header.extend(struct.pack(">I", 0x20))
     header.extend(struct.pack("<I", INTERLEAVE))
     header.extend(struct.pack(">II", channel_bytes, rate))
     header.extend(bytes(10))
     header.extend(struct.pack("<H", channel_count))
-    header.extend(b"FNF BOPEEBO\0\0\0\0\0")
+    header.extend(name[:16].ljust(16, b"\0"))
     if len(header) != 48:
         raise AssertionError(f"unexpected VAGi header size: {len(header)}")
     output = bytearray(header)
@@ -125,7 +127,7 @@ def write_vagi(path: Path, channels: list[bytes], rate: int, sample_count: int) 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(output)
     print(
-        f"Wrote {path}: six channels, {rate} Hz, {sample_count / rate:.3f} s source, "
+        f"Wrote {path}: {channel_count} channels, {rate} Hz, {sample_count / rate:.3f} s source, "
         f"{channel_bytes // INTERLEAVE} chunks, {len(output)} bytes"
     )
 

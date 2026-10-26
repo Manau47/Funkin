@@ -42,6 +42,10 @@
 #define SFX_BUSY_FRAMES 9u
 #define SFX_AUTO_DURING_COUNT 4u
 #define SFX_AUTO_DURING_START_SAMPLES (2u * 43008u)
+#define MENU_SFX_SPURAM_ADDR 0x12000u
+#define MENU_SFX_FIRST_VOICE 8u
+#define MENU_SFX_VOICE_COUNT 3u
+#define MENU_MUSIC_CHANNELS 4u
 
 #if TEST_BOPEEBO_4CH
 #include "bopeebo_sfx_data.h"
@@ -49,6 +53,7 @@
 #if TEST_PLAYABLE_BOPEEBO
 #include "bopeebo_chart.h"
 #include "bopeebo_visual_data.h"
+#include "menu_audio_data.h"
 #define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
 #define GAME_MAX_PRIMS 220u
 #define VISUAL_MAX_PRIMS 180u
@@ -86,6 +91,7 @@ typedef enum {
 } GameScreen;
 static GameScreen game_screen = SCREEN_TITLE;
 static uint32_t menu_ticks;
+static bool menu_visuals_loaded;
 static int menu_font_id = -1;
 typedef struct { const char *song; const char *difficulty; } FreeplayEntry;
 static const FreeplayEntry freeplay_catalog[] = {
@@ -169,6 +175,9 @@ typedef struct {
 	volatile int last_cdread_return;
 	volatile int last_cdsync_return;
 	volatile int error_cause;
+	unsigned channels;
+	bool loop;
+	bool menu_music;
 } StreamReadContext;
 
 typedef struct {
@@ -219,6 +228,10 @@ static void abort_cd_read(void);
 static bool start_stream_from_disc(void);
 #if TEST_PLAYABLE_BOPEEBO
 static bool feed_stream(void);
+static bool start_stream_file(const char *path, unsigned expected_channels,
+	bool loop, bool menu_music);
+static bool upload_menu_sfx(void);
+static void play_menu_sfx(unsigned sound);
 #endif
 
 enum {
@@ -302,8 +315,10 @@ static void init_video(void)
 #if TEST_PLAYABLE_BOPEEBO
 static void load_bopeebo_visuals(void)
 {
-	/* Mixed 8/4bpp pages occupy holes to the right of the framebuffers. */
+	/* Keep the dedicated menu page out of the gameplay VRAM residency set. */
+	unsigned menu_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
 	for (unsigned page = 0; page < BOPEEBO_VISUAL_PAGE8_COUNT; page++) {
+		if (page == menu_page) continue;
 		const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
 		RECT rect = { (short)info->x, (short)info->y, 128, 256 };
 		LoadImage(&rect, (uint32_t *)bopeebo_visual_pages8[page]);
@@ -327,9 +342,42 @@ static void load_bopeebo_visuals(void)
 		RECT palette_rect = { x, y, 16, 1 };
 		LoadImage(&palette_rect, (uint32_t *)bopeebo_visual_palette_ui4[lane]);
 	}
+	/* Keep the red right-note CLUT separate from the official blue-grey
+	   right receptors and their press/confirm/hold frames. */
+	RECT right_note_palette_rect = { 288, 480, 16, 1 };
+	LoadImage(&right_note_palette_rect,
+		(uint32_t *)bopeebo_visual_palette_note_right4);
 	RECT popup_palette_rect = { 272, 480, 16, 1 };
 	LoadImage(&popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
 	DrawSync(0);
+}
+
+static void load_menu_visuals(void)
+{
+	if (menu_visuals_loaded) return;
+	unsigned page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	if (page >= BOPEEBO_VISUAL_PAGE8_COUNT) return;
+	const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
+	RECT rect = { (short)info->x, (short)info->y, 128, 256 };
+	LoadImage(&rect, (uint32_t *)bopeebo_visual_pages8[page]);
+	DrawSync(0);
+	menu_visuals_loaded = true;
+}
+
+static void release_menu_visuals(void)
+{
+	if (!menu_visuals_loaded) return;
+	unsigned page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
+	/* The SDK exposes GPU FILL primitives rather than PsyQ ClearImage(). */
+	FILL fill;
+	setFill(&fill);
+	setRGB0(&fill, 0, 0, 0);
+	setXY0(&fill, info->x, info->y);
+	setWH(&fill, 128, 256);
+	DrawPrim((uint32_t *)&fill);
+	DrawSync(0);
+	menu_visuals_loaded = false;
 }
 #endif
 
@@ -853,6 +901,7 @@ static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 		setClut(p, 272 + (visual->palette - 3u) * 16u, 496);
 	else if (visual->palette == 6u) setClut(p, 256, 480);
 	else if (visual->palette == 7u) setClut(p, 272, 480);
+	else if (visual->palette == 8u) setClut(p, 288, 480);
 	else setClut(p, 0, 496);
 }
 
@@ -1221,21 +1270,27 @@ static void draw_menu_screen(void)
 		return;
 	}
 
-	/* Title and menu art uses pinned official logo, GF dance, and Freeplay art.
-	   Main-menu mode deliberately exposes only a path with an implemented action. */
-	if (game_screen == SCREEN_FREEPLAY)
-		draw_textured_frame(VIS_MENU_FREEPLAY_BG, 176, 96, 128, 72);
-	draw_textured_frame(VIS_MENU_LOGO, 72, 6, 176, 132);
-	if (game_screen == SCREEN_MAIN_MENU)
-		draw_textured_frame(VIS_MENU_FREEPLAY_BUTTON, 88, 137, 144, 40);
+	/* Use separate title/main/freeplay compositions. All menu art is official
+	   pinned material; the only selectable destination remains Freeplay. */
+	if (game_screen == SCREEN_TITLE) {
+		draw_textured_frame(VIS_MENU_LOGO, 42, 8, 176, 132);
+	} else if (game_screen == SCREEN_MAIN_MENU) {
+		draw_textured_frame(VIS_MENU_LOGO, 18, 8, 142, 106);
+		draw_textured_frame(VIS_MENU_FREEPLAY_BUTTON, 18, 128, 150, 42);
+	} else {
+		draw_textured_frame(VIS_MENU_FREEPLAY_BG, 132, 18, 176, 99);
+	}
 	unsigned beat = (menu_ticks / 36u) & 1u;
 	unsigned pose = (menu_ticks / 4u) % BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
-	draw_textured_frame(VIS_GF_DANCE_0 + beat * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
-		210, 119, BOPEEBO_GF_FRAME_W, BOPEEBO_GF_FRAME_H);
+	if (game_screen != SCREEN_FREEPLAY)
+		draw_textured_frame(VIS_GF_DANCE_0 + beat * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
+			game_screen == SCREEN_TITLE ? 210 : 206,
+			game_screen == SCREEN_TITLE ? 142 : 126,
+			BOPEEBO_GF_FRAME_W, BOPEEBO_GF_FRAME_H);
 	if (game_screen == SCREEN_TITLE)
 		FntPrint(menu_font_id, "PRESS START TO CONTINUE");
 	else if (game_screen == SCREEN_MAIN_MENU)
-		FntPrint(menu_font_id, "CROSS SELECT");
+		FntPrint(menu_font_id, "CROSS FREEPLAY");
 	else
 		FntPrint(menu_font_id, "FREEPLAY\n> %s - %s\nCROSS PLAY  CIRCLE BACK",
 			freeplay_catalog[0].song, freeplay_catalog[0].difficulty);
@@ -1313,6 +1368,37 @@ static bool restart_bopeebo(void)
 	return true;
 }
 
+static bool upload_menu_sfx(void)
+{
+	if (MENU_SFX_SPURAM_ADDR + MENU_SFX_BANK_SIZE > SPU_RAM_SIZE)
+		return false;
+	SpuSetTransferMode(SPU_TRANSFER_BY_DMA);
+	SpuSetTransferStartAddr(MENU_SFX_SPURAM_ADDR);
+	size_t written = SpuWrite((const uint32_t *)menu_sfx_bank, MENU_SFX_BANK_SIZE);
+	return written == MENU_SFX_BANK_SIZE &&
+		SpuIsTransferCompleted(SPU_TRANSFER_WAIT);
+}
+
+static void play_menu_sfx(unsigned sound)
+{
+	static const uint32_t offsets[MENU_SFX_VOICE_COUNT] = {
+		MENU_SFX_SCROLLMENU_OFFSET, MENU_SFX_CONFIRMMENU_OFFSET,
+		MENU_SFX_CANCELMENU_OFFSET
+	};
+	if (sound >= MENU_SFX_VOICE_COUNT) return;
+	unsigned voice = MENU_SFX_FIRST_VOICE + sound;
+	uint32_t key = 1u << voice;
+	SpuSetKey(0, key);
+	SPU_CH_ADDR(voice) = getSPUAddr(MENU_SFX_SPURAM_ADDR + offsets[sound]);
+	SPU_CH_FREQ(voice) = getSPUSampleRate(MENU_SFX_RATE);
+	SPU_CH_ADSR1(voice) = 0x00ff;
+	SPU_CH_ADSR2(voice) = 0x0000;
+	/* Three navigation cues together stay below the menu music's mix headroom. */
+	SPU_CH_VOL_L(voice) = 0x0600;
+	SPU_CH_VOL_R(voice) = 0x0600;
+	SpuSetKey(1, key);
+}
+
 static void release_song_resources(void)
 {
 	abort_cd_read();
@@ -1330,6 +1416,7 @@ static void release_song_resources(void)
 static bool enter_bopeebo(void)
 {
 	release_song_resources();
+	release_menu_visuals();
 	reset_game_state();
 	song_finished = false;
 	if (!start_stream_from_disc()) return false;
@@ -1340,8 +1427,12 @@ static bool enter_bopeebo(void)
 static void return_to_freeplay(void)
 {
 	release_song_resources();
+	load_menu_visuals();
 	song_finished = true;
 	game_screen = SCREEN_FREEPLAY;
+	if (CdControlB(CdlPause, 0, 0) != 1 ||
+		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
+		show_error(failure_code ? failure_code : FAIL_CD_READ);
 }
 
 static void run_playable_frontend(void)
@@ -1349,10 +1440,22 @@ static void run_playable_frontend(void)
 	reset_game_state();
 	game_screen = SCREEN_TITLE;
 	menu_ticks = 0;
+	if (!upload_menu_sfx() ||
+		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
+		show_error(failure_code ? failure_code : FAIL_CD_READ);
 	for (;;) {
 		bool pad_connected = poll_bopeebo4_controls();
 		uint32_t samples = 0;
 		unsigned rate = BOPEEBO_CHART_RATE;
+		if (game_screen != SCREEN_GAMEPLAY && game_screen != SCREEN_PAUSE &&
+			stream_initialized) {
+			(void)feed_stream();
+			if (read_ctx.read_error || underruns)
+				show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
+			rate = (unsigned)stream.config.sample_rate;
+			samples = Stream_GetSamplesPlayed(&stream);
+			menu_ticks = rate ? (uint32_t)(((uint64_t)samples * 60u) / rate) : menu_ticks;
+		}
 		if (game_screen == SCREEN_GAMEPLAY) {
 			(void)feed_stream();
 			if (read_ctx.read_error || underruns)
@@ -1384,18 +1487,30 @@ static void run_playable_frontend(void)
 			if (song_finished) return_to_freeplay();
 		} else if (game_screen == SCREEN_PAUSE) {
 			if (game_pressed & PAD_CROSS) {
+				play_menu_sfx(1u);
 				if (!Stream_Start(&stream, true)) show_error(FAIL_STREAM_START);
 				game_screen = SCREEN_GAMEPLAY;
 			} else if (game_pressed & PAD_CIRCLE) {
+				play_menu_sfx(2u);
 				return_to_freeplay();
 			}
 		} else if (game_screen == SCREEN_TITLE) {
-			if (game_pressed & PAD_START) game_screen = SCREEN_MAIN_MENU;
+			if (game_pressed & PAD_START) {
+				play_menu_sfx(1u);
+				game_screen = SCREEN_MAIN_MENU;
+			}
 		} else if (game_screen == SCREEN_MAIN_MENU) {
-			if (game_pressed & PAD_CROSS) game_screen = SCREEN_FREEPLAY;
+			if (game_pressed & PAD_CROSS) {
+				play_menu_sfx(1u);
+				game_screen = SCREEN_FREEPLAY;
+			}
 		} else if (game_screen == SCREEN_FREEPLAY) {
-			if (game_pressed & PAD_CIRCLE) game_screen = SCREEN_MAIN_MENU;
+			if (game_pressed & PAD_CIRCLE) {
+				play_menu_sfx(2u);
+				game_screen = SCREEN_MAIN_MENU;
+			}
 			else if (game_pressed & PAD_CROSS) {
+				play_menu_sfx(1u);
 				if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
 				samples = 0;
 			}
@@ -1502,12 +1617,10 @@ static bool feed_stream(void)
 	int next_sector = read_ctx.next_sector;
 	int max_length = read_ctx.stream_length - next_sector;
 	if (max_length <= 0) {
-#if TEST_NO_LOOP
+		if (!read_ctx.loop)
 		return false;
-#else
 		next_sector = 0;
 		max_length = read_ctx.stream_length;
-#endif
 	}
 	if (sectors > (size_t)max_length)
 		sectors = (size_t)max_length;
@@ -1536,7 +1649,8 @@ static bool feed_stream(void)
 	return true;
 }
 
-static bool valid_header(const VAG_Header *header, unsigned *channels_out,
+static bool valid_header(const VAG_Header *header, unsigned expected_channels,
+	unsigned *channels_out,
 	unsigned *interleave_out, unsigned *sample_rate_out, unsigned *chunks_out,
 	int file_size)
 {
@@ -1546,7 +1660,7 @@ static bool valid_header(const VAG_Header *header, unsigned *channels_out,
 	unsigned channels = header->channels ? header->channels : 2u;
 	unsigned bytes_per_channel = SWAP_ENDIAN(header->size);
 	unsigned sample_rate = SWAP_ENDIAN(header->sample_rate);
-	if (header->version != 0x20000000u || channels != TEST_CHANNELS ||
+	if (header->version != 0x20000000u || channels != expected_channels ||
 		interleave < 2048u || interleave > 8192u ||
 		(interleave % CD_SECTOR_SIZE) != 0 || (interleave % 16u) != 0 ||
 		bytes_per_channel == 0 || (bytes_per_channel % 16u) != 0 ||
@@ -1567,13 +1681,15 @@ static bool valid_header(const VAG_Header *header, unsigned *channels_out,
 	return true;
 }
 
-static bool start_stream_from_disc(void)
+static bool start_stream_file(const char *path, unsigned expected_channels,
+	bool loop, bool menu_music)
 {
 	CdlFILE file;
-	if (!CdSearchFile(&file, "\\STREAM.VAG")) {
+	if (!CdSearchFile(&file, path)) {
 		failure_code = FAIL_NOT_FOUND;
 		return false;
 	}
+	memset(&read_ctx, 0, sizeof(read_ctx));
 	uint32_t header_sector[CD_SECTOR_SIZE / sizeof(uint32_t)];
 	if (CdControl(CdlSetloc, &file.pos, 0) != 1) {
 		failure_code = FAIL_CD_COMMAND;
@@ -1597,7 +1713,7 @@ static bool start_stream_from_disc(void)
 
 	unsigned channels, interleave, sample_rate, chunks;
 	const VAG_Header *header = (const VAG_Header *)header_sector;
-	if (!valid_header(header, &channels, &interleave, &sample_rate, &chunks,
+	if (!valid_header(header, expected_channels, &channels, &interleave, &sample_rate, &chunks,
 		file.size)) {
 		failure_code = FAIL_HEADER_FORMAT;
 		return false;
@@ -1605,7 +1721,7 @@ static bool start_stream_from_disc(void)
 
 	Stream_Config config = {0};
 	config.spu_address = STREAM_BUFFER_ADDR;
-	config.channel_mask = (1u << TEST_CHANNELS) - 1u;
+	config.channel_mask = (1u << channels) - 1u;
 	config.interleave = interleave;
 	config.buffer_size = RAM_BUFFER_SIZE;
 	config.refill_threshold = REFILL_THRESHOLD;
@@ -1613,6 +1729,9 @@ static bool start_stream_from_disc(void)
 	config.underrun_callback = stream_underrun_handler;
 	Stream_Init(&stream, &config);
 	stream_initialized = true;
+	read_ctx.channels = channels;
+	read_ctx.loop = loop;
+	read_ctx.menu_music = menu_music;
 #if TEST_CHANNELS == 2
 	SPU_CH_VOL_L(0) = 0x3fff;
 	SPU_CH_VOL_R(0) = 0;
@@ -1620,11 +1739,21 @@ static bool start_stream_from_disc(void)
 	SPU_CH_VOL_R(1) = 0x3fff;
 #else
 #if TEST_BOPEEBO_4CH
-	SPU_CH_VOL_L(0) = MUSIC_SPAN_GAIN;
-	SPU_CH_VOL_R(0) = 0;
-	SPU_CH_VOL_L(1) = 0;
-	SPU_CH_VOL_R(1) = MUSIC_SPAN_GAIN;
-	set_voice_pan();
+	if (menu_music) {
+		/* FreakyMenu is stereo in channels 0/1; 2/3 are silent VAGi padding. */
+		SPU_CH_VOL_L(0) = MUSIC_SPAN_GAIN;
+		SPU_CH_VOL_R(0) = 0;
+		SPU_CH_VOL_L(1) = 0;
+		SPU_CH_VOL_R(1) = MUSIC_SPAN_GAIN;
+		SPU_CH_VOL_L(2) = SPU_CH_VOL_R(2) = 0;
+		SPU_CH_VOL_L(3) = SPU_CH_VOL_R(3) = 0;
+	} else {
+		SPU_CH_VOL_L(0) = MUSIC_SPAN_GAIN;
+		SPU_CH_VOL_R(0) = 0;
+		SPU_CH_VOL_L(1) = 0;
+		SPU_CH_VOL_R(1) = MUSIC_SPAN_GAIN;
+		set_voice_pan();
+	}
 #else
 	SPU_CH_VOL_L(0) = TEST_INSTRUMENT_VOLUME;
 	SPU_CH_VOL_R(0) = 0;
@@ -1701,11 +1830,18 @@ static bool start_stream_from_disc(void)
 	return true;
 }
 
+static bool start_stream_from_disc(void)
+{
+	return start_stream_file("\\STREAM.VAG", TEST_CHANNELS,
+		TEST_NO_LOOP ? false : true, false);
+}
+
 int main(void)
 {
 	init_video();
 #if TEST_PLAYABLE_BOPEEBO
 	load_bopeebo_visuals();
+	load_menu_visuals();
 #endif
 	SpuInit();
 	reset_spu_channels();

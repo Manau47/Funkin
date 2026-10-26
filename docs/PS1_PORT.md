@@ -793,3 +793,35 @@ Le chiffre statique `.rodata + .data + .sdata + .sbss + .bss` vaut 688 094 octet
 Build final PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja dans `C:\Users\Manau47\Documents\Codex\ps1-build-v21-menu` : génération de la conversion, compile/link et image BIN/CUE réussis. Image 10 461 696 octets (4 448 secteurs), CUE 93 octets. Le build réutilise les ressources du sous-module assets à la révision épinglée; aucun SDK ni asset source/généré n’est ajouté au dépôt.
 
 Seule validation automatique visuelle : contrôle du CLUT et du rouge avant compilation, plus vérification des chevauchements framebuffer/textures/palettes. Compilation réussie n’est pas exécution. Les quatre couleurs et états, le parcours menu, le mute, la fin de morceau, pause/reprise/retour, plusieurs cycles et les compteurs audio/CD restent à observer dans DuckStation. Aucune validation PAL/CRT ou console réelle. La vidéo utilisateur a servi à cadrer le flux; aucune nouvelle capture v21 n’a été obtenue.
+
+## Révision v22 — CLUT droite isolée et premier menu audio
+
+Base : `facbf1243875fe7e24819eff87d1879527f00584` sur `ps1-port`; assets épinglés à `724eba9de9e76761d9cefd52169926bc51c760a5`. Aucun changement de `main`.
+
+### Flèches et carte GPU
+
+Le défaut v21 comprenait des fragments, donc la perte de rouge seule ne suffisait pas à l’expliquer. L’asset épinglé `staticRight0001` se trouve à `(1628,0)`, taille `155×157`, non tourné; son crop source est propre. Le récepteur PS1 est en 4bpp sur la page UI 10, base VRAM `(320,256)`, UV `(32,96,32,32)`, CLUT droit `(256,480)`. La note droite rouge utilise maintenant sa CLUT séparée `(288,480)`, palette 8. Les états appui/confirmation/tenue gardent le CLUT officiel droit; Dad et BF empruntent le même chemin de rendu.
+
+Le générateur valide les 101 rectangles : profondeur/page cohérentes, UV dans la page 256×256, pas de recouvrement entre frames packées ni entre pages, framebuffers, CLUT et réservation police. Il confirme 360 pixels rouges opaques après quantification RGB555. La carte comprend 9 pages 8bpp + 2 pages 4bpp (655 360 octets de textures VRAM). Ces contrôles sont statiques : le rendu GPU du récepteur droit et de ses états n’est pas observé en jeu sur ce build. La capture v21 n’est pas réputée corrigée.
+
+### Menus et son
+
+Le titre, le bouton Freeplay et le fond Freeplay utilisent les ressources officielles épinglées. `FreakyMenu.ogg` est converti en VAGi quatre canaux à 43 008 Hz et lu en boucle depuis `MENU.VAG`: les canaux 0/1 portent la stéréo, 2/3 sont ADPCM silencieux. `scrollMenu`, `confirmMenu` et `cancelMenu` deviennent des one-shots ADPCM mono dans une banque SPU de 40 448 octets, base `0x12000`, voix 8–10. Ce choix aligne le flux de menu sur le chemin quatre canaux utilisé par le gameplay.
+
+La première variante deux canaux affichait `SPU STREAM ERROR / CODE 8` dans DuckStation, avec zéro erreur CD, après avoir tourné un moment. Cette observation est compatible avec un underrun SPU. La variante quatre canaux s’est ensuite maintenue sans écran d’erreur pendant plus de 140 secondes, donc au-delà de la boucle de la piste (112,953 s). C’est une observation de compteur d’erreurs par absence d’écran fatal, pas une mesure de débit ni une écoute acoustique; les compteurs runtime ne sont pas affichés au menu. Les transitions arrêtent/détruisent le flux courant, puis recherchent et préchargent le nouveau fichier. Le chemin prévu reste Titre → menu → Freeplay → Bopeebo Normal → Freeplay; aucun autre contenu n’est présenté comme jouable.
+
+La page VRAM dédiée aux menus est chargée sur les écrans menu puis effacée par primitive GPU FILL à l’entrée du jeu, et rechargée au retour. Cela isole une page de 64 Kio en VRAM. Les octets source restent embarqués dans les sections statiques de l’exécutable en RAM : aucune économie RAM n’est revendiquée, et un chargement des ressources par CD avec tampon temporaire reste à implémenter. Les libellés gardent la police SDK : ce menu reste un prototype.
+
+### Build et observation
+
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja : génération, compilation, lien et image BIN/CUE réussis. BIN final `23 268 336` octets (9 893 secteurs), CUE `93` octets; `MENU.VAG` `11 110 400` octets, 4 canaux, durée source `112,953 s`, bouclé. `mipsel-none-elf-size -A` donne `.text 47 968`, `.rodata 706 228`, `.data 2 112`, `.sdata 146`, `.sbss 324`, `.bss 19 880` octets. Le ring d’exécution est configuré à 98 304 octets en plus des sections statiques; pile, heap SDK et haute eau ne sont pas instrumentés. `.rodata` contient les pages graphiques et effets embarqués : ce n’est pas de la RAM libre. Le flux de menu consomme environ 196,6 Ko/s de données CD, soit 64 % du débit brut nominal 2× (307,2 Ko/s); tampons SPU de 32 Kio et quatre voix 0–3 actives, deux audibles. Ces valeurs sont calculées, pas mesurées sur console.
+
+Le BIN quatre canaux a été inséré puis réinitialisé dans DuckStation 0.1-8675. Écran titre/logo/GF observé à 320×240, statut de 59–61 IPS. Le jeu est resté sur le titre pendant plus de 140 secondes sans afficher d’erreur SPU/CD, y compris à travers une boucle de la musique. Le clavier est configuré (`Return/K/J/I/L`), mais les appuis synthétisés dans cette session n’ont produit aucun événement de manette. Aucune navigation menu→jeu n’a donc été observée; le son n’a pas été écouté et aucun état de note/récepteur droite n’a été capturé. Aucun cycle répété, mesure de dérive ou vidéo du parcours.
+
+| État | Résultat |
+|---|---|
+| Inspecté | Asset `staticRight0001`, champs page/UV/CLUT, carte VRAM, flux menu et conversions VAGi/VAGp. |
+| Implémenté | CLUT séparée note droite, contrôles de packing, musique et sons menu, résidence VRAM des textures menu, démarrages/retours de flux. |
+| Compilé | ELF et BIN/CUE produits avec succès. |
+| Exécuté | Démarrage DuckStation, écran titre 320×240, plus de 140 s sans écran d’erreur sur VAGi 4 canaux, une boucle de piste. Une variante précédente deux canaux a montré CODE 8. |
+| À vérifier | Écoute réelle de FreakyMenu et effets, note droite rouge et récepteur droit propres (repos/appui/confirmation/tenue, Dad/BF), les quatre directions, navigation et plusieurs transitions, diagnostics CD/underrun en affichage, dérive, console réelle. Ni la correction graphique, ni l’audio audible, ni le parcours menus ne sont déclarés validés. |
