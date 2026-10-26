@@ -915,3 +915,10 @@ L’utilisateur confirme que le jugement est désormais visible dans le build v2
 La terminaison officielle de chaque tenue est maintenant dessinée à son extrémité haute, avant le corps. Le corps recouvre le capuchon de 4 px pour cacher le raccord; le flip UV 180° des textures reste appliqué. Cette retouche n’affecte ni les flèches/récepteurs, ni le chart, ni la logique de maintien.
 
 Le BIN/CUE v28 est compilé avec diagnostics et cibles QA masqués par défaut : [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). La modification de source est vérifiée et compilée; DuckStation n’a pas été relancé pour cette passe, donc taille/raccord des jugements et orientation nouvelle des tenues restent à confirmer visuellement par l’utilisateur. Aucun test console réelle.
+
+
+## v29 — points affichés près du jugement
+
+Le popup affiche maintenant le delta de score réellement appliqué lors du dernier événement : valeur positive sur un hit, valeur négative pour miss/ghost miss/drop de tenue. Pour une tenue, la valeur affichée au jugement est le score de la tête; les points accumulés pendant son maintien restent attribués comme auparavant. Le total, la table de score, les pénalités et l’horloge du popup ne sont pas modifiés. Le nombre signé apparaît à droite du jugement, sans panneau.
+
+Build jouable normal PSn00bSDK 0.24 / GCC MIPS 12.3 : [BIN](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.cue). BIN 23 322 432 octets, CUE 93 octets, SHA-256 `A9EF856C58A68D2481819543401308594D1B0C8FCFCBB99E88C5BC244F0928E3`. Diagnostics, QA et scène démo désactivés par défaut. Compilation réussie. Cette nouvelle image n’a pas encore été observée dans DuckStation; proximité/lisibilité du nombre restent à confirmer à l’écran, puis à ajuster si besoin. Pas de validation console réelle.
