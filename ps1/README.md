@@ -185,25 +185,21 @@ Le build normal garde Select/diagnostics masqués au démarrage. Select les affi
 
 Une faute BF existante redémarre immédiatement sa timeline visuelle même pendant une réaction précédente. Pour fautes simultanées, l’ordre du chart détermine la dernière lane/pose affichée; chaque miss/drop/ghost miss garde exactement un traitement et son événement SFX existant. Les missnotes utilisent les trois sons officiels aléatoires et les gains du moteur; le bip synthétique reste réservé aux probes. Le pool de quatre voix répartit un budget de volume borné et accepte les occurrences rapprochées.
 
-Build v25c : cibles jouable et audio secondaire compilées avec PSn00bSDK 0.24/GCC 12.3. BIN/CUE sous `outputs/FNF-PS1-v25c-judgement-visibility/`. DuckStation a affiché Freeplay normal à 320×240; l’injection clavier n’a pas permis de lancer le morceau de façon reproductible. Les popups, fautes rapprochées, sons officiels, unders/underruns et transitions du jeu restent à essayer; aucune exécution complète ni console réelle n’est revendiquée. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v25--jugements-fautes-rapprochées-et-sfx-officiels).
-
-## v26 — validation déterministe des jugements
-
-La cible QA `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` simule quatre appuis chart (0/60/110/150 ms) via `game_update()` puis le vrai renderer. Elle affiche les assets officiels Sick/Good/Bad/Shit sans entrée manette ni audio; l’horloge synthétique avance à ¼ vitesse pour exposer la fenêtre réelle de 650 ms musicaux. Ne pas activer ce flag dans l’image jouable. Le build normal v26 garde diagnostics, planche et modes QA masqués. BIN/CUE et capture QA sont livrés dans `outputs/FNF-PS1-v26g-judgement-hitpath-qa/`; le BIN/CUE normal et sa capture de gameplay dans `outputs/FNF-PS1-v26-normal-judgements/`. La QA a été observée dans DuckStation; une capture de jugement par hit manette pendant le flux normal reste à vérifier. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v26--chaîne-de-rendu-des-jugements-et-cible-qa-déterministe).
-
-
-
 ## v27 — dernière passe de jugement et tenues
 
 La primitive Sick/Good/Bad/Shit est maintenant soumise après le HUD principal dans une passe indépendante. `Select` active les diagnostics en jeu : ils indiquent hits, dernier front de direction, jugement, delta, temps restant et soumission GPU. Tous les diagnostics restent masqués au démarrage. Les corps et capuchons de notes tenues utilisent un flip UV 180°; les flèches/récepteurs ne tournent pas et les règles des tenues sont inchangées.
 
 Build normal : [BIN](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v27-judgement-final-layer/funkin-ps1-bopeebo-playable.cue). Compilé avec diagnostics, tests QA et planche masqués. Le jeu normal n’a pas encore été observé dans DuckStation après ces corrections; valider les jugements sur hits manette et l’orientation des tenues avant de considérer ce correctif visuel accepté.
 
+Build v25c : cibles jouable et audio secondaire compilées avec PSn00bSDK 0.24/GCC 12.3. BIN/CUE sous `outputs/FNF-PS1-v25c-judgement-visibility/`. DuckStation a affiché Freeplay normal à 320×240; l’injection clavier n’a pas permis de lancer le morceau de façon reproductible. Les popups, fautes rapprochées, sons officiels, unders/underruns et transitions du jeu restent à essayer; aucune exécution complète ni console réelle n’est revendiquée. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v25--jugements-fautes-rapprochées-et-sfx-officiels).
+
+## v26 — validation déterministe des jugements
+
+La cible QA `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` simule quatre appuis chart (0/60/110/150 ms) via `game_update()` puis le vrai renderer. Elle affiche les assets officiels Sick/Good/Bad/Shit sans entrée manette ni audio; l’horloge synthétique avance à ¼ vitesse pour exposer la fenêtre réelle de 650 ms musicaux. Ne pas activer ce flag dans l’image jouable. Le build normal v26 garde diagnostics, planche et modes QA masqués. BIN/CUE et capture QA sont livrés dans `outputs/FNF-PS1-v26g-judgement-hitpath-qa/`; le BIN/CUE normal et sa capture de gameplay dans `outputs/FNF-PS1-v26-normal-judgements/`. La QA a été observée dans DuckStation; une capture de jugement par hit manette pendant le flux normal reste à vérifier. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v26--chaîne-de-rendu-des-jugements-et-cible-qa-déterministe).
 
 ## v28 — jugement plus compact et tenue orientée
 
 L’utilisateur valide le rendu v27 et confirme les jugements visibles. v28 réduit les popups de 18 % sans changer leur durée ou leur logique, et dessine les terminaisons des tenues en haut, derrière les corps qui les recouvrent légèrement. Le build normal garde diagnostics et QA désactivés. [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). Compilation vérifiée; cette nouvelle image n’a pas encore été observée dans DuckStation ou sur console.
-
 
 ## v29 — points affichés près du jugement
 
@@ -211,14 +207,13 @@ Le jeu affiche désormais près du popup le delta de score de l’événement lu
 
 Build normal compilé, diagnostics masqués : [BIN](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.cue). Pas encore observé dans DuckStation ou sur console; visibilité et placement du nombre doivent être vérifiés dans le jeu.
 
-
 ## v30 — compteur de combo et score
 
 Clarification : l’affichage demandé près du jugement est le compteur de combo à partir de 10 réussites, pas les points gagnés par note. v30 retire le delta de score de v29, affiche les chiffres combo officiels (trois chiffres minimum) avec la fenêtre musicale d’origine, et montre brièvement `000` en cas de rupture d’un combo affiché. Le gameplay et ses règles restent inchangés.
 
 Le libellé `COMBO` disparaît de la barre de score. Le score total utilise les glyphes VCR bitmap officiels et se place à droite, à hauteur de la barre de vie. Les glyphes extraits et chiffres combo partagent les pages/CLUT popup déjà existantes; le convertisseur confirme une carte texturée de 9 pages 8bpp et 2 pages 4bpp.
 
-Build normal diagnostics masqués : [BIN](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets, SHA-256 `552F20EC65D5D896CA785902D384FDAAB87B498655CEC6272C3B2B5D4C1AD921`; CUE 93 octets. Compilation réussie; l’image v30 n’a pas été observée dans DuckStation ni sur console.
+Build normal diagnostics masqués : [BIN](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `552F20EC65D5D896CA785902D384FDAAB87B498655CEC6272C3B2B5D4C1AD921`; CUE 93 octets. Compilation réussie; l’image v30 reste à observer dans DuckStation et sur console.
 
 ## v31 — réserve HUD
 
@@ -238,38 +233,47 @@ La capture diagnostic indique aussi `J 4 LEFT 0` et `DMS 1010`. Le jugement dure
 
 ## v33 — placement score et animation des popups
 
-L’utilisateur confirme ensuite par capture que score et jugement v32 apparaissent, mais que le score touche la barre de vie. v33 le place sous celle-ci, en (208,37), avec 96 px de largeur, sans changer les valeurs ni le gameplay.
+L’utilisateur confirme ensuite par capture que score et jugement v32 apparaissent, mais que le score touche la barre de vie. v33 le place sous celle-ci, en `(208,37)`, avec 96 px de largeur, sans changer les valeurs ni le gameplay.
 
-Les assets officiels des jugements et chiffres combo sont des images fixes; PopUpStuff.hx leur applique des tweens. v33 reprend le flottement vertical, la petite entrée en taille et le fondu, pilotés par l’horloge en échantillons audio. Le mouvement est déterministe sur PS1. Le fondu assombrit les pixels jusqu’au noir plutôt qu’utiliser un alpha continu; la popup de jugement conserve sa durée existante de 650 ms.
+Les assets officiels des jugements et chiffres combo sont des images fixes; `PopUpStuff.hx` leur applique des tweens. v33 reprend le flottement vertical, la petite entrée en taille et le fondu, pilotés par l’horloge en échantillons audio. Le mouvement est déterministe sur PS1. Le fondu assombrit les pixels jusqu’au noir plutôt qu’utiliser un alpha continu; la popup de jugement conserve sa durée existante de 650 ms.
 
-BIN v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.bin; CUE v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 97A8C06BF8D6DDBC1E46BDB62D55446B819A5103082BFE1A92CE3E993346910E. Compilation réussie; v33 reste à lancer dans DuckStation.
+[BIN v33](../outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.bin) · [CUE v33](../outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `97A8C06BF8D6DDBC1E46BDB62D55446B819A5103082BFE1A92CE3E993346910E`; CUE 93 octets. Compilation réussie; v33 reste à lancer dans DuckStation.
 
 ## v34 — jugement à pleine intensité
 
 Retour utilisateur : score v33 bien placé, popup de jugement invisible. v34 retire son fondu RGB jusqu’au noir et conserve mouvement, entrée en taille et fenêtre 650 ms, afin que l’illustration officielle reste à modulation normale pendant toute son apparition. Les règles ne changent pas. Le combo conserve son animation séparée.
 
-BIN v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.bin; CUE v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A; CUE 93 octets. Compilation réussie; la visibilité en jeu après un hit reste à confirmer dans DuckStation.
+[BIN v34](../outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.bin) · [CUE v34](../outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A`; CUE 93 octets. Compilation réussie; la visibilité du popup après un hit réel reste à vérifier dans DuckStation.
 
 ## v35 — durée originale du popup
 
-Correction du diagnostic : DMS indique l’écart de timing du hit, tandis que LEFT 0 signifie que le popup avait expiré à l’image capturée. Le jugement suit maintenant la durée du moteur original (un beat + 200 ms), soit 800 ms à 100 BPM pour Bopeebo. L’image garde sa modulation entière et son mouvement; seule sa fenêtre d’affichage change.
+Correction du diagnostic : `DMS` indique l’écart de timing du hit, tandis que `LEFT 0` signifie que le popup avait expiré à l’image capturée. Le jugement suit maintenant la durée du moteur original (un beat + 200 ms), soit 800 ms à 100 BPM pour Bopeebo. L’image garde sa modulation entière et son mouvement; seule sa fenêtre d’affichage change.
 
-BIN v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.bin; CUE v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E; CUE 93 octets. Compilation réussie; test DuckStation du popup normal reste à faire.
+[BIN v35](../outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.bin) · [CUE v35](../outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E`; CUE 93 octets. Compilation réussie; test DuckStation du popup normal reste à faire.
 
 ## v36 — couche popup au-dessus des diagnostics
 
-La capture montre le panneau de diagnostic opaque couvrant le centre du gameplay : son flush intervenait après le rendu du jugement et le recouvrait. v36 dessine Sick/Good/Bad/Shit et le combo au-dessus de cette couche, sans changer les règles ni la durée v35.
+La capture v35 montre le panneau de diagnostic opaque au-dessus du centre du gameplay. Le flush de sa police intervenait après le dessin des jugements, les recouvrant quand Select était actif. v36 dessine Sick/Good/Bad/Shit et le combo après ce flush. Aucune règle de jugement ni donnée de gameplay ne change; la fenêtre reste celle du v35.
 
-Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`. Fichiers sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Exécution DuckStation du build corrigé encore à vérifier; aucun test console réelle.
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96` dans `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Lancer un hit avec Select activé puis masqué dans DuckStation; l’ancienne capture identifie le recouvrement mais ne valide pas le nouveau rendu. Pas de test console réelle.
 
 ## v37 — jugement stable
 
-Les captures v36 ne montrent toujours pas le popup. v37 restaure le placement et l’échelle fixe v32, observés auparavant visibles, et retire l’animation de mouvement/zoom du jugement. Fenêtre audio v35 conservée; règles inchangées.
+Les captures utilisateur v36 ne montrent toujours pas le popup; déplacer le calque seul n’a pas suffi. v37 restaure le rendu fixe v32, observé auparavant à l’écran, en supprimant le mouvement et le zoom du jugement. La fenêtre d’affichage audio reste à un beat + 200 ms; le combo conserve son animation.
 
-BIN/CUE compilés avec PSn00bSDK 0.24 / GCC MIPS 12.3 sous `outputs/FNF-PS1-v37-stable-judgement-display/`; BIN 23 324 784 octets, SHA-256 `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`. Démarré dans DuckStation jusqu’à l’écran titre (60 IPS affichés); essai du popup en gameplay impossible faute d’entrée Start disponible dans cette session. Pas de test console réelle.
+[BIN v37](../outputs/FNF-PS1-v37-stable-judgement-display/funkin-ps1-bopeebo-playable.bin) · [CUE v37](../outputs/FNF-PS1-v37-stable-judgement-display/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`; CUE 93 octets. Démarré dans DuckStation jusqu’à l’écran titre (60 IPS affichés); essai du popup en gameplay impossible faute d’entrée Start disponible dans cette session. Pas de test console réelle.
 
 ## v38 — fenêtre de jugement plus facile à observer
 
-La capture v37 ne montre pas le popup et indique `J DRAW 0` à l’image capturée. v38 conserve l’asset fixe v32 et étend l’affichage à deux beats + 200 ms (1,4 s à 100 BPM); `LEFT` indique maintenant des millisecondes. Cela ne modifie aucune règle de gameplay.
+La capture v37 ne montre pas de popup et affiche `J DRAW 0` à l’image capturée. v38 garde l’asset et le placement fixes v32, avec une fenêtre d’affichage de deux beats + 200 ms (1,4 s à 100 BPM). `LEFT` diagnostique maintenant des millisecondes. C’est une durée d’affichage uniquement; les règles du jeu restent inchangées.
 
-BIN/CUE compilés avec PSn00bSDK 0.24 / GCC MIPS 12.3 sous `outputs/FNF-PS1-v38-longer-judgement-window/`; BIN 23 324 784 octets, SHA-256 `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`. Pas encore observé en gameplay DuckStation; pas de test console.
+[BIN v38](../outputs/FNF-PS1-v38-longer-judgement-window/funkin-ps1-bopeebo-playable.bin) · [CUE v38](../outputs/FNF-PS1-v38-longer-judgement-window/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`; compilation réussie, exécution gameplay à confirmer.
+
+## v39 — trace du rendu de jugement
+
+Le diagnostic `J DRAW` de v38 était affiché avant le rendu de la frame courante. v39 le remplace par `J LAST tentative/soumise frame`, mémorisé après l’appel GPU; Select affiche les diagnostics, masqués au démarrage. QA et jeu utilisent les mêmes textures/CLUT et le popup est chargé avant le morceau. Cette trace indique une soumission de primitive, pas sa visibilité à l’écran. La fenêtre v38 est conservée; aucun correctif ni validation visuelle n’est revendiqué avant un hit manuel observé dans le jeu normal.
+
+Build v39 : [BIN](../outputs/FNF-PS1-v39-judgement-render-trace/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v39-judgement-render-trace/funkin-ps1-bopeebo-playable.cue). PSn00bSDK 0.24 / GCC MIPS 12.3 a compilé l’image : BIN 23 324 784 octets, CUE 93 octets, SHA-256 `F4F97A9301F656E7DD1C44EE0C98348B16DF22C932FD965A3DA2CB3A3B388CB6`. Le disque n’a pas été exécuté en gameplay dans DuckStation; la fenêtre active et la soumission réelle au hit manuel restent à relever. Aucun test console.
+
+Select affiche les diagnostics. Pendant un hit, `LEFT` doit être positif si l’état de popup est encore actif; `J LAST a/s Fnn` donne la tentative/soumission mémorisée après le rendu précédent (1/1 signifie primitive remise au GPU, pas pixels confirmés). Capturer ensuite le même hit diagnostics masqués. La durée v38 (1,4 s à 100 BPM) et les règles de jeu sont conservées.
+
