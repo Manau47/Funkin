@@ -179,3 +179,11 @@ La note droite utilise maintenant la CLUT partagée avec ses récepteurs gris, a
 
 BIN/CUE et capture DuckStation dans `outputs/FNF-PS1-v23-right-note-fix/`. Compilation réussie; le build a été exécuté dans DuckStation 0.1-8675 x64 / D3D11, 320×240 logique et 60 IPS affichés. La capture réelle montre la note droite rouge, le récepteur droit gris, les états de quatre directions et les tenues; au moment de la capture `CD 0`, `underruns 0`, `PAD ON`. Observation d’environ 14 s d’horloge audio uniquement; boutons, morceau complet, écoute, menus fidèles, game over, résultats, CRT/PAL et console restent à vérifier. Voir [les notes v23](../docs/PS1_PORT.md#révision-v23--correctif-runtime-de-la-flèche-droite).
 
+## v25 — jugements et missnotes
+
+Le build normal garde Select/diagnostics masqués au démarrage. Select les affiche en jeu; l’option QA `FUNKIN_PS1_ARROW_DIAGNOSTIC_DEFAULT=ON` autolance la planche et n’est pas activée dans l’image jouable. Les assets de jugement officiels sont maintenant dessinés après la scène/notes, avec durée liée à l’horloge audio; la réserve passe à 384 primitives. L’apparition des jugements doit encore être confirmée à l’écran sur un run avec commandes reçues.
+
+Une faute BF existante redémarre immédiatement sa timeline visuelle même pendant une réaction précédente. Pour fautes simultanées, l’ordre du chart détermine la dernière lane/pose affichée; chaque miss/drop/ghost miss garde exactement un traitement et son événement SFX existant. Les missnotes utilisent les trois sons officiels aléatoires et les gains du moteur; le bip synthétique reste réservé aux probes. Le pool de quatre voix répartit un budget de volume borné et accepte les occurrences rapprochées.
+
+Build v25c : cibles jouable et audio secondaire compilées avec PSn00bSDK 0.24/GCC 12.3. BIN/CUE sous `outputs/FNF-PS1-v25c-judgement-visibility/`. DuckStation a affiché Freeplay normal à 320×240; l’injection clavier n’a pas permis de lancer le morceau de façon reproductible. Les popups, fautes rapprochées, sons officiels, unders/underruns et transitions du jeu restent à essayer; aucune exécution complète ni console réelle n’est revendiquée. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v25--jugements-fautes-rapprochées-et-sfx-officiels).
+
