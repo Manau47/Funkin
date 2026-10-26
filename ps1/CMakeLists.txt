@@ -241,6 +241,9 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/scrollMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/confirmMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/cancelMenu.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote1.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote2.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote3.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/sick.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/good.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/bad.png"
@@ -278,8 +281,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c"
 		"${_playable_chart_header}" "${_playable_visual_header}"
-		"${_bopeebo_sfx_header}" "${_menu_audio_header}")
-	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bopeebo-sfx)
+		"${_menu_audio_header}")
 	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
@@ -297,7 +299,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		bopeebo_playable_iso.xml
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
-			"${_bopeebo_sfx_vag}" "${_menu_audio_vagi}")
+			"${_menu_audio_vagi}")
 elseif(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON OR DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
 	message(FATAL_ERROR "Playable Bopeebo requires both FUNKIN_PS1_BOPEEBO_CHART_JSON and FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH to name existing files")
 endif()
