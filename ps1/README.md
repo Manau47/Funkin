@@ -261,3 +261,9 @@ BIN v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.b
 La capture montre le panneau de diagnostic opaque couvrant le centre du gameplay : son flush intervenait après le rendu du jugement et le recouvrait. v36 dessine Sick/Good/Bad/Shit et le combo au-dessus de cette couche, sans changer les règles ni la durée v35.
 
 Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`. Fichiers sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Exécution DuckStation du build corrigé encore à vérifier; aucun test console réelle.
+
+## v37 — jugement stable
+
+Les captures v36 ne montrent toujours pas le popup. v37 restaure le placement et l’échelle fixe v32, observés auparavant visibles, et retire l’animation de mouvement/zoom du jugement. Fenêtre audio v35 conservée; règles inchangées.
+
+BIN/CUE compilés avec PSn00bSDK 0.24 / GCC MIPS 12.3 sous `outputs/FNF-PS1-v37-stable-judgement-display/`; BIN 23 324 784 octets, SHA-256 `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`. Pas encore testé dans DuckStation ni sur console.
