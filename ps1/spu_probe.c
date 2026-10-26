@@ -145,6 +145,7 @@ static uint32_t dad_visual_until;
 static uint8_t last_judgement;
 static uint32_t judgement_until;
 static int32_t combo_popup_value = -1;
+static uint32_t combo_popup_start_samples;
 static uint32_t combo_popup_until;
 static uint32_t last_judgement_delta_ms;
 static bool judgement_drawn;
@@ -347,7 +348,8 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
-		score_font_id = FntOpen(216, 20, 88, 9, 0, 16);
+		/* Keep the 96 px score row below the life-bar frame (y=19..35). */
+		score_font_id = FntOpen(208, 37, 96, 9, 0, 16);
 		diagnostics_font_id = FntOpen(
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
@@ -843,9 +845,11 @@ static void update_combo_popup(uint32_t previous_combo, uint32_t current_combo,
 		combo_popup_value = 0; /* Original PlayState briefly displays 000 on a break. */
 	else {
 		combo_popup_value = -1;
+		combo_popup_start_samples = 0;
 		combo_popup_until = 0;
 		return;
 	}
+	combo_popup_start_samples = samples;
 
 	unsigned tempo_index = 0;
 	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
@@ -1517,7 +1521,7 @@ static void draw_gameplay(uint32_t samples)
 
 /* This is the final screen-space pass. The normal frontend draws score and font
    HUD after draw_gameplay(), so submit judgements only after those layers. */
-static void draw_judgement_popup(uint32_t samples)
+static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 {
 	judgement_drawn = false;
 	if (samples >= judgement_until || !last_judgement || last_judgement > 4u)
@@ -1527,12 +1531,23 @@ static void draw_judgement_popup(uint32_t samples)
 		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 	};
 	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-	/* v27 used a 2x display scale. Render at 82% of that size (about
-	   18% smaller), keeping the popup centered and its lifetime unchanged. */
-	int popup_w = ((int)popup->w * 164 + 50) / 100;
-	int popup_h = ((int)popup->h * 164 + 50) / 100;
-	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
-		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
+	/* Recreate PopUpStuff's rise, gravity and fade as a deterministic audio-clock tween. */
+	const uint32_t lifetime = rate * 650u / 1000u;
+	const uint32_t elapsed = lifetime - (judgement_until - samples);
+	const uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)elapsed * 1000u) / rate) : 0u;
+	const uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
+	int popup_w = ((int)popup->w * 164 * (int)scale_permille + 50000) / 100000;
+	int popup_h = ((int)popup->h * 164 * (int)scale_permille + 50000) / 100000;
+	int popup_x = (SCREEN_W - popup_w) / 2;
+	int y_delta = -(int)(40u * elapsed_ms / 1000u) + (int)(70u * elapsed_ms * elapsed_ms / 1000000u);
+	int popup_y = 57 + y_delta;
+	uint8_t tint = 128u;
+	if (elapsed_ms > 450u) {
+		uint32_t fade_ms = elapsed_ms >= 650u ? 200u : elapsed_ms - 450u;
+		tint = (uint8_t)(128u - (fade_ms * 80u) / 200u);
+	}
+	judgement_drawn = draw_textured_frame_tinted(popup_frame[last_judgement],
+		popup_x, popup_y, popup_w, popup_h, tint, tint, tint);
 }
 
 static void draw_score_display(void)
@@ -1547,7 +1562,7 @@ static void draw_score_display(void)
 	score_text_flushed = true;
 }
 
-static void draw_combo_popup(uint32_t samples)
+static void draw_combo_popup(uint32_t samples, uint32_t rate)
 {
 	if (combo_popup_value < 0 || samples >= combo_popup_until)
 		return;
@@ -1565,11 +1580,20 @@ static void draw_combo_popup(uint32_t samples)
 		remaining /= 10u;
 	} while (remaining && count < 6u);
 	while (count < 3u) digits[count++] = 0;
-	/* Match PopUpStuff's least-significant digit on the right and modest overlap. */
+	uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)(samples - combo_popup_start_samples) * 1000u) / rate) : 0u;
+	uint32_t remaining_ms = rate ? (uint32_t)(((uint64_t)(combo_popup_until - samples) * 1000u) / rate) : 0u;
+	/* Match the official float-up/gravity tween; fade across the final 200 ms. */
+	int y_delta = -(int)(36u * elapsed_ms / 1000u) + (int)(34u * elapsed_ms * elapsed_ms / 1000000u);
+	uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
+	uint8_t tint = remaining_ms >= 200u ? 128u : (uint8_t)(48u + remaining_ms * 80u / 200u);
 	for (unsigned i = 0; i < count; i++) {
 		unsigned frame = combo_frames[digits[i]];
 		const BopeeboVisualFrame *digit = &bopeebo_visual_frames[frame];
-		draw_textured_frame(frame, 165 - (int)i * 9, 99, digit->w, digit->h);
+		int width = ((int)digit->w * (int)scale_permille + 500) / 1000;
+		int height = ((int)digit->h * (int)scale_permille + 500) / 1000;
+		int center_x = 165 - (int)i * 9 + (int)digit->w / 2;
+		int x = center_x - width / 2;
+		draw_textured_frame_tinted(frame, x, 99 + y_delta, width, height, tint, tint, tint);
 	}
 }
 
@@ -1632,6 +1656,7 @@ static void reset_game_state(void)
 	last_judgement = 0;
 	judgement_until = 0;
 	combo_popup_value = -1;
+	combo_popup_start_samples = 0;
 	combo_popup_until = 0;
 	last_judgement_delta_ms = 0;
 #if GAME_JUDGEMENT_TEST_DEFAULT
@@ -1862,8 +1887,8 @@ static void run_playable_frontend(void)
 				draw_menu_screen();
 			} else {
 				draw_score_display();
-				draw_judgement_popup(samples);
-				draw_combo_popup(samples);
+				draw_judgement_popup(samples, rate);
+				draw_combo_popup(samples, rate);
 				if (diagnostics_visible) {
 					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
 						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
@@ -1940,7 +1965,7 @@ static void run_judgement_visual_test(void)
 		   lifetime intact while giving the visual QA result a capture window. */
 		uint32_t samples = test_sample + (uint32_t)(((uint64_t)phase_frame * rate) / 240u);
 		draw_gameplay(samples);
-		draw_judgement_popup(samples);
+		draw_judgement_popup(samples, rate);
 		FntPrint(judgement_visual_font_id, "GAME UPDATE QA x0.25 %u/4  %s  DRAW %u\nDELTA %lu MS",
 			phase + 1u, names[phase], (unsigned)judgement_drawn,
 			(unsigned long)last_judgement_delta_ms);
@@ -2355,8 +2380,8 @@ int main(void)
 		}
 #else
 		draw_score_display();
-		draw_judgement_popup(samples);
-		draw_combo_popup(samples);
+		draw_judgement_popup(samples, rate);
+		draw_combo_popup(samples, rate);
 #endif
 		if (GAME_SCENE_DEMO_DEFAULT) FntFlush(hud_font_id);
 		if (diagnostics_visible) {
