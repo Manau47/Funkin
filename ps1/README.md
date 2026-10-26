@@ -243,3 +243,9 @@ L’utilisateur confirme ensuite par capture que score et jugement v32 apparaiss
 Les assets officiels des jugements et chiffres combo sont des images fixes; PopUpStuff.hx leur applique des tweens. v33 reprend le flottement vertical, la petite entrée en taille et le fondu, pilotés par l’horloge en échantillons audio. Le mouvement est déterministe sur PS1. Le fondu assombrit les pixels jusqu’au noir plutôt qu’utiliser un alpha continu; la popup de jugement conserve sa durée existante de 650 ms.
 
 BIN v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.bin; CUE v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 97A8C06BF8D6DDBC1E46BDB62D55446B819A5103082BFE1A92CE3E993346910E. Compilation réussie; v33 reste à lancer dans DuckStation.
+
+## v34 — jugement à pleine intensité
+
+Retour utilisateur : score v33 bien placé, popup de jugement invisible. v34 retire son fondu RGB jusqu’au noir et conserve mouvement, entrée en taille et fenêtre 650 ms, afin que l’illustration officielle reste à modulation normale pendant toute son apparition. Les règles ne changent pas. Le combo conserve son animation séparée.
+
+BIN v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.bin; CUE v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 0628E2D4445D262FDB4FEA146FE51EDFFCE0F3A85C68009128E13CC3FBA5864A; CUE 93 octets. Compilation réussie; la visibilité en jeu après un hit reste à confirmer dans DuckStation.
