@@ -868,4 +868,3 @@ Le CUE v25c a été chargé dans DuckStation 0.1-8675 x64, sortie logique 320×2
 
 Le parcours menus fidèle, Game Over/retry, résultats statistiques, écoute A/B des sons et leur validation par l’utilisateur restent les jalons suivants; cette passe ne les remplace pas.
 
-
