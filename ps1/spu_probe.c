@@ -1539,6 +1539,7 @@ static void draw_gameplay(uint32_t samples)
    HUD after draw_gameplay(), so submit judgements only after those layers. */
 static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 {
+	(void)rate;
 	judgement_drawn = false;
 	if (samples >= judgement_until || !last_judgement || last_judgement > 4u)
 		return;
@@ -1547,20 +1548,13 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 	};
 	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-	/* Recreate PopUpStuff's rise, gravity and fade as a deterministic audio-clock tween. */
-	const uint32_t lifetime = judgement_duration_samples;
-	const uint32_t elapsed = lifetime - (judgement_until - samples);
-	const uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)elapsed * 1000u) / rate) : 0u;
-	const uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
-	int popup_w = ((int)popup->w * 164 * (int)scale_permille + 50000) / 100000;
-	int popup_h = ((int)popup->h * 164 * (int)scale_permille + 50000) / 100000;
-	int popup_x = (SCREEN_W - popup_w) / 2;
-	int y_delta = -(int)(40u * elapsed_ms / 1000u) + (int)(70u * elapsed_ms * elapsed_ms / 1000000u);
-	int popup_y = 57 + y_delta;
-	/* Keep the official artwork at normal modulation through its full window;
-	   the prior fade-to-black made this brief popup too easy to miss. */
+	/* Restore the fixed v32 placement/scale that was observed visible in-game.
+	   The later audio-clock transform was not visible in user captures, so keep
+	   the judgement art stable until its audio-clock lifetime expires. */
+	int popup_w = ((int)popup->w * 164 + 50) / 100;
+	int popup_h = ((int)popup->h * 164 + 50) / 100;
 	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
-		popup_x, popup_y, popup_w, popup_h);
+		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 }
 
 static void draw_score_display(void)
