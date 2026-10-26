@@ -887,3 +887,22 @@ La cible `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` est séparée du jeu norm
 | À vérifier | Le jugement déclenché par une manette pendant le flux audio normal n’a pas été capturé sans ambiguïté. La QA appelle le vrai `game_update()` mais remplace le flux par une horloge synthétique et des appuis programmés. Le jeu normal a été vu en gameplay, sans popup dans la fenêtre de capture. Reste à confirmer les quatre popups sur une partie jouée, puis tester le morceau entier, les transitions répétées et les compteurs CD/underrun. Aucun résultat console réelle ni mesure de dérive. |
 
 BIN/CUE QA et normal sont livrés dans des dossiers distincts sous `outputs/`, hors du commit Git. Les menus fidèles, Game Over/retry et résultats restent les jalons suivants.
+
+
+## v27 — couche finale des jugements et inversion des tenues
+
+Inspection du chemin complet : le poll manette détecte un front d’appui (bits PAD actifs bas), transmet `game_pressed` à `game_update()`, qui résout le hit, met à jour `last_judgement` et `judgement_until`, puis efface l’événement d’entrée à la fin de la mise à jour. Le même `samples` d’`Stream_GetSamplesPlayed()` alimente cette mise à jour et le rendu; l’expiration est de 650 ms à la fréquence effective du flux. `reset_game_state()` est appelé à l’entrée/redémarrage du morceau, pas à chaque frame. Les seuils de hit et l’horloge restent inchangés.
+
+La différence de rendu entre QA et jeu normal était l’ordre des couches : la QA terminait avec la passe scène/notes et sa légende, alors que le jeu normal dessinait ensuite le fond et les textes du HUD. Le popup était soumis avant cette passe supplémentaire. La soumission est déplacée dans une passe screen-space après le HUD principal; le diagnostic `Select` affiche désormais `HITS`, le dernier front directionnel, le jugement, l’écart en ms, le temps restant et si la primitive de cette frame est soumise. Cette analyse du code identifie l’écart QA/jeu; la correction d’occlusion doit encore être observée dans une partie jouée.
+
+Les corps et terminaisons des notes tenues utilisent désormais des UV inversés horizontalement et verticalement (rotation 180°), uniquement pour ces deux éléments. Flèches, récepteurs, timings et règles de tenue gardent leur chemin inchangé.
+
+| Étape | Résultat |
+|---|---|
+| Inspecté | Entrée PAD active bas → `game_pressed` → hit/résultat → durée samples → passes GPU; constantes de build QA et normale; pages/CLUT déjà chargées avant la transition menu→jeu. Aucune remise à zéro du jugement par frame n’existe dans le chemin étudié. |
+| Implémenté | Popup après le HUD principal; instrumentation accessible avec Select, masquée au lancement normal; rotation 180° UV des corps et terminaisons de tenues. |
+| Compilé | Cibles jeu normal et probe audio quatre canaux avec PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja. BIN normal 23 322 432 octets, CUE 93 octets; flags diagnostics, planche flèches, QA jugement et démo scène tous OFF. Fichiers sous `outputs/FNF-PS1-v27-judgement-final-layer/`. |
+| Exécution | Pas observée dans DuckStation pour ce build. La tentative de contrôle UI de l’émulateur a été bloquée par l’accès Parsec; aucun screenshot récent ne prouve la correction runtime. |
+| À vérifier | Hit manette dans le build normal avec Select pour lire `HITS/J/LEFT/DRAW`, visibilité du popup après HUD, quatre directions, tenues tournées, stabilité audio et non-régression des fautes rapprochées/sons officiels. Pas de test console réelle. |
+
+Le résultat précédent demeure : v26 QA a montré les quatre illustrations; cela ne vaut pas validation du hit manette. Le BIN v27 est jouable par configuration et conserve les diagnostics masqués, mais la correction visuelle du hit normal reste en attente de confirmation d’exécution. Les menus fidèles, Game Over/retry et résultats restent ultérieurs.
