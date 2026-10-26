@@ -219,3 +219,11 @@ Clarification : l’affichage demandé près du jugement est le compteur de comb
 Le libellé `COMBO` disparaît de la barre de score. Le score total utilise les glyphes VCR bitmap officiels et se place à droite, à hauteur de la barre de vie. Les glyphes extraits et chiffres combo partagent les pages/CLUT popup déjà existantes; le convertisseur confirme une carte texturée de 9 pages 8bpp et 2 pages 4bpp.
 
 Build normal diagnostics masqués : [BIN](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets, SHA-256 `552F20EC65D5D896CA785902D384FDAAB87B498655CEC6272C3B2B5D4C1AD921`; CUE 93 octets. Compilation réussie; l’image v30 n’a pas été observée dans DuckStation ni sur console.
+
+## v31 — réserve HUD
+
+v30 soumettait deux primitives par glyphe du score puis les jugements dans le même tableau fixe de 512 primitives. L’interface finale pouvait donc être rejetée si la scène et les notes consommaient le budget; cette saturation est une explication au niveau du code, sans mesure runtime v30 confirmant le compteur atteint pendant l’essai utilisateur.
+
+v31 porte le tableau à 640, plafonne la scène/les notes à 608 et réserve 32 primitives aux couches finales. Le score VCR utilise une primitive par caractère. Select affiche les compteurs de charge/rejet HUD en diagnostic; tout reste masqué par défaut. RAM statique estimée en hausse de 5 120 octets; VRAM et gameplay inchangés.
+
+[BIN v31](../outputs/FNF-PS1-v31-hud-primitive-reserve/funkin-ps1-bopeebo-playable.bin) · [CUE v31](../outputs/FNF-PS1-v31-hud-primitive-reserve/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets; SHA-256 `D0EA4FF0F23041FC7CBAC5D31269D42913A6EC2D41433CF1D9477DD66E42426B`; CUE 93 octets. Build compilé, affichage encore à observer dans DuckStation.
