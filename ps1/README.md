@@ -235,3 +235,11 @@ Les captures v31 montrent toujours le score absent malgré 14 glyphes VCR soumis
 La capture diagnostic indique aussi `J 4 LEFT 0` et `DMS 1010`. Le jugement dure 650 ms audio et avait déjà expiré au moment de la capture. Le code garde cette durée; il faut observer un hit dans la fenêtre active pour confirmer le popup sur v32.
 
 [BIN v32](../outputs/FNF-PS1-v32-score-font-fallback/funkin-ps1-bopeebo-playable.bin) · [CUE v32](../outputs/FNF-PS1-v32-score-font-fallback/funkin-ps1-bopeebo-playable.cue). BIN 23 322 432 octets; SHA-256 `6C421D812E3AAF99E3535B7939B88C31A493F6E4D6D00E90ABC55B63457F4C0B`; CUE 93 octets. Compilé, pas encore observé dans DuckStation.
+
+## v33 — placement score et animation des popups
+
+L’utilisateur confirme ensuite par capture que score et jugement v32 apparaissent, mais que le score touche la barre de vie. v33 le place sous celle-ci, en (208,37), avec 96 px de largeur, sans changer les valeurs ni le gameplay.
+
+Les assets officiels des jugements et chiffres combo sont des images fixes; PopUpStuff.hx leur applique des tweens. v33 reprend le flottement vertical, la petite entrée en taille et le fondu, pilotés par l’horloge en échantillons audio. Le mouvement est déterministe sur PS1. Le fondu assombrit les pixels plutôt qu’utiliser un alpha continu; la popup de jugement conserve sa durée existante de 650 ms.
+
+BIN v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.bin; CUE v33: outputs/FNF-PS1-v33-popup-motion-score-layout/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 07AAEAEDDF1402D94CD0323CB2F0F24813E3C2A31F1231D4D5CF72C9AFA7A8D8. Compilation réussie; v33 reste à lancer dans DuckStation.
