@@ -210,3 +210,12 @@ L’utilisateur valide le rendu v27 et confirme les jugements visibles. v28 réd
 Le jeu affiche désormais près du popup le delta de score de l’événement lui-même, avec son signe : points gagnés au hit ou pénalité existante en cas de miss/drop. Le total et les règles de score restent inchangés. Pour une tenue, l’étiquette indique les points attribués à sa tête; l’accumulation durant le maintien continue séparément.
 
 Build normal compilé, diagnostics masqués : [BIN](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v29-judgement-points/funkin-ps1-bopeebo-playable.cue). Pas encore observé dans DuckStation ou sur console; visibilité et placement du nombre doivent être vérifiés dans le jeu.
+
+
+## v30 — compteur de combo et score
+
+Clarification : l’affichage demandé près du jugement est le compteur de combo à partir de 10 réussites, pas les points gagnés par note. v30 retire le delta de score de v29, affiche les chiffres combo officiels (trois chiffres minimum) avec la fenêtre musicale d’origine, et montre brièvement `000` en cas de rupture d’un combo affiché. Le gameplay et ses règles restent inchangés.
+
+Le libellé `COMBO` disparaît de la barre de score. Le score total utilise les glyphes VCR bitmap officiels et se place à droite, à hauteur de la barre de vie. Les glyphes extraits et chiffres combo partagent les pages/CLUT popup déjà existantes; le convertisseur confirme une carte texturée de 9 pages 8bpp et 2 pages 4bpp.
+
+Build normal diagnostics masqués : [BIN](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v30-combo-score/funkin-ps1-bopeebo-playable.cue). BIN 23 324 784 octets, SHA-256 `552F20EC65D5D896CA785902D384FDAAB87B498655CEC6272C3B2B5D4C1AD921`; CUE 93 octets. Compilation réussie; l’image v30 n’a pas été observée dans DuckStation ni sur console.
