@@ -979,3 +979,9 @@ Build PSn00bSDK 0.24 / GCC MIPS 12.3 compilé : BIN 23 324 784 octets, CUE 93 oc
 Retour utilisateur : les captures v36 ne montrent toujours pas le popup; le changement de couche seul n’a pas résolu le problème. v37 retire la transformation animée du jugement et restaure le placement fixe et l’échelle v32, précédemment observés visibles. La fenêtre v35 reste fondée sur l’horloge audio (un beat + 200 ms; 800 ms à 100 BPM). La logique de jugement et de score ne change pas; le combo garde son animation séparée.
 
 Build local PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`, sous `outputs/FNF-PS1-v37-stable-judgement-display/`. Le CUE v37 démarre dans DuckStation 0.1-8675 x64 et atteint l’écran titre; la fenêtre indique 60 IPS. La progression vers Bopeebo n’a pas été testée : aucune entrée Start utilisable n’était disponible dans cette session, donc le popup n’a pas été observé en jeu. Pas de validation console réelle.
+
+## v38 — fenêtre de jugement étendue
+
+Retour utilisateur : v37 n’affiche toujours pas de popup; `J DRAW 0` est visible dans la capture au moment observé. v38 conserve l’image fixe v32 mais étend sa fenêtre visuelle à deux beats + 200 ms (1,4 s à 100 BPM), pour la rendre plus facile à observer. `LEFT` du diagnostic est désormais en millisecondes. Aucun calcul de score ou de jugement ne change.
+
+Build compilé avec PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `1515C1287F52FC0A36A06750745BF27261FC122445265316DFBB2BAB60A1030F`, sous `outputs/FNF-PS1-v38-longer-judgement-window/`. Compilation réussie; exécution gameplay non vérifiée. Pas de test console réelle.
