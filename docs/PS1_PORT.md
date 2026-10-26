@@ -839,4 +839,33 @@ Build PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja dans `C:\Users\Manau47\Documents\Co
 Le nouveau BIN a été lancé dans DuckStation 0.1-8675 x64, D3D11, sortie de jeu 320×240 et 60 IPS affichés. Une capture du vrai flux montre la note droite rouge, les quatre voies/états de la planche et le récepteur droit gris au repos. À cette observation, diagnostics `CD 0`, `U 0`, `PAD ON`; il s’agit d’une observation courte (~14 s d’horloge musicale), pas d’un essai complet du morceau. PNG DuckStation d’origine 800×600 (viewport 320×240 agrandi par l’émulateur): `outputs/FNF-PS1-v23-right-note-fix/duckstation-arrow-diagnostic.png`; BIN/CUE dans le même dossier. L’image diagnostique masque une partie de la scène et n’est pas le HUD de jeu normal.
 
 Compilation et image exécutées sont vérifiées; la correction de la note droite est visuellement observée dans DuckStation. L’input automatisé du poste n’a pas transmis les boutons, donc les quatre voies ne sont pas validées par des appuis manette, ni en contexte Dad/BF séparé. Il reste à vérifier une durée complète, les transitions menu↔jeu répétées, l’écoute audio, les compteurs CD/underrun sur tout le morceau, les menus fidèles, Game Over/retry, résultats réels, CRT/PAL et console. Ces autres écrans sont les jalons suivants; ils ne sont pas déclarés réalisés.
+## v25 — jugements, fautes rapprochées et SFX officiels
+
+Retour utilisateur : l’affichage normal et la flèche droite de v24 sont validés; les jugements n’apparaissent plus et la réaction de faute BF semble bloquée jusqu’à la fin de l’animation. Les règles de score, de santé, de fenêtres, de notes tenues et de déclenchement des événements restent inchangées.
+
+Les retours Sick/Good/Bad/Shit restent pilotés par le résultat déjà calculé et l’horloge audio, apparaissent pendant 650 ms et sont dessinés après la scène et les notes, indépendamment de Select. Le tableau de primitives visuelles passe à 384 entrées pour réserver de la place au HUD au-delà du chart le plus chargé; diagnostics et guides CRT restent masqués au lancement. Select affiche les diagnostics et la planche de flèches; `FUNKIN_PS1_ARROW_DIAGNOSTIC_DEFAULT=ON` reste une configuration QA distincte, non utilisée pour le BIN normal. Cette correction est compilée, mais le popup n’a pas été observé visuellement dans le test v25c : elle n’est pas déclarée validée.
+
+Chaque miss, ghost miss et drop effectif réinitialise immédiatement le chronomètre visuel de faute BF sur l’échantillon audio de cet événement, sans garde liée à la fin de l’animation précédente. Un hit suivant sélectionne l’animation de chant déjà prévue et rétablit la voix selon le comportement existant. La boucle chart conserve le traitement unique des drops de holds; aucun événement, SFX, miss ou pénalité additionnel n’est introduit. Si plusieurs fautes tombent dans la même mise à jour, elles sont parcourues dans l’ordre du chart : chaque événement conserve ses compteurs et son SFX existant, tandis que la dernière faute de cet ordre détermine la lane/pose BF visible jusqu’au prochain événement. Ce choix est déterministe.
+
+Le bip de debug n’est plus raccordé au jeu jouable. Les événements de faute existants sélectionnent les trois ressources officielles épinglées `assets/shared/sounds/missnote1.ogg` à `missnote3.ogg`; le gameplay reprend la variation de source (choix aléatoire et gain 0,50–0,60 pour miss/drop, 0,10–0,20 pour ghost miss). Le convertisseur les passe en mono 22 050 Hz, ADPCM SPU mono-shot avec blocs 64 octets alignés; il ne normalise pas les échantillons. Le choix pseudo-aléatoire est reproductible. Le pool de quatre voix SFX (4–7) accepte les fautes rapprochées, coupe la voix dont l’échéance est la plus proche si le pool est plein, et plafonne la somme des volumes à `0x3000`. Les trois voix menu (8–10) partagent le bank resident; l’effet synthétique ne reste disponible que dans les probes.
+
+| Ressource | Budget v25c |
+|---|---:|
+| Sections ELF suivies en RAM | 831 118 o (`.text`, `.rodata`, `.data`, `.sdata`, `.sbss`, `.bss`, métadonnées de chargement) |
+| Ring audio en RAM | 98 304 o; total suivi avec sections 929 422 o, hors pile, heap et allocations SDK non instrumentées |
+| VRAM suivie | 996 512 o / 1 048 576; pas de changement de pages/palettes par rapport à v23 |
+| SPU | 32 768 o ring music + 87 552 o bank SFX = 120 320 o / 524 288 |
+| Voix SPU réservées | 11/24 : 0–3 streaming, 4–7 fautes/effets, 8–10 navigation; 13 non réservées |
+| CD | Bopeebo VAGi 98 304 o/s (48 secteurs/s), sans lectures SFX concurrentes; flux menu séparé hors gameplay |
+
+La cible secondaire `ps1-bopeebo-audio-4ch-disc` compile de nouveau : `game_screen` est référencé uniquement dans la branche jouable; le probe audio conserve ses propres commandes et bip de diagnostic.
+
+### Compilation et exécution observée
+
+Build PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake/Ninja : cible jouable et cible audio 4 canaux compilées et images générées. Le BIN jouable final fait 23 322 432 octets (9 916 secteurs MODE2/2352), CUE 93 octets; SHA-256 BIN `56178E50A0FF0D8CA24B7E3C9F2A39A2B22464565FCFA5D2880820E692227865`. Il est livré séparément dans `outputs/FNF-PS1-v25c-judgement-visibility/`.
+
+Le CUE v25c a été chargé dans DuckStation 0.1-8675 x64, sortie logique 320×240. L’écran Freeplay normal s’est affiché sans diagnostics. Le compteur de l’émulateur a oscillé de 42 à 60 IPS pendant la capture. Le mapping clavier DuckStation indique Croix=K et D-pad=flèches, mais l’injection de touches de cette session n’a pas permis de confirmer une entrée de menu/jeu sur v25c. En conséquence, aucune apparition de jugement, faute rapprochée (même direction), récupération par hit, écoute des missnotes, stabilité audio/CD ou nombre d’underruns n’est revendiquée pour ce build. La correction des popups et de l’animation reste à confirmer par un essai reproductible avec commandes effectivement reçues. Console réelle non testée.
+
+Le parcours menus fidèle, Game Over/retry, résultats statistiques, écoute A/B des sons et leur validation par l’utilisateur restent les jalons suivants; cette passe ne les remplace pas.
+
 
