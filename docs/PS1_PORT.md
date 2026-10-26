@@ -906,3 +906,12 @@ Les corps et terminaisons des notes tenues utilisent désormais des UV inversés
 | À vérifier | Hit manette dans le build normal avec Select pour lire `HITS/J/LEFT/DRAW`, visibilité du popup après HUD, quatre directions, tenues tournées, stabilité audio et non-régression des fautes rapprochées/sons officiels. Pas de test console réelle. |
 
 Le résultat précédent demeure : v26 QA a montré les quatre illustrations; cela ne vaut pas validation du hit manette. Le BIN v27 est jouable par configuration et conserve les diagnostics masqués, mais la correction visuelle du hit normal reste en attente de confirmation d’exécution. Les menus fidèles, Game Over/retry et résultats restent ultérieurs.
+
+
+## v28 — échelle des jugements et capuchon des tenues
+
+L’utilisateur confirme que le jugement est désormais visible dans le build v27 et valide le reste de cette version, sous réserve de deux ajustements visuels. Le popup Sick/Good/Bad/Shit est réduit de 18 % par rapport à la taille v27, reste centré et conserve sa durée pilotée par l’horloge audio. Les données et règles de jugement ne changent pas.
+
+La terminaison officielle de chaque tenue est maintenant dessinée à son extrémité haute, avant le corps. Le corps recouvre le capuchon de 4 px pour cacher le raccord; le flip UV 180° des textures reste appliqué. Cette retouche n’affecte ni les flèches/récepteurs, ni le chart, ni la logique de maintien.
+
+Le BIN/CUE v28 est compilé avec diagnostics et cibles QA masqués par défaut : [BIN](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v28-judgement-hold-cap/funkin-ps1-bopeebo-playable.cue). La modification de source est vérifiée et compilée; DuckStation n’a pas été relancé pour cette passe, donc taille/raccord des jugements et orientation nouvelle des tenues restent à confirmer visuellement par l’utilisateur. Aucun test console réelle.
