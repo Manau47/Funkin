@@ -141,8 +141,9 @@ static uint8_t dad_visual_lane;
 static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t last_judgement;
-static int32_t last_judgement_points;
 static uint32_t judgement_until;
+static int32_t combo_popup_value = -1;
+static uint32_t combo_popup_until;
 static uint32_t last_judgement_delta_ms;
 static bool judgement_drawn;
 static uint16_t last_game_pressed;
@@ -172,7 +173,6 @@ static unsigned visual_prim_count;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
 static int diagnostics_font_id = -1;
-static int judgement_points_font_id = -1;
 
 static bool hold_release_is_miss(uint32_t remaining_samples, uint32_t rate)
 {
@@ -339,7 +339,6 @@ static void init_video(void)
 	FntLoad(960, 0);
 #if TEST_PLAYABLE_BOPEEBO
 		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
-		judgement_points_font_id = FntOpen(218, 72, 96, 12, 0, 16);
 		diagnostics_font_id = FntOpen(
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
 			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
@@ -826,6 +825,28 @@ static int32_t pbot1_score(uint32_t delta_samples, uint32_t rate)
 	return a + (b - a) * (int32_t)remainder / (int32_t)rate;
 }
 
+static void update_combo_popup(uint32_t previous_combo, uint32_t current_combo,
+	uint32_t samples, uint32_t rate)
+{
+	if (current_combo >= 10u)
+		combo_popup_value = (int32_t)current_combo;
+	else if (previous_combo >= 10u)
+		combo_popup_value = 0; /* Original PlayState briefly displays 000 on a break. */
+	else {
+		combo_popup_value = -1;
+		combo_popup_until = 0;
+		return;
+	}
+
+	unsigned tempo_index = 0;
+	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
+		bopeebo_tempo_changes[tempo_index + 1u].sample <= samples)
+		tempo_index++;
+	uint32_t bpm_centi = bopeebo_tempo_changes[tempo_index].bpm_centi;
+	uint64_t two_beats = bpm_centi ? (uint64_t)rate * 12000u / bpm_centi : (uint64_t)rate;
+	combo_popup_until = samples + (uint32_t)(two_beats + rate / 5u);
+}
+
 static int find_player_note(unsigned lane, uint32_t samples)
 {
 	int best = -1;
@@ -849,9 +870,10 @@ static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 {
 	game_note_state[index] = 2;
 	misses++;
+	uint32_t previous_combo = combo;
 	combo = 0;
 	score -= 100;
-	last_judgement_points = -100;
+	update_combo_popup(previous_combo, combo, samples, rate);
 	add_health(-20);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
@@ -869,10 +891,11 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	uint32_t samples)
 {
 	hold_drops++;
+	uint32_t previous_combo = combo;
 	combo = 0;
 	int32_t hold_penalty = (int32_t)(((uint64_t)remaining_samples * 125u) / rate);
 	score -= hold_penalty;
-	last_judgement_points = -hold_penalty;
+	update_combo_popup(previous_combo, combo, samples, rate);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
@@ -934,9 +957,10 @@ static void game_update(uint32_t samples)
 		last_game_pressed = mask;
 		int target = find_player_note(lane, samples);
 		if (target < 0) {
+			uint32_t previous_combo = combo;
 			combo = 0;
 			score -= 10;
-			last_judgement_points = -10;
+			update_combo_popup(previous_combo, combo, samples, rate);
 			add_health(-20);
 			play_resident_sfx(false, SFX_KIND_GHOST_MISS);
 			bf_visual_state = 2;
@@ -953,13 +977,14 @@ static void game_update(uint32_t samples)
 		game_note_state[target] = 1;
 		int32_t award = pbot1_score(diff, rate);
 		score += award;
-		last_judgement_points = award;
+		uint32_t previous_combo = combo;
 		uint64_t timing = (uint64_t)diff * 1000u;
 		last_judgement_delta_ms = (uint32_t)(timing / rate);
 		if (timing <= (uint64_t)rate * 45u) { combo++; add_health(8); last_judgement = 1u; }
 		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); last_judgement = 2u; }
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
 		else { combo = 0; add_health(-5); last_judgement = 4u; }
+		update_combo_popup(previous_combo, combo, samples, rate);
 		judgement_until = samples + rate * 650u / 1000u;
 		hits++;
 		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
@@ -1038,7 +1063,8 @@ static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 	else setClut(p, 0, 496);
 }
 
-static bool draw_textured_frame(unsigned frame, int x, int y, int width, int height)
+static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
+	uint8_t r, uint8_t g, uint8_t b)
 {
 	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT ||
 		width <= 0 || height <= 0) return false;
@@ -1046,7 +1072,7 @@ static bool draw_textured_frame(unsigned frame, int x, int y, int width, int hei
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
+	setRGB0(p, r, g, b);
 	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
 	setUV4(p, visual->u, visual->v,
 		(uint8_t)(visual->u + visual->w - 1u), visual->v,
@@ -1056,6 +1082,11 @@ static bool draw_textured_frame(unsigned frame, int x, int y, int width, int hei
 	set_visual_clut(p, visual);
 	DrawPrim((uint32_t *)p);
 	return true;
+}
+
+static bool draw_textured_frame(unsigned frame, int x, int y, int width, int height)
+{
+	return draw_textured_frame_tinted(frame, x, y, width, height, 128, 128, 128);
 }
 
 /* Sustain-only UV flip: rotate body and end-cap 180 degrees, leaving arrows
@@ -1444,7 +1475,7 @@ static void draw_gameplay(uint32_t samples)
 	   no distinct source frame in this sheet, so it uses the idle/default art. */
 	draw_textured_frame(hud_health_q8 <= 102u ? VIS_UI_ICON_BF_LOSE : VIS_UI_ICON_BF_WIN,
 		bf_x, 13, icon_w, icon_w);
-		if (diagnostics_visible) {
+	if (diagnostics_visible) {
 		/* Approximate title/action-safe frames for 4:3 CRT setup checks. */
 		draw_rect(8, 6, 304, 1, 48, 96, 112);
 		draw_rect(8, 233, 304, 1, 48, 96, 112);
@@ -1457,7 +1488,8 @@ static void draw_gameplay(uint32_t samples)
 	}
 }
 
-/* Final screen-space pass after the normal frontend's score and font HUD. */
+/* This is the final screen-space pass. The normal frontend draws score and font
+   HUD after draw_gameplay(), so submit judgements only after those layers. */
 static void draw_judgement_popup(uint32_t samples)
 {
 	judgement_drawn = false;
@@ -1474,10 +1506,90 @@ static void draw_judgement_popup(uint32_t samples)
 	int popup_h = ((int)popup->h * 164 + 50) / 100;
 	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
 		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
-	if (judgement_drawn) {
-		/* Display the same score delta already applied for this chart event. */
-		FntPrint(judgement_points_font_id, "%+ld", (long)last_judgement_points);
-		FntFlush(judgement_points_font_id);
+}
+
+static unsigned score_glyph_frame(char character)
+{
+	switch (character) {
+	case 'S': return VIS_UI_SCORE_GLYPH_83;
+	case 'c': return VIS_UI_SCORE_GLYPH_99;
+	case 'o': return VIS_UI_SCORE_GLYPH_111;
+	case 'r': return VIS_UI_SCORE_GLYPH_114;
+	case 'e': return VIS_UI_SCORE_GLYPH_101;
+	case ':': return VIS_UI_SCORE_GLYPH_58;
+	case ',': return VIS_UI_SCORE_GLYPH_44;
+	case '-': return VIS_UI_SCORE_GLYPH_45;
+	case '0': return VIS_UI_SCORE_GLYPH_48;
+	case '1': return VIS_UI_SCORE_GLYPH_49;
+	case '2': return VIS_UI_SCORE_GLYPH_50;
+	case '3': return VIS_UI_SCORE_GLYPH_51;
+	case '4': return VIS_UI_SCORE_GLYPH_52;
+	case '5': return VIS_UI_SCORE_GLYPH_53;
+	case '6': return VIS_UI_SCORE_GLYPH_54;
+	case '7': return VIS_UI_SCORE_GLYPH_55;
+	case '8': return VIS_UI_SCORE_GLYPH_56;
+	case '9': return VIS_UI_SCORE_GLYPH_57;
+	default: return BOPEEBO_VISUAL_FRAME_COUNT;
+	}
+}
+
+static void draw_score_display(void)
+{
+	char digits[12];
+	char label[24] = "Score: ";
+	snprintf(digits, sizeof(digits), "%ld", (long)score);
+	size_t digit_count = strlen(digits);
+	size_t first_digit = digits[0] == '-' ? 1u : 0u;
+	if (first_digit) strncat(label, "-", sizeof(label) - strlen(label) - 1u);
+	for (size_t i = first_digit; i < digit_count; i++) {
+		if (i > first_digit && (digit_count - i) % 3u == 0u)
+			strncat(label, ",", sizeof(label) - strlen(label) - 1u);
+		char character[2] = { digits[i], '\0' };
+		strncat(label, character, sizeof(label) - strlen(label) - 1u);
+	}
+	size_t length = strlen(label);
+	int x = 307 - (int)length * 5;
+	for (size_t i = 0; i < length; i++) {
+		if (label[i] == ' ') {
+			x += 5;
+			continue;
+		}
+		unsigned frame = score_glyph_frame(label[i]);
+		if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) {
+			x += 5;
+			continue;
+		}
+		const BopeeboVisualFrame *glyph = &bopeebo_visual_frames[frame];
+		/* Crisp one-pixel shadow keeps the official bitmap glyph legible on stage. */
+		draw_textured_frame_tinted(frame, x + 1, 22, glyph->w, glyph->h, 0, 0, 0);
+		draw_textured_frame(frame, x, 21, glyph->w, glyph->h);
+		x += 5; /* VCR BMFont x-advance 10 at the 1/2 PS1 UI scale. */
+	}
+}
+
+static void draw_combo_popup(uint32_t samples)
+{
+	if (combo_popup_value < 0 || samples >= combo_popup_until)
+		return;
+	static const uint8_t combo_frames[10] = {
+		VIS_UI_COMBO_NUM_0, VIS_UI_COMBO_NUM_1, VIS_UI_COMBO_NUM_2,
+		VIS_UI_COMBO_NUM_3, VIS_UI_COMBO_NUM_4, VIS_UI_COMBO_NUM_5,
+		VIS_UI_COMBO_NUM_6, VIS_UI_COMBO_NUM_7, VIS_UI_COMBO_NUM_8,
+		VIS_UI_COMBO_NUM_9
+	};
+	uint32_t remaining = (uint32_t)combo_popup_value;
+	uint8_t digits[6];
+	unsigned count = 0;
+	do {
+		digits[count++] = (uint8_t)(remaining % 10u);
+		remaining /= 10u;
+	} while (remaining && count < 6u);
+	while (count < 3u) digits[count++] = 0;
+	/* Match PopUpStuff's least-significant digit on the right and modest overlap. */
+	for (unsigned i = 0; i < count; i++) {
+		unsigned frame = combo_frames[digits[i]];
+		const BopeeboVisualFrame *digit = &bopeebo_visual_frames[frame];
+		draw_textured_frame(frame, 165 - (int)i * 9, 99, digit->w, digit->h);
 	}
 }
 
@@ -1537,8 +1649,9 @@ static void reset_game_state(void)
 	dad_visual_start = 0;
 	dad_visual_until = 0;
 	last_judgement = 0;
-	last_judgement_points = 0;
 	judgement_until = 0;
+	combo_popup_value = -1;
+	combo_popup_until = 0;
 	last_judgement_delta_ms = 0;
 #if GAME_JUDGEMENT_TEST_DEFAULT
 	judgement_test_next = 0;
@@ -1767,10 +1880,9 @@ static void run_playable_frontend(void)
 			if (game_screen == SCREEN_PAUSE) {
 				draw_menu_screen();
 			} else {
-				draw_rect(32, 39, 208, 9, 18, 16, 25);
-				FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu", (long)score, (unsigned long)combo);
-				FntFlush(hud_font_id);
+				draw_score_display();
 				draw_judgement_popup(samples);
+				draw_combo_popup(samples);
 				if (diagnostics_visible) {
 					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
 						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
@@ -2258,11 +2370,11 @@ int main(void)
 				milliseconds / 1000u, milliseconds % 1000u);
 		}
 #else
-		/* Small text-only backing preserves contrast without hiding the stage. */
-		draw_rect(32, 39, 208, 9, 18, 16, 25);
-		FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu\n", (long)score, (unsigned long)combo);
+		draw_score_display();
+		draw_judgement_popup(samples);
+		draw_combo_popup(samples);
 #endif
-		FntFlush(hud_font_id);
+		if (GAME_SCENE_DEMO_DEFAULT) FntFlush(hud_font_id);
 		if (diagnostics_visible) {
 #if GAME_HEALTH_BAR_TEST_DEFAULT
 			FntPrint(diagnostics_font_id, "HEALTH TEST REAL %u%% DRAW %u%%\n",
