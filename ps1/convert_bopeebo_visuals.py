@@ -384,7 +384,6 @@ def write_header(output: pathlib.Path,
                  palette4: list[tuple[int, int, int]],
                  palette_bf8: list[tuple[int, int, int]],
                  palette_ui4: list[list[tuple[int, int, int]]],
-                 palette_note_right4: list[tuple[int, int, int]],
                  palette_popup4: list[tuple[int, int, int]],
                  stage_layout: dict[str, int], scene_bounds: tuple[int, int, int, int],
                  pages8: list[bytearray], pages4: list[bytearray],
@@ -439,10 +438,6 @@ def write_header(output: pathlib.Path,
         values += [0] * (16 - len(values))
         lines.append("{" + ",".join(f"0x{x:04x}" for x in values) + "},")
     lines.append("};")
-    values = [0] + [rgb555(c) for c in palette_note_right4[:15]]
-    values += [0] * (16 - len(values))
-    lines.append("static const uint16_t bopeebo_visual_palette_note_right4[16] = {" +
-                  ",".join(f"0x{x:04x}" for x in values) + "};")
     lines.append("static const BopeeboVisualFrame bopeebo_visual_frames[BOPEEBO_VISUAL_FRAME_COUNT] = {")
     for name, frame in descriptors.items():
         lines.append(f"\t{{{frame['page']}, {frame['palette']}, {frame['u']}, {frame['v']}, {frame['w']}, {frame['h']}}}, /* {name} */")
@@ -675,22 +670,23 @@ def build(args: argparse.Namespace) -> None:
     palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
     palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
                    for d in directions]
-    # The right-note red must not displace a grey/blue color used by the right
-    # receptor, press/confirm frames or hold pieces. Give only the red note a
-    # dedicated CLUT; the official receptor art keeps its unmodified group CLUT.
-    right_direction_names = [n for n in ui4_by_direction["right"] if n != "ui_note_right"]
-    palette_ui4[3] = median_palette([temp_images[n] for n in right_direction_names], 15)
-    palette_note_right4 = reserve_palette_color(
-        median_palette([temp_images["ui_note_right"]], 15), (249, 57, 63))
+    # The note and receptor primitives must use the same verified CLUT path.
+    # Reserve the official right-note red inside the right-lane palette so the
+    # GPU cannot lose that sprite through a separate palette address. Requantize
+    # all right-lane states against it and report the resulting color error.
+    palette_ui4[3] = reserve_palette_color(
+        median_palette([temp_images[n] for n in ui4_by_direction["right"]], 15),
+        (249, 57, 63))
     palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
     palette_popup4 = median_palette([temp_images[n] for n in popup_names], 15)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
                   if not name.startswith(("bf_", "ui_"))}
     quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
-    quantized_ui4 = {name: quantize(temp_images[name], palette_ui4[lane])
-                     for lane, direction in enumerate(directions) for name in ui4_by_direction[direction]
-                     if name != "ui_note_right"}
-    quantized_ui4["ui_note_right"] = quantize(temp_images["ui_note_right"], palette_note_right4)
+    quantized_ui4 = {
+        name: quantize(temp_images[name], palette_ui4[lane])
+        for lane, direction in enumerate(directions)
+        for name in ui4_by_direction[direction]
+    }
     right_source = temp_images["ui_note_right"]
     right_indices = quantized_ui4["ui_note_right"]
     right_red = 0
@@ -700,7 +696,7 @@ def build(args: argparse.Namespace) -> None:
                 right_source[source + 1] > 110 or right_source[source + 2] > 135:
             continue
         right_red += 1
-        decoded = rgb555_roundtrip(palette_note_right4[palette_index - 1])
+        decoded = rgb555_roundtrip(palette_ui4[3][palette_index - 1])
         if decoded[0] < 150 or decoded[1] > 130 or decoded[2] > 155:
             raise ValueError(f"official right-note red was lost in the generated CLUT: {decoded}")
     if right_red == 0:
@@ -754,7 +750,7 @@ def build(args: argparse.Namespace) -> None:
     for lane, direction in enumerate(directions):
         for name in ui4_by_direction[direction]:
             descriptors[name]["palette"] = 3 + lane
-    descriptors["ui_note_right"]["palette"] = 8
+    descriptors["ui_note_right"]["palette"] = 6
 
     # Place aligned 8bpp pages right of the framebuffers (font at x=960,y=0).
     # 4bpp pages use the free strip x=320..383 beside both 320-word framebuffers.
@@ -783,7 +779,6 @@ def build(args: argparse.Namespace) -> None:
                     ("font_reservation", 960, 0, 64, 256)]
     vram_regions.extend((f"palette_ui4_{i}", (256 if i == 3 else 272 + i * 16),
                          (480 if i == 3 else 496), 16, 1) for i in range(4))
-    vram_regions.append(("palette_note_right4", 288, 480, 16, 1))
     for i, (x, y, depth) in enumerate(page_table):
         vram_regions.append((f"texture_page_{i}", x, y, 128 if depth else 64, 256))
     for i, (name, x, y, width, height) in enumerate(vram_regions):
@@ -835,12 +830,11 @@ def build(args: argparse.Namespace) -> None:
     print(f"BF core idle/sing at {FRAME_W}x{FRAME_H}: dedicated 8bpp/255-color RMSE {rmse(bf_core_names, palette_bf8):.2f}; miss poses 4bpp/15-color RMSE {rmse(bf_miss_names, palette4):.2f} RGB levels (RGB555 decoded)")
     print("Official arrows/receptors/holds: 4bpp per direction, 15-color CLUT each; " +
           ", ".join(f"{d} RMSE {rmse(ui4_by_direction[d], palette_ui4[i]):.2f}" for i, d in enumerate(directions)))
-    print(f"Right-note red uses an isolated CLUT: {right_red} opaque source pixels; receptor/press/confirm/hold CLUT retains its own quantization")
+    print(f"Right-note red shares the right-lane CLUT with receptors/holds: {right_red} opaque source pixels; palette RMSE includes the full right-lane set")
     print(f"All {len(descriptors)} atlas rectangles have valid page depth/UV bounds with no packed-frame overlap")
     print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
     print("Official health portraits at 24x24 use the 8bpp character CLUTs (Dad/main, BF/BF)")
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
-                 palette_note_right4,
                  palette_popup4, stage_layout, scene_bounds,
                  pages8, pages4, page_table, bf_idle_sequence, descriptors)
     print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance; BF {len(bf_names)} official Sparrow frames")
@@ -859,3 +853,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

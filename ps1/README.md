@@ -169,6 +169,13 @@ Build PSn00bSDK 0.24 / GCC MIPS 12.3 / Ninja réussi; BIN 10 461 696 o, CUE 93 o
 
 ## v22 — menu audio et correctif de palette droite
 
-Build séparé sous `outputs/FNF-PS1-v22-menu-audio-arrowfix/` : BIN 23 268 336 octets et CUE 93 octets. Ajoute `FreakyMenu` en VAGi 4 canaux bouclé (stéréo sur 0/1, silences sur 2/3), les sons officiels de navigation, une page VRAM menu relâchée/rechargée entre menus et gameplay, et isole la note droite rouge de la CLUT des récepteurs gris officiels. La première variante 2 canaux a généré CODE 8; le build livré utilise quatre canaux.
+Build séparé sous `outputs/FNF-PS1-v22-menu-audio-arrowfix/` : BIN 23 268 336 octets et CUE 93 octets. Ajoute `FreakyMenu` en VAGi 4 canaux bouclé (stéréo sur 0/1, silences sur 2/3), les sons officiels de navigation et une page VRAM menu relâchée/rechargée entre menus et gameplay. v22 tentait une CLUT indépendante pour la note droite, mais l’utilisateur a confirmé que la note avait disparu; ce correctif ne fonctionnait donc pas.
 
-Le BIN a démarré dans DuckStation 0.1-8675 et l’écran titre est resté affiché plus de 140 s à 320×240 (~59–61 IPS), sans erreur affichée, à travers une boucle. Cela ne valide pas le son à l’écoute. La session n’a pas transmis les boutons configurés au jeu : aucune navigation, aucun son écouté ni flèche droite observée en jeu. Ces demandes ne sont pas déclarées validées; voir [les notes détaillées v22](../docs/PS1_PORT.md#révision-v22--clut-droite-isolée-et-premier-menu-audio).
+Le BIN a démarré dans DuckStation 0.1-8675 et l’écran titre est resté affiché plus de 140 s à 320×240 (~59–61 IPS), sans erreur affichée, à travers une boucle. Cela ne valide pas le son à l’écoute ni le menu.
+
+## v23 — diagnostic et correction runtime de la note droite
+
+La note droite utilise maintenant la CLUT partagée avec ses récepteurs gris, avec le rouge officiel réservé dans la palette; l’erreur de quantification du groupe droit est RMSE 11,11 (v22 : 10,79). Le mode QA `FUNKIN_PS1_ARROW_DIAGNOSTIC_DEFAULT=ON` autolance Bopeebo et affiche les quatre directions en note, repos, appui, confirmation et tenue. Le build normal garde ce mode désactivé; Select ouvre la planche diagnostic en jeu.
+
+BIN/CUE et capture DuckStation dans `outputs/FNF-PS1-v23-right-note-fix/`. Compilation réussie; le build a été exécuté dans DuckStation 0.1-8675 x64 / D3D11, 320×240 logique et 60 IPS affichés. La capture réelle montre la note droite rouge, le récepteur droit gris, les états de quatre directions et les tenues; au moment de la capture `CD 0`, `underruns 0`, `PAD ON`. Observation d’environ 14 s d’horloge audio uniquement; boutons, morceau complet, écoute, menus fidèles, game over, résultats, CRT/PAL et console restent à vérifier. Voir [les notes v23](../docs/PS1_PORT.md#révision-v23--correctif-runtime-de-la-flèche-droite).
+

@@ -72,6 +72,9 @@
 #ifndef GAME_HEALTH_BAR_TEST_DEFAULT
 #define GAME_HEALTH_BAR_TEST_DEFAULT 0
 #endif
+#ifndef GAME_ARROW_DIAGNOSTIC_DEFAULT
+#define GAME_ARROW_DIAGNOSTIC_DEFAULT 0
+#endif
 
 typedef struct {
 	int16_t first_center_x;
@@ -342,11 +345,6 @@ static void load_bopeebo_visuals(void)
 		RECT palette_rect = { x, y, 16, 1 };
 		LoadImage(&palette_rect, (uint32_t *)bopeebo_visual_palette_ui4[lane]);
 	}
-	/* Keep the red right-note CLUT separate from the official blue-grey
-	   right receptors and their press/confirm/hold frames. */
-	RECT right_note_palette_rect = { 288, 480, 16, 1 };
-	LoadImage(&right_note_palette_rect,
-		(uint32_t *)bopeebo_visual_palette_note_right4);
 	RECT popup_palette_rect = { 272, 480, 16, 1 };
 	LoadImage(&popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
 	DrawSync(0);
@@ -901,7 +899,6 @@ static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 		setClut(p, 272 + (visual->palette - 3u) * 16u, 496);
 	else if (visual->palette == 6u) setClut(p, 256, 480);
 	else if (visual->palette == 7u) setClut(p, 272, 480);
-	else if (visual->palette == 8u) setClut(p, 288, 480);
 	else setClut(p, 0, 496);
 }
 
@@ -1058,6 +1055,48 @@ static void draw_note_group(uint32_t samples, unsigned group_index)
 	}
 }
 
+/* Select toggles a GPU-side comparison sheet over the live song. Keeping the
+   art in the normal primitive path makes this useful for checking CLUT/tpage
+   residency after menu -> song transitions, rather than only inspecting the
+   generated atlas offline. */
+static void draw_arrow_diagnostic_sheet(void)
+{
+	static const uint8_t note[4] = {
+		VIS_UI_NOTE_LEFT, VIS_UI_NOTE_DOWN, VIS_UI_NOTE_UP, VIS_UI_NOTE_RIGHT
+	};
+	static const uint8_t idle[4] = {
+		VIS_UI_RECEPTOR_LEFT_IDLE, VIS_UI_RECEPTOR_DOWN_IDLE,
+		VIS_UI_RECEPTOR_UP_IDLE, VIS_UI_RECEPTOR_RIGHT_IDLE
+	};
+	static const uint8_t press[4] = {
+		VIS_UI_RECEPTOR_LEFT_PRESS, VIS_UI_RECEPTOR_DOWN_PRESS,
+		VIS_UI_RECEPTOR_UP_PRESS, VIS_UI_RECEPTOR_RIGHT_PRESS
+	};
+	static const uint8_t confirm[4] = {
+		VIS_UI_RECEPTOR_LEFT_CONFIRM_0, VIS_UI_RECEPTOR_DOWN_CONFIRM_0,
+		VIS_UI_RECEPTOR_UP_CONFIRM_0, VIS_UI_RECEPTOR_RIGHT_CONFIRM_0
+	};
+	static const uint8_t body[4] = {
+		VIS_UI_HOLD_BODY_LEFT, VIS_UI_HOLD_BODY_DOWN,
+		VIS_UI_HOLD_BODY_UP, VIS_UI_HOLD_BODY_RIGHT
+	};
+	static const uint8_t tail[4] = {
+		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN,
+		VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
+	};
+	static const int column_x[4] = { 48, 120, 192, 264 };
+	draw_rect(8, 82, 304, 136, 8, 8, 18);
+	for (unsigned lane = 0; lane < 4u; lane++) {
+		int x = column_x[lane] - 10;
+		draw_textured_frame(note[lane], x, 91, 20, 20);
+		draw_textured_frame(idle[lane], x, 116, 20, 20);
+		draw_textured_frame(press[lane], x, 141, 20, 20);
+		draw_textured_frame(confirm[lane], x, 166, 20, 20);
+		draw_textured_frame(body[lane], column_x[lane] - 6, 193, 6, 16);
+		draw_textured_frame(tail[lane], column_x[lane] + 1, 193, 12, 16);
+	}
+}
+
 static void camera_target_for_focus(int focus, int *x, int *y)
 {
 	switch (focus) {
@@ -1186,6 +1225,8 @@ static void draw_gameplay(uint32_t samples)
 	draw_scene(samples);
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
+	if (diagnostics_visible)
+		draw_arrow_diagnostic_sheet();
 
 	/* HUD and transient judgment sprites are screen-space, independent of camera.
 	   The stage remains visible outside the narrow bar and score backplate. */
@@ -1315,7 +1356,7 @@ static void reset_game_state(void)
 	last_judgement = 0;
 	judgement_until = 0;
 	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
-	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0;
+	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0 || GAME_ARROW_DIAGNOSTIC_DEFAULT != 0;
 }
 
 #if GAME_SCENE_DEMO_DEFAULT
@@ -1443,6 +1484,11 @@ static void run_playable_frontend(void)
 	if (!upload_menu_sfx() ||
 		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
 		show_error(failure_code ? failure_code : FAIL_CD_READ);
+#if GAME_ARROW_DIAGNOSTIC_DEFAULT
+	/* QA-only disc mode: enter the real Bopeebo stream without requiring input,
+	   so the official arrow atlas can be inspected in its gameplay path. */
+	if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+#endif
 	for (;;) {
 		bool pad_connected = poll_bopeebo4_controls();
 		uint32_t samples = 0;
@@ -2028,3 +2074,4 @@ int main(void)
 #endif
 	}
 }
+
