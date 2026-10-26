@@ -66,7 +66,9 @@
 /* Keep dedicated headroom beyond the busiest chart frame for HUD portraits,
    judgement art, and the optional QA sheet. A full note field must not drop
    these later screen-space elements. */
-#define VISUAL_MAX_PRIMS 512u
+#define VISUAL_MAX_PRIMS 640u
+#define VISUAL_HUD_RESERVED_PRIMS 32u
+#define VISUAL_WORLD_PRIM_LIMIT (VISUAL_MAX_PRIMS - VISUAL_HUD_RESERVED_PRIMS)
 #define BOPEEBO_BPM 100u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
@@ -170,6 +172,11 @@ static POLY_F4 game_prims[GAME_MAX_PRIMS];
 static unsigned game_prim_count;
 static POLY_FT4 visual_prims[VISUAL_MAX_PRIMS];
 static unsigned visual_prim_count;
+static unsigned visual_prim_limit = VISUAL_MAX_PRIMS;
+static unsigned visual_prim_high_water;
+static unsigned visual_prim_rejected;
+static unsigned gameplay_visual_prim_count;
+static unsigned score_glyphs_drawn;
 typedef struct { uint8_t r, g, b; } GameColor;
 static int hud_font_id = -1;
 static int diagnostics_font_id = -1;
@@ -1066,11 +1073,15 @@ static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
 	uint8_t r, uint8_t g, uint8_t b)
 {
-	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT ||
-		width <= 0 || height <= 0) return false;
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return false;
+	}
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || width <= 0 || height <= 0) return false;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	setPolyFT4(p);
 	setRGB0(p, r, g, b);
 	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
@@ -1094,11 +1105,15 @@ static bool draw_textured_frame(unsigned frame, int x, int y, int width, int hei
 static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
 	int width, int height)
 {
-	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT ||
-		width <= 0 || height <= 0) return false;
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return false;
+	}
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || width <= 0 || height <= 0) return false;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	setPolyFT4(p);
 	setRGB0(p, 128, 128, 128);
 	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
@@ -1115,10 +1130,15 @@ static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
 static void draw_visual_frame(unsigned frame, int world_x, int world_y,
 	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
-	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
 	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
@@ -1420,12 +1440,17 @@ static void draw_gameplay(uint32_t samples)
 {
 	game_prim_count = 0;
 	visual_prim_count = 0;
+	visual_prim_limit = VISUAL_WORLD_PRIM_LIMIT;
+	visual_prim_rejected = 0;
 	judgement_drawn = false;
 	draw_scene(samples);
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
 	if (diagnostics_visible)
 		draw_arrow_diagnostic_sheet();
+	/* Reserve primitives for the final screen-space feedback layer. */
+	gameplay_visual_prim_count = visual_prim_count;
+	visual_prim_limit = VISUAL_MAX_PRIMS;
 
 	/* HUD and transient judgment sprites are screen-space, independent of camera.
 	   The stage remains visible outside the narrow bar and score backplate. */
@@ -1549,6 +1574,7 @@ static void draw_score_display(void)
 	}
 	size_t length = strlen(label);
 	int x = 307 - (int)length * 5;
+	score_glyphs_drawn = 0;
 	for (size_t i = 0; i < length; i++) {
 		if (label[i] == ' ') {
 			x += 5;
@@ -1560,9 +1586,8 @@ static void draw_score_display(void)
 			continue;
 		}
 		const BopeeboVisualFrame *glyph = &bopeebo_visual_frames[frame];
-		/* Crisp one-pixel shadow keeps the official bitmap glyph legible on stage. */
-		draw_textured_frame_tinted(frame, x + 1, 22, glyph->w, glyph->h, 0, 0, 0);
-		draw_textured_frame(frame, x, 21, glyph->w, glyph->h);
+		if (draw_textured_frame(frame, x, 21, glyph->w, glyph->h))
+			score_glyphs_drawn++;
 		x += 5; /* VCR BMFont x-advance 10 at the 1/2 PS1 UI scale. */
 	}
 }
@@ -1597,6 +1622,7 @@ static void draw_menu_screen(void)
 {
 	game_prim_count = 0;
 	visual_prim_count = 0;
+	visual_prim_limit = VISUAL_MAX_PRIMS;
 	if (game_screen == SCREEN_PAUSE) {
 		/* Keep the paused stage visible under a compact, screen-space overlay. */
 		draw_rect(55, 158, 210, 74, 14, 12, 28);
@@ -1894,7 +1920,10 @@ static void run_playable_frontend(void)
 						visual_prim_count, VISUAL_MAX_PRIMS, (unsigned)last_judgement,
 						(unsigned long)(samples < judgement_until ? judgement_until - samples : 0u),
 						misses + hold_drops);
-					FntPrint(diagnostics_font_id, "J DRAW %u\n", (unsigned)judgement_drawn);
+					FntPrint(diagnostics_font_id, "WORLD %u HIGH %u DROP %u\n",
+						gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected);
+					FntPrint(diagnostics_font_id, "HUD GLYPHS %u J DRAW %u\n",
+						score_glyphs_drawn, (unsigned)judgement_drawn);
 					FntPrint(diagnostics_font_id, "HITS %u EDGE %04x J %u DMS %lu\n",
 						(unsigned)hits, (unsigned)last_game_pressed, (unsigned)last_judgement,
 						(unsigned long)last_judgement_delta_ms);
@@ -2396,6 +2425,9 @@ int main(void)
 			FntPrint(diagnostics_font_id, "SCORE %ld COMBO %lu HIT %lu MISS %lu DROP %lu\n",
 				(long)score, (unsigned long)combo, (unsigned long)hits,
 				(unsigned long)misses, (unsigned long)hold_drops);
+			FntPrint(diagnostics_font_id, "VIS WORLD %u HIGH %u DROP %u HUD %u J %u\n",
+				gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected,
+				score_glyphs_drawn, (unsigned)judgement_drawn);
 			FntPrint(diagnostics_font_id, "HP REAL %u%% HUD %u%% EDGE X=%d\n",
 				hud_actual_health_percent, hud_display_health_percent, hud_health_boundary_x);
 			FntPrint(diagnostics_font_id, "ICONS D=%d BF=%d SAFE 16..280\n", hud_dad_icon_x, hud_bf_icon_x);
