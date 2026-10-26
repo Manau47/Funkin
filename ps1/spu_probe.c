@@ -35,19 +35,23 @@
 #define TEST_INSTRUMENT_VOLUME 0x2fffu
 #define SONG_MIX_VOLUME 0x2800u
 #define MUSIC_SPAN_GAIN 0x2800u
+#if TEST_PLAYABLE_BOPEEBO
+#define SFX_POOL_VOLUME_BUDGET 0x3000u
+#else
 #define SFX_POOL_VOLUME_BUDGET 0x1800u
+#endif
 #define SFX_SPU_ADDR 0x10000u
 #define SFX_FIRST_VOICE 4u
 #define SFX_VOICE_COUNT 4u
 #define SFX_BUSY_FRAMES 9u
 #define SFX_AUTO_DURING_COUNT 4u
 #define SFX_AUTO_DURING_START_SAMPLES (2u * 43008u)
-#define MENU_SFX_SPURAM_ADDR 0x12000u
+#define MENU_SFX_SPURAM_ADDR 0x22000u
 #define MENU_SFX_FIRST_VOICE 8u
 #define MENU_SFX_VOICE_COUNT 3u
 #define MENU_MUSIC_CHANNELS 4u
 
-#if TEST_BOPEEBO_4CH
+#if TEST_BOPEEBO_4CH && !TEST_PLAYABLE_BOPEEBO
 #include "bopeebo_sfx_data.h"
 #endif
 #if TEST_PLAYABLE_BOPEEBO
@@ -56,7 +60,13 @@
 #include "menu_audio_data.h"
 #define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
 #define GAME_MAX_PRIMS 220u
-#define VISUAL_MAX_PRIMS 180u
+/* Worst chart frame: 8 receptors + 3 textured quads for each of 58 holds
+   and 1 for each of 44 taps, plus stage/characters/HUD/judgement = ~234.
+   Keep explicit headroom so late HUD feedback is not silently dropped. */
+/* Keep dedicated headroom beyond the busiest chart frame for HUD portraits,
+   judgement art, and the optional QA sheet. A full note field must not drop
+   these later screen-space elements. */
+#define VISUAL_MAX_PRIMS 384u
 #define BOPEEBO_BPM 100u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
@@ -119,6 +129,7 @@ static uint16_t health_q8 = 256;
 static bool bf_miss_silenced;
 static uint8_t bf_visual_state;
 static uint8_t bf_visual_lane;
+static uint32_t bf_visual_start;
 static uint32_t bf_visual_until;
 static uint8_t dad_visual_lane;
 static uint32_t dad_visual_start;
@@ -215,6 +226,8 @@ static uint8_t sfx_voice_cursor;
 static uint32_t frame_counter;
 static uint32_t sfx_voice_until_frame[SFX_VOICE_COUNT];
 static bool sfx_voice_active[SFX_VOICE_COUNT];
+static uint16_t sfx_voice_requested_volume[SFX_VOICE_COUNT];
+static uint8_t sfx_random_state = 0x6du;
 static unsigned sfx_last_voice = 0xffu;
 static unsigned sfx_square_press_count;
 static unsigned sfx_manual_trigger_count;
@@ -236,6 +249,13 @@ static bool start_stream_file(const char *path, unsigned expected_channels,
 static bool upload_menu_sfx(void);
 static void play_menu_sfx(unsigned sound);
 #endif
+
+enum {
+	SFX_KIND_PROBE_AUTO = 0,
+	SFX_KIND_PROBE_MANUAL,
+	SFX_KIND_MISS,
+	SFX_KIND_GHOST_MISS
+};
 
 enum {
 	FAIL_NOT_FOUND = 1,
@@ -422,9 +442,11 @@ static void show_error(int code)
 		FntPrint(-1, "CAUSE %d: %s\n", (int)read_ctx.error_cause,
 			read_error_name(read_ctx.error_cause));
 #if TEST_BOPEEBO_4CH
+#if !TEST_PLAYABLE_BOPEEBO
 		FntPrint(-1, "SFX WRITE %u/%u DMA %d ADDR %05X\n",
 			(unsigned)sfx_write_size, (unsigned)SFX_SAMPLE_SIZE,
 			sfx_transfer_completed, (unsigned)SFX_SPU_ADDR);
+#endif
 #endif
 		FntFlush(-1);
 		display_frame();
@@ -502,13 +524,18 @@ static void update_sfx_pool_volumes(void)
 	unsigned count = active_sfx_voice_count();
 	if (!count)
 		return;
-	uint16_t volume = (uint16_t)(SFX_POOL_VOLUME_BUDGET / count);
+	unsigned total = 0;
+	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++)
+		if (sfx_voice_active[i]) total += sfx_voice_requested_volume[i];
 	for (unsigned i = 0; i < SFX_VOICE_COUNT; i++) {
 		if (!sfx_voice_active[i])
 			continue;
 		unsigned voice = SFX_FIRST_VOICE + i;
-		SPU_CH_VOL_L(voice) = volume;
-		SPU_CH_VOL_R(voice) = volume;
+		uint32_t volume = sfx_voice_requested_volume[i];
+		if (total > SFX_POOL_VOLUME_BUDGET)
+			volume = volume * SFX_POOL_VOLUME_BUDGET / total;
+		SPU_CH_VOL_L(voice) = (uint16_t)volume;
+		SPU_CH_VOL_R(voice) = (uint16_t)volume;
 	}
 }
 
@@ -523,7 +550,16 @@ static void maintain_sfx_pool(void)
 	update_sfx_pool_volumes();
 }
 
-static void play_resident_sfx(bool manual)
+static uint8_t next_sfx_random(void)
+{
+	/* Small deterministic PRNG: stable selection/volume variation without libc rand(). */
+	sfx_random_state ^= (uint8_t)(sfx_random_state << 3);
+	sfx_random_state ^= (uint8_t)(sfx_random_state >> 5);
+	sfx_random_state ^= (uint8_t)(sfx_random_state << 1);
+	return sfx_random_state;
+}
+
+static void play_resident_sfx(bool manual, unsigned kind)
 {
 	maintain_sfx_pool();
 	unsigned slot = SFX_VOICE_COUNT;
@@ -545,13 +581,48 @@ static void play_resident_sfx(bool manual)
 	}
 	unsigned voice = SFX_FIRST_VOICE + slot;
 	uint32_t key = 1u << voice;
+	uint32_t sample_offset = 0;
+	uint32_t duration_frames = SFX_BUSY_FRAMES;
+	uint32_t sample_rate =
+#if TEST_PLAYABLE_BOPEEBO
+		MENU_SFX_RATE;
+#else
+		SFX_SAMPLE_RATE;
+#endif
+	uint16_t requested_volume = (uint16_t)(SFX_POOL_VOLUME_BUDGET / SFX_VOICE_COUNT);
+#if TEST_PLAYABLE_BOPEEBO
+	static const uint32_t miss_offsets[3] = {
+		MISS_SFX_MISSNOTE1_OFFSET, MISS_SFX_MISSNOTE2_OFFSET, MISS_SFX_MISSNOTE3_OFFSET
+	};
+	static const uint32_t miss_frames[3] = {
+		MISS_SFX_MISSNOTE1_FRAMES, MISS_SFX_MISSNOTE2_FRAMES, MISS_SFX_MISSNOTE3_FRAMES
+	};	
+	if (kind == SFX_KIND_MISS || kind == SFX_KIND_GHOST_MISS) {
+		unsigned variant = next_sfx_random() % 3u;
+		sample_offset = miss_offsets[variant];
+		duration_frames = miss_frames[variant] + 2u;
+		sample_rate = MENU_SFX_RATE;
+		unsigned percent = (kind == SFX_KIND_GHOST_MISS ? 10u : 50u) +
+			next_sfx_random() % (kind == SFX_KIND_GHOST_MISS ? 11u : 11u);
+		requested_volume = (uint16_t)(0x3fffu * percent / 100u);
+	}
+#else
+	(void)kind;
+#endif
 	SpuSetKey(0, key);
-	SPU_CH_ADDR(voice) = getSPUAddr(SFX_SPU_ADDR);
-	SPU_CH_FREQ(voice) = getSPUSampleRate(SFX_SAMPLE_RATE);
+	SPU_CH_ADDR(voice) = getSPUAddr(
+#if TEST_PLAYABLE_BOPEEBO
+		MENU_SFX_SPURAM_ADDR + sample_offset
+#else
+		SFX_SPU_ADDR
+#endif
+	);
+	SPU_CH_FREQ(voice) = getSPUSampleRate(sample_rate);
 	SPU_CH_ADSR1(voice) = 0x00ff;
 	SPU_CH_ADSR2(voice) = 0x0000;
 	sfx_voice_active[slot] = true;
-	sfx_voice_until_frame[slot] = frame_counter + SFX_BUSY_FRAMES;
+	sfx_voice_requested_volume[slot] = requested_volume;
+	sfx_voice_until_frame[slot] = frame_counter + duration_frames;
 	update_sfx_pool_volumes();
 	SpuSetKey(1, key);
 	sfx_last_voice = voice;
@@ -562,6 +633,7 @@ static void play_resident_sfx(bool manual)
 		sfx_auto_trigger_count++;
 }
 
+#if !TEST_PLAYABLE_BOPEEBO
 static bool upload_resident_sfx(void)
 {
 	SpuSetTransferMode(SPU_TRANSFER_BY_DMA);
@@ -576,7 +648,7 @@ static bool upload_resident_sfx(void)
 
 static void run_pre_music_sfx_test(void)
 {
-	play_resident_sfx(false);
+	play_resident_sfx(false, SFX_KIND_PROBE_AUTO);
 	for (unsigned frame = 0; frame < SFX_BUSY_FRAMES + 2u; frame++) {
 		maintain_sfx_pool();
 		FntPrint(-1, "BOPEEBO SFX DIAGNOSTIC\n\n");
@@ -599,11 +671,12 @@ static void run_during_music_sfx_test(uint32_t samples)
 	}
 	if (sfx_auto_during_started && sfx_auto_during_count < SFX_AUTO_DURING_COUNT &&
 	    frame_counter >= sfx_auto_during_next_frame) {
-		play_resident_sfx(false);
+		play_resident_sfx(false, SFX_KIND_PROBE_AUTO);
 		sfx_auto_during_count++;
 		sfx_auto_during_next_frame = frame_counter + 2u;
 	}
 }
+#endif
 
 static bool poll_bopeebo4_controls(void)
 {
@@ -631,16 +704,10 @@ static bool poll_bopeebo4_controls(void)
 		game_pressed = 0;
 	} else {
 		game_pressed = (uint16_t)(previous_pad_buttons & (uint16_t)~buttons);
-		if (game_screen == SCREEN_GAMEPLAY &&
-		    (previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
-			sfx_square_press_count++;
-			if (sfx_uploaded)
-				play_resident_sfx(true);
-		}
+#if TEST_PLAYABLE_BOPEEBO
 		if (game_screen == SCREEN_GAMEPLAY &&
 		    (previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
-#if TEST_PLAYABLE_BOPEEBO
 		if (game_screen == SCREEN_GAMEPLAY &&
 		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT))
 			diagnostics_visible = !diagnostics_visible;
@@ -654,6 +721,13 @@ static bool poll_bopeebo4_controls(void)
 		    (previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
 			pan_width++;
 #else
+		if ((previous_pad_buttons & PAD_SQUARE) && !(buttons & PAD_SQUARE)) {
+			sfx_square_press_count++;
+			if (sfx_uploaded)
+				play_resident_sfx(true, SFX_KIND_PROBE_MANUAL);
+		}
+		if ((previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
+			voices_muted = !voices_muted;
 		if ((previous_pad_buttons & PAD_LEFT) && !(buttons & PAD_LEFT) && pan_width)
 			pan_width--;
 		if ((previous_pad_buttons & PAD_RIGHT) && !(buttons & PAD_RIGHT) && pan_width < 7u)
@@ -763,7 +837,8 @@ static void game_miss(unsigned index)
 	bf_visual_until = now + BOPEEBO_CHART_RATE * 350u / 1000u;
 	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
 	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
-	play_resident_sfx(false);
+	bf_visual_start = now;
+	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
 
@@ -776,10 +851,11 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
 	bf_visual_lane = (uint8_t)lane;
+	bf_visual_start = now;
 	bf_visual_until = now + rate * 350u / 1000u;
 	last_judgement = 4u;
 	judgement_until = now + BOPEEBO_CHART_RATE * 650u / 1000u;
-	play_resident_sfx(false);
+	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
 
@@ -834,9 +910,10 @@ static void game_update(uint32_t samples)
 			combo = 0;
 			score -= 10;
 			add_health(-20);
-			play_resident_sfx(false);
+			play_resident_sfx(false, SFX_KIND_GHOST_MISS);
 			bf_visual_state = 2;
 			bf_visual_lane = (uint8_t)lane;
+			bf_visual_start = samples;
 			bf_visual_until = samples + rate * 350u / 1000u;
 			last_judgement = 4u;
 			judgement_until = samples + rate * 650u / 1000u;
@@ -1201,8 +1278,14 @@ static void draw_scene(uint32_t samples)
 		camera_x, camera_y, zoom_q8, 256);
 
 	unsigned bf_frame;
-	if (bf_visual_state == 2u)
-		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat & 1u) ? 1u : 0u);
+	if (bf_visual_state == 2u) {
+		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+		uint32_t miss_duration = BOPEEBO_CHART_RATE * 350u / 1000u;
+		/* Restart on every existing miss event; use the two official miss poses
+		   on a local timeline so same-lane misses inside one beat are visible. */
+		unsigned miss_pose = elapsed >= miss_duration / 3u ? 1u : 0u;
+		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + miss_pose;
+	}
 	else if (bf_visual_state == 1u)
 		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat_phase >> 15) & 1u);
 	else
@@ -1282,8 +1365,12 @@ static void draw_gameplay(uint32_t samples)
 			VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 		};
 		const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-			draw_textured_frame(popup_frame[last_judgement],
-				(SCREEN_W - popup->w) / 2, 54, popup->w, popup->h);
+		/* Converted source art is intentionally compact for the VRAM page;
+		   render at 2x to restore legibility at native 320x240 output. */
+		int popup_w = popup->w * 2;
+		int popup_h = popup->h * 2;
+		draw_textured_frame(popup_frame[last_judgement],
+			(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 	}
 	if (diagnostics_visible) {
 		/* Approximate title/action-safe frames for 4:3 CRT setup checks. */
@@ -1578,6 +1665,10 @@ static void run_playable_frontend(void)
 					FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u\n",
 						(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size,
 						(unsigned)read_errors, (unsigned)underruns);
+					FntPrint(diagnostics_font_id, "VIS %u/%u J %u LEFT %lu MISS %u\n",
+						visual_prim_count, VISUAL_MAX_PRIMS, (unsigned)last_judgement,
+						(unsigned long)(samples < judgement_until ? judgement_until - samples : 0u),
+						misses + hold_drops);
 					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
 					FntFlush(diagnostics_font_id);
 				}
@@ -1898,9 +1989,9 @@ int main(void)
 	ChangeClearPAD(0);
 #endif
 #if TEST_BOPEEBO_4CH
+#if !TEST_PLAYABLE_BOPEEBO
 	if (!upload_resident_sfx())
 		show_error(FAIL_SFX_UPLOAD);
-#if !TEST_PLAYABLE_BOPEEBO
 	run_pre_music_sfx_test();
 #endif
 #endif
