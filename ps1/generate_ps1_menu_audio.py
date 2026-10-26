@@ -24,6 +24,7 @@ MENU_RATE = 43008
 SFX_RATE = 22050
 BLOCK_BYTES = 16
 MENU_SOUNDS = ("scrollMenu", "confirmMenu", "cancelMenu")
+MISS_SOUNDS = ("missnote1", "missnote2", "missnote3")
 
 
 def decode_pcm(ffmpeg: Path, source: Path, rate: int, channels: int) -> array:
@@ -63,8 +64,11 @@ def make_menu_vagi(ffmpeg: Path, source: Path, output: Path) -> int:
 def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
     samples: list[bytes] = []
     sample_counts: list[int] = []
-    for name in MENU_SOUNDS:
-        source = assets / "preload" / "sounds" / f"{name}.ogg"
+    names = [(name, assets / "preload" / "sounds" / f"{name}.ogg")
+             for name in MENU_SOUNDS]
+    names.extend((name, assets / "shared" / "sounds" / f"{name}.ogg")
+                 for name in MISS_SOUNDS)
+    for name, source in names:
         pcm = decode_pcm(ffmpeg, source, SFX_RATE, 1)
         sample_count = len(pcm)
         blocks = math.ceil(sample_count / SAMPLES_PER_BLOCK)
@@ -89,18 +93,19 @@ def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
         bank.extend(bytes((-len(bank)) % 64))
         offsets.append(len(bank))
         bank.extend(payload)
-    if len(bank) > 0xE000:  # Reserved SPU region 0x12000..0x1FFFF.
-        raise ValueError(f"menu SFX bank exceeds reserved SPU region: {len(bank)} bytes")
+    if len(bank) > 0x5E000:  # Available from SPU address 0x22000 through 0x7FFFF.
+        raise ValueError(f"menu and miss SFX bank exceeds reserved SPU region: {len(bank)} bytes")
 
     lines = ["#ifndef FUNKIN_PS1_MENU_AUDIO_DATA_H",
              "#define FUNKIN_PS1_MENU_AUDIO_DATA_H", "#include <stdint.h>",
              f"#define MENU_SFX_BANK_SIZE {len(bank)}u",
              f"#define MENU_SFX_RATE {SFX_RATE}u"]
-    for index, name in enumerate(MENU_SOUNDS):
+    for index, (name, _source) in enumerate(names):
         macro = name.upper()
-        lines.extend((f"#define MENU_SFX_{macro}_OFFSET {offsets[index]}u",
-                      f"#define MENU_SFX_{macro}_SIZE {len(samples[index])}u",
-                      f"#define MENU_SFX_{macro}_FRAMES {math.ceil(sample_counts[index] * 60 / SFX_RATE)}u"))
+        prefix = "MISS_SFX" if name.startswith("missnote") else "MENU_SFX"
+        lines.extend((f"#define {prefix}_{macro}_OFFSET {offsets[index]}u",
+                      f"#define {prefix}_{macro}_SIZE {len(samples[index])}u",
+                      f"#define {prefix}_{macro}_FRAMES {math.ceil(sample_counts[index] * 60 / SFX_RATE)}u"))
     values = ",\n\t".join(", ".join(f"0x{byte:02x}" for byte in bank[i:i + 16])
                                  for i in range(0, len(bank), 16))
     lines.extend((f"static const uint8_t menu_sfx_bank[MENU_SFX_BANK_SIZE] __attribute__((aligned(64))) = {{\n\t{values}\n}};",
@@ -124,9 +129,10 @@ def main() -> None:
     print(f"Menu music: pinned FreakyMenu, stereo decoded at {MENU_RATE} Hz, "
           f"two interleaved VAGi channels, "
           f"{frames / MENU_RATE:.3f} s, looping")
-    print(f"Navigation SFX: official scroll/confirm/cancel, VAGp ADPCM, "
-          f"{bank_size} SPU bytes, max {max_sfx_frames} frames, one-shot")
+    print(f"Official navigation and miss SFX: VAGp ADPCM, {bank_size} SPU bytes, "
+          f"max {max_sfx_frames} frames, one-shot; missnote1..3 share the playable SFX pool")
 
 
 if __name__ == "__main__":
     main()
+
