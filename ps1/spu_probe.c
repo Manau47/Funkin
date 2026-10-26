@@ -144,6 +144,7 @@ static uint32_t dad_visual_start;
 static uint32_t dad_visual_until;
 static uint8_t last_judgement;
 static uint32_t judgement_until;
+static uint32_t judgement_duration_samples;
 static int32_t combo_popup_value = -1;
 static uint32_t combo_popup_start_samples;
 static uint32_t combo_popup_until;
@@ -836,6 +837,17 @@ static int32_t pbot1_score(uint32_t delta_samples, uint32_t rate)
 	return a + (b - a) * (int32_t)remainder / (int32_t)rate;
 }
 
+static uint32_t judgement_popup_duration(uint32_t samples, uint32_t rate)
+{
+	unsigned tempo_index = 0;
+	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
+		bopeebo_tempo_changes[tempo_index + 1u].sample <= samples)
+		tempo_index++;
+	uint32_t bpm_centi = bopeebo_tempo_changes[tempo_index].bpm_centi;
+	uint64_t beat_samples = bpm_centi ? (uint64_t)rate * 6000u / bpm_centi : (uint64_t)rate;
+	return (uint32_t)(beat_samples + rate / 5u);
+}
+
 static void update_combo_popup(uint32_t previous_combo, uint32_t current_combo,
 	uint32_t samples, uint32_t rate)
 {
@@ -894,7 +906,8 @@ static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
 	last_judgement_delta_ms = 0xffffffffu;
-	judgement_until = samples + rate * 650u / 1000u;
+	judgement_duration_samples = judgement_popup_duration(samples, rate);
+		judgement_until = samples + judgement_duration_samples;
 	bf_visual_start = samples;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
@@ -916,7 +929,8 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u;
 	last_judgement_delta_ms = 0xffffffffu;
-	judgement_until = samples + rate * 650u / 1000u;
+	judgement_duration_samples = judgement_popup_duration(samples, rate);
+		judgement_until = samples + judgement_duration_samples;
 	play_resident_sfx(false, SFX_KIND_MISS);
 	set_voice_pan();
 }
@@ -982,7 +996,8 @@ static void game_update(uint32_t samples)
 			bf_visual_until = samples + rate * 350u / 1000u;
 			last_judgement = 4u;
 			last_judgement_delta_ms = 0xffffffffu;
-			judgement_until = samples + rate * 650u / 1000u;
+			judgement_duration_samples = judgement_popup_duration(samples, rate);
+		judgement_until = samples + judgement_duration_samples;
 			continue;
 		}
 		uint32_t head = bopeebo_notes[target].head;
@@ -998,7 +1013,8 @@ static void game_update(uint32_t samples)
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
 		else { combo = 0; add_health(-5); last_judgement = 4u; }
 		update_combo_popup(previous_combo, combo, samples, rate);
-		judgement_until = samples + rate * 650u / 1000u;
+	judgement_duration_samples = judgement_popup_duration(samples, rate);
+	judgement_until = samples + judgement_duration_samples;
 		hits++;
 		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
 		bf_miss_silenced = false;
@@ -1025,7 +1041,7 @@ static void inject_judgement_test_hit(uint32_t samples, uint32_t rate)
 	static const uint8_t offsets_ms[4] = { 0u, 60u, 110u, 150u };
 	if (judgement_test_next >= 4u) return;
 	/* Retire unrelated BF notes only in this QA build so their misses cannot
-	   replace a popup before its 650 ms visual window has elapsed. */
+	   replace a popup before its audio-clock window has elapsed. */
 	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
 		if (bopeebo_notes[i].lane >= 4u) continue;
 		bool scheduled = false;
@@ -1532,7 +1548,7 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 	};
 	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
 	/* Recreate PopUpStuff's rise, gravity and fade as a deterministic audio-clock tween. */
-	const uint32_t lifetime = rate * 650u / 1000u;
+	const uint32_t lifetime = judgement_duration_samples;
 	const uint32_t elapsed = lifetime - (judgement_until - samples);
 	const uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)elapsed * 1000u) / rate) : 0u;
 	const uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
@@ -1652,6 +1668,7 @@ static void reset_game_state(void)
 	dad_visual_until = 0;
 	last_judgement = 0;
 	judgement_until = 0;
+	judgement_duration_samples = 0;
 	combo_popup_value = -1;
 	combo_popup_start_samples = 0;
 	combo_popup_until = 0;
@@ -1958,8 +1975,7 @@ static void run_judgement_visual_test(void)
 			game_update(test_sample);
 			if (hits) judgement_test_hits++;
 		}
-		/* Quarter-speed synthetic sample clock keeps the real 650 ms audio-time
-		   lifetime intact while giving the visual QA result a capture window. */
+		/* Quarter-speed synthetic sample clock scales the beat-plus-fade lifetime while giving the visual QA result a capture window. */
 		uint32_t samples = test_sample + (uint32_t)(((uint64_t)phase_frame * rate) / 240u);
 		draw_gameplay(samples);
 		draw_judgement_popup(samples, rate);
