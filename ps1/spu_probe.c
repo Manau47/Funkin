@@ -1122,11 +1122,13 @@ static void draw_hold_body(int center_x, int y0, int y1, unsigned size, unsigned
 	static const uint8_t hold_tail[4] = {
 		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN, VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
 	};
-	if (bottom - top > 12)
-		draw_textured_frame_rotated_180(hold_body[direction & 3u], center_x - width / 2, top,
-			width, bottom - top - 8);
-	draw_textured_frame_rotated_180(hold_tail[direction & 3u], center_x - width / 2, bottom - 12,
+	/* The cap belongs at the upper end of a hold. Draw it first, then let
+	   the body overlap it so the seam is hidden behind the sustain column. */
+	draw_textured_frame_rotated_180(hold_tail[direction & 3u], center_x - width / 2, top,
 		width, 12);
+	if (bottom - top > 12)
+		draw_textured_frame_rotated_180(hold_body[direction & 3u], center_x - width / 2, top + 8,
+			width, bottom - top - 8);
 }
 
 static void draw_note_group(uint32_t samples, unsigned group_index)
@@ -1458,8 +1460,10 @@ static void draw_judgement_popup(uint32_t samples)
 		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 	};
 	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-	int popup_w = popup->w * 2;
-	int popup_h = popup->h * 2;
+	/* v27 used a 2x display scale. Render at 82% of that size (about
+	   18% smaller), keeping the popup centered and its lifetime unchanged. */
+	int popup_w = ((int)popup->w * 164 + 50) / 100;
+	int popup_h = ((int)popup->h * 164 + 50) / 100;
 	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
 		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 }
