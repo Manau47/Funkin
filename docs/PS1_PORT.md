@@ -973,3 +973,9 @@ Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie. BIN/CUE dans outputs/FNF-PS
 La capture utilisateur montre le panneau de diagnostic opaque recouvrant le centre du jeu. Le popup Sick/Good/Bad/Shit était soumis avant le flush de la police de diagnostic : Select activé, celle-ci le dessinait donc au-dessus. v36 déplace le rendu des popups après le flush; aucun jugement ou règle de gameplay ne change. La durée reste celle de v35 (un beat + 200 ms).
 
 Build PSn00bSDK 0.24 / GCC MIPS 12.3 compilé : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`, sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Le build corrigé n’a pas encore été exécuté dans DuckStation; vérifier les hits avec diagnostics actifs et masqués. Pas de validation console réelle.
+
+## v37 — rendu fixe du jugement restauré
+
+Retour utilisateur : les captures v36 ne montrent toujours pas le popup; le changement de couche seul n’a pas résolu le problème. v37 retire la transformation animée du jugement et restaure le placement fixe et l’échelle v32, précédemment observés visibles. La fenêtre v35 reste fondée sur l’horloge audio (un beat + 200 ms; 800 ms à 100 BPM). La logique de jugement et de score ne change pas; le combo garde son animation séparée.
+
+Build local PSn00bSDK 0.24 / GCC MIPS 12.3 : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `788F1E29875B762F38F76ADF705627E5FD7920FBFF72E0A802BB78798D45D313`, sous `outputs/FNF-PS1-v37-stable-judgement-display/`. Exécution DuckStation de v37 non vérifiée; pas de validation console réelle.
