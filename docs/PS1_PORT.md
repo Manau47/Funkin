@@ -868,3 +868,22 @@ Le CUE v25c a été chargé dans DuckStation 0.1-8675 x64, sortie logique 320×2
 
 Le parcours menus fidèle, Game Over/retry, résultats statistiques, écoute A/B des sons et leur validation par l’utilisateur restent les jalons suivants; cette passe ne les remplace pas.
 
+## v26 — chaîne de rendu des jugements et cible QA déterministe
+
+Le retour utilisateur v25c confirme les fautes rapprochées et les missnotes officielles; les jugements restaient invisibles. Le pipeline est maintenant instrumenté de l’événement de note au GPU : `game_update()` classe les hits avec les seuils existants (Sick ≤45 ms, Good ≤90 ms, Bad ≤135 ms, Shit au-delà, dans la fenêtre de hit de 160 ms), mémorise le résultat et sa différence temporelle, puis fixe la durée à 650 ms exprimés dans les échantillons de l’horloge musicale. Les fautes, ghost misses et drops de tenue utilisent le même compteur d’échantillons et la fréquence effective du flux pour leur fenêtre d’affichage; ils ne relisent plus une horloge séparée pour calculer l’expiration.
+
+Le rendu écran est indépendant de la caméra et s’effectue après la scène et les notes. Les quatre illustrations officielles sont dans la page 4bpp no 9, UV `(0,104,64,24)` Sick, `(64,104,51,20)` Good, `(115,104,42,21)` Bad et `(157,104,46,26)` Shit, avec CLUT palette 7 en `(272,480)`; le tpage correspond à la page VRAM `(320,0)`. L’upload 4bpp, les UV et la CLUT sont partagés par le chemin QA et le chemin normal. Le compteur `judgement_drawn` indique la soumission de la primitive (il ne prouve pas à lui seul le résultat à l’écran). La capacité du tableau des primitives visuelles passe de 384 à 512 pour garder de la marge dans les scènes denses.
+
+La cible `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` est séparée du jeu normal, sans flux audio ni planche superposée. Elle simule quatre appuis sur les notes du chart épinglé avec offsets de 0, 60, 110 et 150 ms, appelle le même `game_update()` que le jeu puis `draw_gameplay()` et présente Sick/Good/Bad/Shit en boucle, sans manette. Son horloge d’échantillons synthétique avance au quart de vitesse : la fenêtre demeure 650 ms musicaux, ce qui ouvre une fenêtre de capture de 2,6 s. Cette cible QA ne change pas la durée du mode jouable. Les options d’autoplay et de test visuel sont OFF dans l’image normale; diagnostics et planche de flèches restent masqués au démarrage.
+
+### Résultats observés
+
+| Étape | Résultat |
+|---|---|
+| Inspecté | Seuils de `game_update`, stockage et expiration de `last_judgement`, branche screen-space, atlas officiel, indices de page/UV/profondeur, CLUT et chargement des pages après les ressources menu. |
+| Implémenté | Unités d’expiration unifiées sur l’échantillon audio courant et la fréquence du flux; diagnostic d’expiration et de soumission GPU; cible QA no-input raccordée au calcul de jugement; 512 primitives visuelles. Réactions aux fautes et sons officiels conservés. |
+| Compilé | Cibles jouable et audio secondaire avec PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja. Image normale avec diagnostics, planche et tests automatiques désactivés : BIN `23 320 080` octets (9 915 secteurs MODE2/2352), CUE 93 octets; SHA-256 `B6157AE825BE82E4C6B3F617E95561DD4BFFE5351602EAC6DD26A04AA8B2D51`. |
+| Exécuté | La cible QA no-audio a tourné dans DuckStation 0.1-8675 x64/D3D11 à 320×240, environ 60 IPS. Les illustrations officielles sont visibles; labels Sick/Good/Bad/Shit et `DRAW` suit la fenêtre de 650 ms audio simulée. Capture de Sick sous `outputs/FNF-PS1-v26g-judgement-hitpath-qa/`. L’image normale a démarré, montré Freeplay puis le gameplay sans texte QA ni planche; capture sous `outputs/FNF-PS1-v26-normal-judgements/`. |
+| À vérifier | Le jugement déclenché par une manette pendant le flux audio normal n’a pas été capturé sans ambiguïté. La QA appelle le vrai `game_update()` mais remplace le flux par une horloge synthétique et des appuis programmés. Le jeu normal a été vu en gameplay, sans popup dans la fenêtre de capture. Reste à confirmer les quatre popups sur une partie jouée, puis tester le morceau entier, les transitions répétées et les compteurs CD/underrun. Aucun résultat console réelle ni mesure de dérive. |
+
+BIN/CUE QA et normal sont livrés dans des dossiers distincts sous `outputs/`, hors du commit Git. Les menus fidèles, Game Over/retry et résultats restent les jalons suivants.
