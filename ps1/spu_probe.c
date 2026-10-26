@@ -144,6 +144,7 @@ static uint8_t last_judgement;
 static uint32_t judgement_until;
 static uint32_t last_judgement_delta_ms;
 static bool judgement_drawn;
+static uint16_t last_game_pressed;
 #if GAME_JUDGEMENT_TEST_DEFAULT || GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
 static uint8_t judgement_test_next;
 static uint8_t judgement_test_hits;
@@ -924,6 +925,7 @@ static void game_update(uint32_t samples)
 	for (unsigned lane = 0; lane < 4; lane++) {
 		uint16_t mask = masks[lane];
 		if (!(game_pressed & mask)) continue;
+		last_game_pressed = mask;
 		int target = find_player_note(lane, samples);
 		if (target < 0) {
 			combo = 0;
@@ -1048,6 +1050,29 @@ static bool draw_textured_frame(unsigned frame, int x, int y, int width, int hei
 	return true;
 }
 
+/* Sustain-only UV flip: rotate body and end-cap 180 degrees, leaving arrows
+   and receptors on the existing texture path. */
+static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
+	int width, int height)
+{
+	if (visual_prim_count >= VISUAL_MAX_PRIMS || frame >= BOPEEBO_VISUAL_FRAME_COUNT ||
+		width <= 0 || height <= 0) return false;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	uint8_t u0 = visual->u, v0 = visual->v;
+	uint8_t u1 = (uint8_t)(visual->u + visual->w - 1u);
+	uint8_t v1 = (uint8_t)(visual->v + visual->h - 1u);
+	setUV4(p, u1, v1, u0, v1, u1, v0, u0, v0);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
+	return true;
+}
+
 static void draw_visual_frame(unsigned frame, int world_x, int world_y,
 	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
@@ -1098,9 +1123,9 @@ static void draw_hold_body(int center_x, int y0, int y1, unsigned size, unsigned
 		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN, VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
 	};
 	if (bottom - top > 12)
-		draw_textured_frame(hold_body[direction & 3u], center_x - width / 2, top,
+		draw_textured_frame_rotated_180(hold_body[direction & 3u], center_x - width / 2, top,
 			width, bottom - top - 8);
-	draw_textured_frame(hold_tail[direction & 3u], center_x - width / 2, bottom - 12,
+	draw_textured_frame_rotated_180(hold_tail[direction & 3u], center_x - width / 2, bottom - 12,
 		width, 12);
 }
 
@@ -1409,20 +1434,7 @@ static void draw_gameplay(uint32_t samples)
 	   no distinct source frame in this sheet, so it uses the idle/default art. */
 	draw_textured_frame(hud_health_q8 <= 102u ? VIS_UI_ICON_BF_LOSE : VIS_UI_ICON_BF_WIN,
 		bf_x, 13, icon_w, icon_w);
-	if (samples < judgement_until && last_judgement) {
-		static const uint8_t popup_frame[5] = {
-			0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
-			VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
-		};
-		const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-		/* Converted source art is intentionally compact for the VRAM page;
-		   render at 2x to restore legibility at native 320x240 output. */
-		int popup_w = popup->w * 2;
-		int popup_h = popup->h * 2;
-		judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
-			(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
-	}
-	if (diagnostics_visible) {
+		if (diagnostics_visible) {
 		/* Approximate title/action-safe frames for 4:3 CRT setup checks. */
 		draw_rect(8, 6, 304, 1, 48, 96, 112);
 		draw_rect(8, 233, 304, 1, 48, 96, 112);
@@ -1433,6 +1445,23 @@ static void draw_gameplay(uint32_t samples)
 		draw_rect(16, 12, 1, 216, 96, 160, 128);
 		draw_rect(303, 12, 1, 216, 96, 160, 128);
 	}
+}
+
+/* Final screen-space pass after the normal frontend's score and font HUD. */
+static void draw_judgement_popup(uint32_t samples)
+{
+	judgement_drawn = false;
+	if (samples >= judgement_until || !last_judgement || last_judgement > 4u)
+		return;
+	static const uint8_t popup_frame[5] = {
+		0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
+		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
+	};
+	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
+	int popup_w = popup->w * 2;
+	int popup_h = popup->h * 2;
+	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
+		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
 }
 
 static void draw_menu_screen(void)
@@ -1723,6 +1752,7 @@ static void run_playable_frontend(void)
 				draw_rect(32, 39, 208, 9, 18, 16, 25);
 				FntPrint(hud_font_id, "SCORE %05ld   COMBO %03lu", (long)score, (unsigned long)combo);
 				FntFlush(hud_font_id);
+				draw_judgement_popup(samples);
 				if (diagnostics_visible) {
 					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
 						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
@@ -1735,6 +1765,9 @@ static void run_playable_frontend(void)
 						(unsigned long)(samples < judgement_until ? judgement_until - samples : 0u),
 						misses + hold_drops);
 					FntPrint(diagnostics_font_id, "J DRAW %u\n", (unsigned)judgement_drawn);
+					FntPrint(diagnostics_font_id, "HITS %u EDGE %04x J %u DMS %lu\n",
+						(unsigned)hits, (unsigned)last_game_pressed, (unsigned)last_judgement,
+						(unsigned long)last_judgement_delta_ms);
 					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
 					FntFlush(diagnostics_font_id);
 				}
@@ -1793,6 +1826,7 @@ static void run_judgement_visual_test(void)
 		   lifetime intact while giving the visual QA result a capture window. */
 		uint32_t samples = test_sample + (uint32_t)(((uint64_t)phase_frame * rate) / 240u);
 		draw_gameplay(samples);
+		draw_judgement_popup(samples);
 		FntPrint(judgement_visual_font_id, "GAME UPDATE QA x0.25 %u/4  %s  DRAW %u\nDELTA %lu MS",
 			phase + 1u, names[phase], (unsigned)judgement_drawn,
 			(unsigned long)last_judgement_delta_ms);
