@@ -255,3 +255,9 @@ BIN v34: outputs/FNF-PS1-v34-judgement-visible/funkin-ps1-bopeebo-playable.bin; 
 Correction du diagnostic : DMS indique l’écart de timing du hit, tandis que LEFT 0 signifie que le popup avait expiré à l’image capturée. Le jugement suit maintenant la durée du moteur original (un beat + 200 ms), soit 800 ms à 100 BPM pour Bopeebo. L’image garde sa modulation entière et son mouvement; seule sa fenêtre d’affichage change.
 
 BIN v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.bin; CUE v35: outputs/FNF-PS1-v35-original-popup-window/funkin-ps1-bopeebo-playable.cue. BIN 23 324 784 octets; SHA-256 CDE7F9412F5A5DD4895FA6C293A165B21227FB094D8AF71ACDDA5E67DB988E2E; CUE 93 octets. Compilation réussie; test DuckStation du popup normal reste à faire.
+
+## v36 — couche popup au-dessus des diagnostics
+
+La capture montre le panneau de diagnostic opaque couvrant le centre du gameplay : son flush intervenait après le rendu du jugement et le recouvrait. v36 dessine Sick/Good/Bad/Shit et le combo au-dessus de cette couche, sans changer les règles ni la durée v35.
+
+Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 réussie : BIN 23 324 784 octets, CUE 93 octets, SHA-256 BIN `DA81B623983AFDC279DD31B0685DBCD4F18B9A6CB761C899BAD0FD2D64AD6B96`. Fichiers sous `outputs/FNF-PS1-v36-popup-over-diagnostics/`. Exécution DuckStation du build corrigé encore à vérifier; aucun test console réelle.
