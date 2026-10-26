@@ -187,3 +187,7 @@ Une faute BF existante redémarre immédiatement sa timeline visuelle même pend
 
 Build v25c : cibles jouable et audio secondaire compilées avec PSn00bSDK 0.24/GCC 12.3. BIN/CUE sous `outputs/FNF-PS1-v25c-judgement-visibility/`. DuckStation a affiché Freeplay normal à 320×240; l’injection clavier n’a pas permis de lancer le morceau de façon reproductible. Les popups, fautes rapprochées, sons officiels, unders/underruns et transitions du jeu restent à essayer; aucune exécution complète ni console réelle n’est revendiquée. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v25--jugements-fautes-rapprochées-et-sfx-officiels).
 
+## v26 — validation déterministe des jugements
+
+La cible QA `FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT=ON` simule quatre appuis chart (0/60/110/150 ms) via `game_update()` puis le vrai renderer. Elle affiche les assets officiels Sick/Good/Bad/Shit sans entrée manette ni audio; l’horloge synthétique avance à ¼ vitesse pour exposer la fenêtre réelle de 650 ms musicaux. Ne pas activer ce flag dans l’image jouable. Le build normal v26 garde diagnostics, planche et modes QA masqués. BIN/CUE et capture QA sont livrés dans `outputs/FNF-PS1-v26g-judgement-hitpath-qa/`; le BIN/CUE normal et sa capture de gameplay dans `outputs/FNF-PS1-v26-normal-judgements/`. La QA a été observée dans DuckStation; une capture de jugement par hit manette pendant le flux normal reste à vérifier. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v26--chaîne-de-rendu-des-jugements-et-cible-qa-déterministe).
+
