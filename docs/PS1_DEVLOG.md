@@ -68,12 +68,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v85 — résultat DuckStation utilisateur : bleu** : le callback unique `CdlDataReady` (1) a été observé, mais son pointeur payload était nul. La branche de v85 s’arrête avant le CRC dans ce cas; la lecture avec callback reste à valider par contenu.
 - **v86 — confirmée par l’utilisateur : vert** : `CdReadSync` et CRC sont conformes avec callback unique `CdlDataReady`, malgré le pointeur payload nul constaté en v85. Aucun transfert VRAM.
 - **v87 — confirmée par l’utilisateur : vert** : lecture et CRC conformes sur la première page 8bpp de 32 secteurs, callback unique `CdlDataReady`, payload nul. Aucun transfert VRAM.
-- **v88 — compilée, essai utilisateur en attente** : lit tout `W1SCENE.BIN` (320 secteurs) en onze blocs/page via un tampon réutilisé de 64 Kio; CRC-32 attendu `0xF32FB433`. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `849D0E9EA5ACBA251B3F03890D40D0B4C765E1E6F4A9871CDC6D4C8FB75DA6BE`.
+- **v88 — confirmée par l’utilisateur : vert** : lecture des 320 secteurs de `W1SCENE.BIN` en onze blocs via un tampon réutilisé de 64 Kio; CRC-32 attendu `0xF32FB433`, callbacks et lecture complète passés avec pointeurs payload nuls. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `849D0E9EA5ACBA251B3F03890D40D0B4C765E1E6F4A9871CDC6D4C8FB75DA6BE`.
+- **v89 — compilée, essai utilisateur à faire** : repart du démarrage minimal et lit uniquement la première page 8bpp de 32 secteurs, vérifie son CRC `0xA3BEABD8`, charge la page à `(384,0)` et la CLUT officielle à `(0,496)`, puis dessine un quad texturé 320×240. Un petit carré vert en haut à gauche confirme qu’une primitive postérieure au quad a été affichée. Repères persistants avant/après transfert de page, CLUT et dessin. Pas de gameplay, d’audio ni de balayage des autres pages. BIN : 1 150 128 octets; SHA-256 `7E474DDAAB0C79555737DFDDA6627446DBD4DB50A07E209FF74B13EF1B282BFC`.
 
 ## État à reprendre
 
-1. Attendre le résultat DuckStation de v88 : vert = tous les blocs, callbacks et CRC du fichier passent avec payload nul; blanc = les mêmes contrôles passent avec payloads présents.
-2. Si v88 passe, tester `LoadImage` pour une seule page avec synchronisation GPU, puis réintroduire progressivement les autres pages et le démarrage du jeu.
+1. Attendre le résultat DuckStation de v89. Une image de scène avec carré vert confirme page, CLUT et quad visibles; couleur d’étape persistante localisera l’arrêt avant/après ces opérations.
+2. Si v89 est visible, charger progressivement les pages restantes et vérifier leur VRAM avant de reprendre l’initialisation du jeu.
 3. Garder la v75 comme référence fonctionnelle et la v79 comme référence de boot. Ne pas confondre compilation, exécution utilisateur dans DuckStation et validation console réelle.
 4. Conserver le gameplay, l’audio, les popups et les comportements confirmés; ne pas fusionner dans `main` sans demande explicite.
 
