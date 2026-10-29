@@ -65,12 +65,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v82 — confirmée par l’utilisateur** : l’écran blanc stable indique que l’allocation de 65 536 octets, `CdSearchFile("\\W1SCENE.BIN")`, la validation de sa taille (655 360 octets) et la libération du tampon ont abouti. Aucun secteur n’a été lu.
 - **v83 — confirmée par l’utilisateur** : le blanc stable signifie que `CdPosToInt`/`CdIntToPos` puis `CdControl(CdlSetloc)` ont réussi. Le tampon a été libéré; aucun secteur n’a été lu.
 - **v84 — confirmée par l’utilisateur** : écran blanc après `CdRead` d’un secteur et polling `CdReadSync(1)`; les 2048 octets reçus correspondent au CRC-32 attendu `0x569EEEF7`. Aucun transfert VRAM.
-- **v85 — compilée, essai utilisateur en attente** : ajoute le callback de lecture, attend un appel unique avec `CdlDataReady` (enum 1), un payload non nul et le même CRC, tout en gardant le polling borné. L’en-tête SDK décrit un autre événement; la sonde vérifie le résultat effectif. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `156B7043630F6E9142906B04D9B180D1FAB92C9318F45BD50D5A6FBC334EA3CB`.
+- **v85 — résultat DuckStation utilisateur : bleu** : le callback unique `CdlDataReady` (1) a été observé, mais son pointeur payload était nul. La branche de v85 s’arrête avant le CRC dans ce cas; la lecture avec callback reste à valider par contenu.
+- **v86 — compilée, essai utilisateur en attente** : ne traite plus le payload nul comme une erreur; valide le callback et l’événement, puis compare le CRC du secteur. Vert = contenu correct avec payload callback nul; blanc = contenu correct avec payload non nul. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `E460EC4F2A6668CF2F2C0C696CDD35C60EB35E3DDF801692C25F85F404D0FD63`.
 
 ## État à reprendre
 
-1. Attendre le résultat DuckStation de v85 : blanc signifie callback unique `CdlDataReady` avec payload et secteur conforme; les autres couleurs distinguent échec de lecture, timeout, événement inattendu, payload absent ou CRC incorrect.
-2. Si v85 passe, réintroduire la lecture en blocs du chargeur de scène, toujours sans `LoadImage` dans la première étape.
+1. Attendre le résultat DuckStation de v86 : vert confirme callback `CdlDataReady` unique et CRC conforme malgré le payload nul observé en v85; blanc indique que le payload est aussi présent.
+2. Si v86 passe, réintroduire graduellement les lectures de blocs du chargeur de scène, d’abord sans `LoadImage`.
 3. Garder la v75 comme référence fonctionnelle et la v79 comme référence de boot. Ne pas confondre compilation, exécution utilisateur dans DuckStation et validation console réelle.
 4. Conserver le gameplay, l’audio, les popups et les comportements confirmés; ne pas fusionner dans `main` sans demande explicite.
 
