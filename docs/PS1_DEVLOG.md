@@ -66,12 +66,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v83 — confirmée par l’utilisateur** : le blanc stable signifie que `CdPosToInt`/`CdIntToPos` puis `CdControl(CdlSetloc)` ont réussi. Le tampon a été libéré; aucun secteur n’a été lu.
 - **v84 — confirmée par l’utilisateur** : écran blanc après `CdRead` d’un secteur et polling `CdReadSync(1)`; les 2048 octets reçus correspondent au CRC-32 attendu `0x569EEEF7`. Aucun transfert VRAM.
 - **v85 — résultat DuckStation utilisateur : bleu** : le callback unique `CdlDataReady` (1) a été observé, mais son pointeur payload était nul. La branche de v85 s’arrête avant le CRC dans ce cas; la lecture avec callback reste à valider par contenu.
-- **v86 — compilée, essai utilisateur en attente** : ne traite plus le payload nul comme une erreur; valide le callback et l’événement, puis compare le CRC du secteur. Vert = contenu correct avec payload callback nul; blanc = contenu correct avec payload non nul. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `E460EC4F2A6668CF2F2C0C696CDD35C60EB35E3DDF801692C25F85F404D0FD63`.
+- **v86 — confirmée par l’utilisateur : vert** : `CdReadSync` et CRC sont conformes avec callback unique `CdlDataReady`, malgré le pointeur payload nul constaté en v85. Aucun transfert VRAM.
+- **v87 — compilée, essai utilisateur en attente** : lit une page 8bpp entière (32 secteurs / 65 536 octets), vérifie le callback unique et le CRC-32 `0xA3BEABD8` du bloc. Aucun transfert VRAM. BIN : 1 150 128 octets; SHA-256 `9C11E7B7B5BA6530DA14B608A82053C646291E74363CA7E1D591455FB3E7638E`.
 
 ## État à reprendre
 
-1. Attendre le résultat DuckStation de v86 : vert confirme callback `CdlDataReady` unique et CRC conforme malgré le payload nul observé en v85; blanc indique que le payload est aussi présent.
-2. Si v86 passe, réintroduire graduellement les lectures de blocs du chargeur de scène, d’abord sans `LoadImage`.
+1. Attendre le résultat DuckStation de v87 : vert = callback et CRC de la page conformes avec payload nul; blanc = même résultat avec payload non nul. Les autres couleurs signalent le point d’échec.
+2. Si v87 passe, tester progressivement les autres plages/pages de la scène sans `LoadImage`, puis seulement valider les transferts VRAM.
 3. Garder la v75 comme référence fonctionnelle et la v79 comme référence de boot. Ne pas confondre compilation, exécution utilisateur dans DuckStation et validation console réelle.
 4. Conserver le gameplay, l’audio, les popups et les comportements confirmés; ne pas fusionner dans `main` sans demande explicite.
 
