@@ -63,12 +63,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v80 — observée par capture utilisateur** : sonde avec une BSS de 39 640 octets, proche des 39 152 octets de v78, et repères persistants autour des initialisations. La capture couleur correspond au repère final après `CdInit` et PAD; elle est traitée comme confirmation de ce parcours de sonde, pas comme validation du jeu.
 - **v81 — confirmée par l’utilisateur** : repère jaune-orangé, indiquant que `CdControlB(CdlPause)` a retourné succès.
 - **v82 — confirmée par l’utilisateur** : l’écran blanc stable indique que l’allocation de 65 536 octets, `CdSearchFile("\\W1SCENE.BIN")`, la validation de sa taille (655 360 octets) et la libération du tampon ont abouti. Aucun secteur n’a été lu.
-- **v83 — compilée, essai utilisateur en attente** : ajoute `CdPosToInt`, `CdIntToPos`, puis `CdControl(CdlSetloc)` avec repères distincts. Elle ne fait toujours aucun `CdRead` ni transfert vers la VRAM. BIN : 1 150 128 octets; SHA-256 `A5E07A3922D2954781B37F8C38D8E6B193DECF94E0B13D32D720628596B9287B`.
+- **v83 — confirmée par l’utilisateur** : le blanc stable signifie que `CdPosToInt`/`CdIntToPos` puis `CdControl(CdlSetloc)` ont réussi. Le tampon a été libéré; aucun secteur n’a été lu.
+- **v84 — compilée, essai utilisateur en attente** : tente `CdRead` d’un seul secteur de 2048 octets depuis `W1SCENE.BIN`, puis interroge `CdReadSync(1)` pendant au plus 300 images. Le CRC-32 attendu (`0x569EEEF7`) vérifie le contenu livré. Aucun callback ni transfert VRAM n’est testé. BIN : 1 150 128 octets; SHA-256 `740D476B32306D579BEC5C046993640A259E8B579FAD66599A3308EEF0372226`.
 
 ## État à reprendre
 
-1. Attendre le résultat DuckStation de v83 : après les repères d’allocation et recherche validés en v82, violet précède la conversion de position, cyan la suit, bleu marine précède `CdSetloc`, rose-rouge signale son erreur et blanc confirme son succès ainsi que la libération du tampon.
-2. Si `CdSetloc` passe, isoler ensuite `CdRead`/callback/`CdReadSync`, avec des repères et vérifications de buffer avant tout chargement de scène complet.
+1. Attendre le résultat DuckStation de v84 : bleu marine = avant `CdRead`, cyan = démarré, magenta = erreur `CdReadSync`, jaune-orangé = délai dépassé, orange = secteur lu mais CRC incorrect, blanc = secteur livré et CRC conforme.
+2. Si v84 confirme le secteur, isoler le callback de lecture dans une autre sonde avant de reprendre le chargement des pages de scène.
 3. Garder la v75 comme référence fonctionnelle et la v79 comme référence de boot. Ne pas confondre compilation, exécution utilisateur dans DuckStation et validation console réelle.
 4. Conserver le gameplay, l’audio, les popups et les comportements confirmés; ne pas fusionner dans `main` sans demande explicite.
 
