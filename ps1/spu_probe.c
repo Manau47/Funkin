@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 35021)
+Total output lines: 3764
+
 /* CD-to-SPU VAGi streaming probe; audio data is supplied locally at build time. */
 #include <stdbool.h>
 #include <stdint.h>
@@ -79,6 +82,9 @@
 #endif
 #ifndef GAME_DIAGNOSTICS_DEFAULT
 #define GAME_DIAGNOSTICS_DEFAULT 0
+#endif
+#ifndef GAME_STARTUP_MAIN_MARKER
+#define GAME_STARTUP_MAIN_MARKER 0
 #endif
 #ifndef GAME_SCENE_DEMO_DEFAULT
 #define GAME_SCENE_DEMO_DEFAULT 0
@@ -1700,467 +1706,7 @@ static bool draw_textured_frame_tinted_clut(unsigned frame, int x, int y, int wi
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	setPolyFT4(p);
-	setRGB0(p, r, g, b);
-	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
-	setUV4(p, visual->u, visual->v,
-		(uint8_t)(visual->u + visual->w - 1u), visual->v,
-		visual->u, (uint8_t)(visual->v + visual->h - 1u),
-		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
-	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	if (override_clut) setClut(p, override_clut_x, override_clut_y);
-	else set_visual_clut(p, visual);
-	DrawPrim((uint32_t *)p);
-	return true;
-}
-
-static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
-	uint8_t r, uint8_t g, uint8_t b)
-{
-	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
-		r, g, b, false, 0u, 0u);
-}
-
-static bool draw_textured_frame(unsigned frame, int x, int y, int width, int height)
-{
-	return draw_textured_frame_tinted(frame, x, y, width, height, 128, 128, 128);
-}
-
-static bool draw_textured_frame_with_clut(unsigned frame, int x, int y, int width, int height,
-	unsigned clut_x, unsigned clut_y)
-{
-	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
-		128, 128, 128, true, clut_x, clut_y);
-}
-
-/* Sustain-only UV flip: rotate body and end-cap 180 degrees, leaving arrows
-   and receptors on the existing texture path. */
-static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
-	int width, int height)
-{
-	if (visual_prim_count >= visual_prim_limit) {
-		visual_prim_rejected++;
-		return false;
-	}
-	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || width <= 0 || height <= 0) return false;
-	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
-	POLY_FT4 *p = &visual_prims[visual_prim_count++];
-	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
-	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
-	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
-	uint8_t u0 = visual->u, v0 = visual->v;
-	uint8_t u1 = (uint8_t)(visual->u + visual->w - 1u);
-	uint8_t v1 = (uint8_t)(visual->v + visual->h - 1u);
-	setUV4(p, u1, v1, u0, v1, u1, v0, u0, v0);
-	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	set_visual_clut(p, visual);
-	DrawPrim((uint32_t *)p);
-	return true;
-}
-
-static void draw_visual_frame(unsigned frame, int world_x, int world_y,
-	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
-{
-	if (visual_prim_count >= visual_prim_limit) {
-		visual_prim_rejected++;
-		return;
-	}
-	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
-	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
-	POLY_FT4 *p = &visual_prims[visual_prim_count++];
-	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
-	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
-	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
-	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
-	int w = ((int)visual->w * (int)combined_scale) / 256;
-	int h = ((int)visual->h * (int)combined_scale) / 256;
-	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
-	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
-	setUV4(p, visual->u, visual->v,
-		(uint8_t)(visual->u + visual->w - 1u), visual->v,
-		visual->u, (uint8_t)(visual->v + visual->h - 1u),
-		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
-	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	set_visual_clut(p, visual);
-	DrawPrim((uint32_t *)p);
-}
-
-static int note_screen_y(uint32_t target, uint32_t samples, const NoteGroupLayout *layout,
-	uint32_t rate)
-{
-	int64_t delta = (int64_t)target - (int64_t)samples;
-	uint32_t speed = layout->lane_group ? GAME_SCROLL_PIXELS_PER_SECOND : 124u;
-	return layout->receptor_y - (int)((delta * speed) / rate);
-}
-
-static void draw_hold_body(int center_x, int y0, int y1, unsigned size, unsigned direction,
-	int top_clip, int bottom_clip)
-{
-	int top = y0 < y1 ? y0 : y1;
-	int bottom = y0 > y1 ? y0 : y1;
-	if (top < top_clip) top = top_clip;
-	if (bottom > bottom_clip) bottom = bottom_clip;
-	if (bottom <= top) return;
-	int width = (int)size / 3;
-	if (width < 8) width = 8;
-	/* The frame IDs are direction-indexed and retain the official VAG hold art. */
-	static const uint8_t hold_body[4] = {
-		VIS_UI_HOLD_BODY_LEFT, VIS_UI_HOLD_BODY_DOWN, VIS_UI_HOLD_BODY_UP, VIS_UI_HOLD_BODY_RIGHT
-	};
-	static const uint8_t hold_tail[4] = {
-		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN, VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
-	};
-	/* The cap belongs at the upper end of a hold. Draw it first, then let
-	   the body overlap it so the seam is hidden behind the sustain column. */
-	draw_textured_frame_rotated_180(hold_tail[direction & 3u], center_x - width / 2, top,
-		width, 12);
-	if (bottom - top > 12)
-		draw_textured_frame_rotated_180(hold_body[direction & 3u], center_x - width / 2, top + 8,
-			width, bottom - top - 8);
-}
-
-static void draw_note_group(uint32_t samples, unsigned group_index)
-{
-	const NoteGroupLayout *layout = &note_groups[group_index];
-	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
-	if (group_index == 0u && !dad_lanes_visible) return;
-	int bottom_clip = layout->receptor_y + (int)layout->arrow_size / 2 + 4;
-	static const uint8_t note_frame[4] = {
-		VIS_UI_NOTE_LEFT, VIS_UI_NOTE_DOWN, VIS_UI_NOTE_UP, VIS_UI_NOTE_RIGHT
-	};
-	static const uint8_t idle_frame[4] = {
-		VIS_UI_RECEPTOR_LEFT_IDLE, VIS_UI_RECEPTOR_DOWN_IDLE,
-		VIS_UI_RECEPTOR_UP_IDLE, VIS_UI_RECEPTOR_RIGHT_IDLE
-	};
-	static const uint8_t press_frame[4] = {
-		VIS_UI_RECEPTOR_LEFT_PRESS, VIS_UI_RECEPTOR_DOWN_PRESS,
-		VIS_UI_RECEPTOR_UP_PRESS, VIS_UI_RECEPTOR_RIGHT_PRESS
-	};
-	static const uint8_t confirm_frame[4][4] = {
-		{ VIS_UI_RECEPTOR_LEFT_CONFIRM_0, VIS_UI_RECEPTOR_LEFT_CONFIRM_1,
-		  VIS_UI_RECEPTOR_LEFT_CONFIRM_2, VIS_UI_RECEPTOR_LEFT_CONFIRM_3 },
-		{ VIS_UI_RECEPTOR_DOWN_CONFIRM_0, VIS_UI_RECEPTOR_DOWN_CONFIRM_1,
-		  VIS_UI_RECEPTOR_DOWN_CONFIRM_2, VIS_UI_RECEPTOR_DOWN_CONFIRM_3 },
-		{ VIS_UI_RECEPTOR_UP_CONFIRM_0, VIS_UI_RECEPTOR_UP_CONFIRM_1,
-		  VIS_UI_RECEPTOR_UP_CONFIRM_2, VIS_UI_RECEPTOR_UP_CONFIRM_3 },
-		{ VIS_UI_RECEPTOR_RIGHT_CONFIRM_0, VIS_UI_RECEPTOR_RIGHT_CONFIRM_1,
-		  VIS_UI_RECEPTOR_RIGHT_CONFIRM_2, VIS_UI_RECEPTOR_RIGHT_CONFIRM_3 }
-	};
-	for (unsigned lane = 0; lane < 4u; lane++) {
-		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
-		uint16_t mask = (uint16_t[]){ PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT }[lane];
-		bool pressed = group_index == 1u && !(game_buttons & mask);
-		uint32_t until = receiver_flash_until[group_index][lane];
-		uint32_t confirm_duration = rate * 140u / 1000u;
-		bool confirmed = samples < until;
-		unsigned frame = pressed ? press_frame[lane] : idle_frame[lane];
-		if (confirmed && confirm_duration) {
-			uint32_t remaining = until - samples;
-			uint32_t elapsed = remaining < confirm_duration ? confirm_duration - remaining : 0u;
-			unsigned phase = (unsigned)((uint64_t)elapsed * 4u / confirm_duration);
-			if (phase > 3u) phase = 3u;
-			frame = confirm_frame[lane][phase];
-		}
-		draw_textured_frame(frame, center_x - layout->arrow_size / 2,
-			layout->receptor_y - layout->arrow_size / 2,
-			layout->arrow_size, layout->arrow_size);
-	}
-
-	for (unsigned i = 0; i < active_chart->note_count; i++) {
-		const Ps1Note *note = &active_chart->notes[i];
-		bool dad_note = note->lane >= 4u;
-		if ((group_index == 0u) != dad_note) continue;
-		unsigned lane = note->lane & 3u;
-		unsigned color_lane = lane;
-		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
-		uint32_t state = game_note_state[i];
-		bool holding = !dad_note && active_hold[lane] == (int16_t)i;
-		if (state == 2u || (state == 1u && !holding) || (dad_note && state == 3u && samples >= note->tail))
-			continue;
-
-		if (note->tail > note->head && (state == 0u || holding || (dad_note && state == 3u))) {
-			uint32_t visible_start = samples > note->head && (holding || (dad_note && state == 3u)) ?
-				samples : note->head;
-			int y0 = note_screen_y(visible_start, samples, layout, rate);
-			int y1 = note_screen_y(note->tail, samples, layout, rate);
-			draw_hold_body(center_x, y0, y1, layout->arrow_size, color_lane,
-				layout->top_clip, bottom_clip);
-		}
-
-		if (state != 0u) continue;
-		int y = note_screen_y(note->head, samples, layout, rate);
-		int top = y - layout->arrow_size / 2;
-		if (top + layout->arrow_size <= layout->top_clip || top >= bottom_clip) continue;
-		draw_textured_frame(note_frame[lane], center_x - layout->arrow_size / 2, top,
-			layout->arrow_size, layout->arrow_size);
-	}
-}
-
-#if GAME_ARROW_DIAGNOSTIC_DEFAULT
-/* The arrow sheet is a separate QA build mode. Select in the playable build
-   is reserved for the compact judgement trace and never draws this overlay. */
-static void draw_arrow_diagnostic_sheet(void)
-{
-	static const uint8_t note[4] = {
-		VIS_UI_NOTE_LEFT, VIS_UI_NOTE_DOWN, VIS_UI_NOTE_UP, VIS_UI_NOTE_RIGHT
-	};
-	static const uint8_t idle[4] = {
-		VIS_UI_RECEPTOR_LEFT_IDLE, VIS_UI_RECEPTOR_DOWN_IDLE,
-		VIS_UI_RECEPTOR_UP_IDLE, VIS_UI_RECEPTOR_RIGHT_IDLE
-	};
-	static const uint8_t press[4] = {
-		VIS_UI_RECEPTOR_LEFT_PRESS, VIS_UI_RECEPTOR_DOWN_PRESS,
-		VIS_UI_RECEPTOR_UP_PRESS, VIS_UI_RECEPTOR_RIGHT_PRESS
-	};
-	static const uint8_t confirm[4] = {
-		VIS_UI_RECEPTOR_LEFT_CONFIRM_0, VIS_UI_RECEPTOR_DOWN_CONFIRM_0,
-		VIS_UI_RECEPTOR_UP_CONFIRM_0, VIS_UI_RECEPTOR_RIGHT_CONFIRM_0
-	};
-	static const uint8_t body[4] = {
-		VIS_UI_HOLD_BODY_LEFT, VIS_UI_HOLD_BODY_DOWN,
-		VIS_UI_HOLD_BODY_UP, VIS_UI_HOLD_BODY_RIGHT
-	};
-	static const uint8_t tail[4] = {
-		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN,
-		VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
-	};
-	static const int column_x[4] = { 48, 120, 192, 264 };
-	draw_rect(8, 82, 304, 136, 8, 8, 18);
-	for (unsigned lane = 0; lane < 4u; lane++) {
-		int x = column_x[lane] - 10;
-		draw_textured_frame(note[lane], x, 91, 20, 20);
-		draw_textured_frame(idle[lane], x, 116, 20, 20);
-		draw_textured_frame(press[lane], x, 141, 20, 20);
-		draw_textured_frame(confirm[lane], x, 166, 20, 20);
-		draw_textured_frame(body[lane], column_x[lane] - 6, 193, 6, 16);
-		draw_textured_frame(tail[lane], column_x[lane] + 1, 193, 12, 16);
-	}
-}
-#endif
-
-static void camera_target_for_focus(int focus, int *x, int *y)
-{
-	if (active_song->stage_id == 3u) {
-		switch (focus) {
-		case 1:
-			*x = BOPEEBO_WEEK3_PICO_X + BOPEEBO_WEEK3_PICO_CAMERA_X;
-			*y = BOPEEBO_WEEK3_PICO_Y - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_PICO_CAMERA_Y; break;
-		case 0:
-			*x = BOPEEBO_WEEK3_BF_X + BOPEEBO_WEEK3_BF_CAMERA_X;
-			*y = BOPEEBO_WEEK3_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_BF_CAMERA_Y; break;
-		case 2:
-			*x = BOPEEBO_WEEK3_GF_X + BOPEEBO_WEEK3_GF_CAMERA_X;
-			*y = BOPEEBO_WEEK3_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_GF_CAMERA_Y; break;
-		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
-		}
-		return;
-	}
-	if (active_song->stage_id == 2u) {
-		switch (focus) {
-		case 1: *x = 48 + 19; *y = 108 - 40 - 13; break;
-		case 0: *x = 124 - 13; *y = 111 - (int)(BOPEEBO_BF_FRAME_H / 2u) - 13; break;
-		case 2: *x = 94; *y = 98 - 40; break;
-		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
-		}
-		return;
-	}
-	switch (focus) {
-	case 1: /* mainStage.json: Dad origin and camera offset */
-		*x = BOPEEBO_DAD_X + BOPEEBO_DAD_CAMERA_X;
-		*y = BOPEEBO_DAD_Y - (int)(BOPEEBO_DAD_FRAME_H / 2u) + BOPEEBO_DAD_CAMERA_Y;
-		break;
-	case 0: /* mainStage.json: BF origin and camera offset */
-		*x = BOPEEBO_BF_X + BOPEEBO_BF_CAMERA_X;
-		*y = BOPEEBO_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) + BOPEEBO_BF_CAMERA_Y;
-		break;
-	case 2: /* Girlfriend */
-		*x = BOPEEBO_GF_X + BOPEEBO_GF_CAMERA_X;
-		*y = BOPEEBO_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) + BOPEEBO_GF_CAMERA_Y;
-		break;
-	default: /* Static chart focus */
-		*x = SCREEN_W / 2;
-		*y = SCREEN_H / 2;
-		break;
-	}
-}
-
-static uint32_t music_beat_q16(uint32_t samples)
-{
-	uint32_t rate = BOPEEBO_CHART_RATE;
-	unsigned tempo_index = 0;
-	while (tempo_index + 1u < active_chart->tempo_count &&
-	       active_chart->tempos[tempo_index + 1u].sample <= samples) tempo_index++;
-	const Ps1Tempo *tempo = &active_chart->tempos[tempo_index];
-	uint64_t beat = tempo->beat_q16 +
-		(uint64_t)(samples - tempo->sample) * tempo->bpm_centi * 65536u /
-		((uint64_t)rate * 6000u);
-	return beat > 0xffffffffu ? 0xffffffffu : (uint32_t)beat;
-}
-
-static void draw_scene(uint32_t samples)
-{
-	uint32_t rate = stream.config.sample_rate ?
-		(uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
-	uint32_t beat_q16 = music_beat_q16(samples);
-	uint32_t beat = beat_q16 >> 16;
-	uint32_t beat_phase = beat_q16 & 0xffffu;
-	const uint32_t pulse_window_q16 = 22937u; /* first 35% of each tempo-mapped beat */
-	unsigned pulse_q8 = beat_phase < pulse_window_q16 ?
-		(unsigned)(((uint64_t)(pulse_window_q16 - beat_phase) * 7u) / pulse_window_q16) : 0u;
-	bool week2 = active_song->stage_id == 2u;
-	bool week3 = active_song->stage_id == 3u;
-	unsigned base_zoom_q8 = week2 ? BOPEEBO_WEEK2_CAMERA_ZOOM_Q8 :
-		week3 ? BOPEEBO_WEEK3_CAMERA_ZOOM_Q8 : BOPEEBO_STAGE_CAMERA_ZOOM_Q8;
-	unsigned zoom_q8 = base_zoom_q8 + pulse_q8;
-	/* Focus targets and stage transforms are generated from the official stage
-	   data; smooth transitions follow chart events, never individual note hits. */
-	unsigned event_index = 0;
-	while (event_index + 1u < active_chart->camera_count &&
-	       active_chart->camera[event_index + 1u].sample <= samples) event_index++;
-	int target_focus = active_chart->camera_count ? active_chart->camera[event_index].focus : 1;
-	int previous_focus = event_index ? active_chart->camera[event_index - 1u].focus : target_focus;
-	int from_x, from_y, to_x, to_y;
-	camera_target_for_focus(previous_focus, &from_x, &from_y);
-	camera_target_for_focus(target_focus, &to_x, &to_y);
-	uint32_t transition = rate * CAMERA_FOCUS_TIME_MS / 1000u;
-	uint32_t elapsed = samples >= active_chart->camera[event_index].sample ?
-		samples - active_chart->camera[event_index].sample : transition;
-	if (elapsed > transition) elapsed = transition;
-	uint32_t t = transition ? (uint32_t)(((uint64_t)elapsed * 256u) / transition) : 256u;
-	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
-	int camera_x = from_x + (to_x - from_x) * (int)smooth / 256;
-	int camera_y = from_y + (to_y - from_y) * (int)smooth / 256;
-	camera_focus_display = (uint8_t)target_focus;
-	camera_transitioning = event_index && elapsed < transition;
-
-	/* One world transform covers official stage props and characters; the
-	   extended stage composition safely overfills all camera crop edges. */
-	if (week2) {
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, BOPEEBO_WEEK2_STAGE_X,
-			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, BOPEEBO_WEEK2_STAGE_X + 256,
-			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-	} else if (week3) {
-		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_0, BOPEEBO_WEEK3_STAGE_X,
-			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_1, BOPEEBO_WEEK3_STAGE_X + 256,
-			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-	} else {
-		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
-			camera_x, camera_y, zoom_q8, 256);
-		draw_visual_frame(VIS_STAGE_SCENE_1, BOPEEBO_STAGE_SCENE_X + 256,
-			BOPEEBO_STAGE_SCENE_Y, camera_x, camera_y, zoom_q8, 256);
-	}
-
-	unsigned dad_frame;
-	if (samples < dad_visual_until) {
-		static const uint8_t sing_frames[4][2] = {
-			{ VIS_DAD_LEFT_0, VIS_DAD_LEFT_1 }, { VIS_DAD_DOWN_0, VIS_DAD_DOWN_1 },
-			{ VIS_DAD_UP_0, VIS_DAD_UP_1 }, { VIS_DAD_RIGHT_0, VIS_DAD_RIGHT_1 }
-		};
-		dad_frame = sing_frames[dad_visual_lane & 3u][(beat_phase >> 15) & 1u];
-	} else {
-		unsigned idle_pose = (unsigned)((uint64_t)beat_phase * 6u >> 16);
-		if (idle_pose > 5u) idle_pose = 5u;
-		dad_frame = VIS_DAD_IDLE_0 + idle_pose;
-	}
-	/* GF's pinned character config alternates two 15-frame dances each beat.
-	   Nine source poses per side are sampled across that beat, including the
-	   original speaker rig's embedded pulse. */
-	unsigned gf_side = (beat & 1u) ? 0u : BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
-	unsigned gf_pose = (unsigned)((uint64_t)beat_phase * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT >> 16);
-	if (gf_pose >= BOPEEBO_GF_DANCE_FRAMES_PER_BEAT)
-		gf_pose = BOPEEBO_GF_DANCE_FRAMES_PER_BEAT - 1u;
-	unsigned gf_frame = VIS_GF_DANCE_0 + gf_side + gf_pose;
-	if (active_song->opponent_kind == PS1_OPPONENT_GF && samples < dad_visual_until) {
-		static const uint8_t gf_sing_frames[4] = {
-			VIS_GF_SING_LEFT, VIS_GF_SING_DOWN, VIS_GF_SING_UP, VIS_GF_SING_RIGHT
-		};
-		gf_frame = gf_sing_frames[dad_visual_lane & 3u];
-	}
-	if (week2) {
-		static const uint8_t week2_gf_dance[2] = {
-			VIS_WEEK2_GF_DANCE_0, VIS_WEEK2_GF_DANCE_1
-		};
-		gf_frame = week2_gf_dance[beat & 1u];
-		draw_visual_frame(gf_frame,
-			94 - (int)(BOPEEBO_GF_FRAME_W / 2u), 98 - (int)BOPEEBO_GF_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
-	} else if (week3) {
-		static const uint8_t week3_gf_dance[2] = {
-			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1
-		};
-		draw_visual_frame(week3_gf_dance[beat & 1u],
-			BOPEEBO_WEEK3_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
-			BOPEEBO_WEEK3_GF_Y - (int)BOPEEBO_GF_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
-	}
-	else draw_visual_frame(gf_frame,
-		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
-		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
-		camera_x, camera_y, zoom_q8, 256);
-	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
-	if (week2) {
-		unsigned opponent_frame;
-		unsigned lane = dad_visual_lane & 3u;
-		if (samples < dad_visual_until) {
-			if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
-				static const uint8_t sing[4][2] = {
-					{ VIS_WEEK2_SPOOKY_SING_LEFT_0, VIS_WEEK2_SPOOKY_SING_LEFT_1 },
-					{ VIS_WEEK2_SPOOKY_SING_DOWN_0, VIS_WEEK2_SPOOKY_SING_DOWN_1 },
-					{ VIS_WEEK2_SPOOKY_SING_UP_0, VIS_WEEK2_SPOOKY_SING_UP_1 },
-					{ VIS_WEEK2_SPOOKY_SING_RIGHT_0, VIS_WEEK2_SPOOKY_SING_RIGHT_1 }
-				};
-				opponent_frame = sing[lane][(beat_phase >> 15) & 1u];
-			} else {
-				static const uint8_t sing[4] = { VIS_WEEK2_MONSTER_SING_LEFT,
-					VIS_WEEK2_MONSTER_SING_DOWN, VIS_WEEK2_MONSTER_SING_UP,
-					VIS_WEEK2_MONSTER_SING_RIGHT };
-				opponent_frame = sing[lane];
-			}
-		} else if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
-			static const uint8_t idle[4] = { VIS_WEEK2_SPOOKY_IDLE_0,
-				VIS_WEEK2_SPOOKY_IDLE_1, VIS_WEEK2_SPOOKY_IDLE_2,
-				VIS_WEEK2_SPOOKY_IDLE_3 };
-			unsigned idle_pose = (unsigned)((uint64_t)beat_phase * 4u >> 16);
-			if (idle_pose > 3u) idle_pose = 3u;
-			opponent_frame = idle[idle_pose];
-		} else {
-			opponent_frame = (beat_phase < 32768u) ? VIS_WEEK2_MONSTER_IDLE : VIS_WEEK2_MONSTER_IDLE_HOLD;
-		}
-		draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
-			108 - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
-	} else if (week3) {
-		static const uint8_t pico_sing[4][2] = {
-			{ VIS_WEEK3_PICO_SING_LEFT_0, VIS_WEEK3_PICO_SING_LEFT_1 },
-			{ VIS_WEEK3_PICO_SING_DOWN_0, VIS_WEEK3_PICO_SING_DOWN_1 },
-			{ VIS_WEEK3_PICO_SING_UP_0, VIS_WEEK3_PICO_SING_UP_1 },
-			{ VIS_WEEK3_PICO_SING_RIGHT_0, VIS_WEEK3_PICO_SING_RIGHT_1 }
-		};
-		unsigned pico_frame = samples < dad_visual_until ?
-			pico_sing[dad_visual_lane & 3u][(beat_phase >> 15) & 1u] :
-			((beat_phase < 32768u) ? VIS_WEEK3_PICO_IDLE_0 : VIS_WEEK3_PICO_IDLE_1);
-		draw_visual_frame(pico_frame,
-			BOPEEBO_WEEK3_PICO_X - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_W / 2u),
-			BOPEEBO_WEEK3_PICO_Y - (int)BOPEEBO_WEEK3_CHARACTER_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
-	} else if (active_song->opponent_kind == PS1_OPPONENT_DAD)
-		draw_visual_frame(dad_frame,
-			BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
-			BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
-
-	unsigned bf_frame;
-	if (bf_visual_state == 2u) {
-		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
-		uint32_t miss_duration = BOPEEBO_CHART_RATE * 350u / 1000u;
-		/* Restart on every existing miss event; use the two official miss poses
+	setRGB0(p, r, g, b…5021 tokens truncated…rt on every existing miss event; use the two official miss poses
 		   on a local timeline so same-lane misses inside one beat are visible. */
 		unsigned miss_pose = elapsed >= miss_duration / 3u ? 1u : 0u;
 		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + miss_pose;
@@ -3528,6 +3074,35 @@ static bool start_stream_from_disc(void)
 
 int main(void)
 {
+	/*
+	 * Startup checkpoint for the real playable executable. The volatile gate
+	 * keeps the normal game path linked into this diagnostic build; while set,
+	 * this does only the minimum GPU setup needed to show a stable white frame.
+	 * It runs before loading-card, SPU, CD, PAD, asset, menu, or gameplay setup.
+	 */
+#if GAME_STARTUP_MAIN_MARKER
+	{
+		static volatile uint8_t hold_at_main_entry = 1;
+		if (hold_at_main_entry) {
+			DISPENV display;
+			DRAWENV draw;
+			FILL fill;
+			ResetGraph(0);
+			SetDefDrawEnv(&draw, 0, 0, SCREEN_W, SCREEN_H);
+			SetDefDispEnv(&display, 0, 0, SCREEN_W, SCREEN_H);
+			PutDrawEnv(&draw);
+			PutDispEnv(&display);
+			setFill(&fill);
+			setRGB0(&fill, 255, 255, 255);
+			setXY0(&fill, 0, 0);
+			setWH(&fill, SCREEN_W, SCREEN_H);
+			DrawPrim((uint32_t *)&fill);
+			DrawSync(0);
+			SetDispMask(1);
+			for (;;) VSync(0);
+		}
+	}
+#endif
 	init_video();
 	/* Startup loads the large Week 1 atlas from CD before entering the menu.
 	   Show a visible transition before any blocking disc reads begin. */

@@ -195,6 +195,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT "Test popup palette in a free neighboring CLUT slot" OFF)
 	option(FUNKIN_PS1_SCENE_DEMO_DEFAULT "Build a camera-only scene demo without gameplay penalties" OFF)
 	option(FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT "Build a visual-only health bar calibration disc" OFF)
+	option(FUNKIN_PS1_STARTUP_MAIN_MARKER "Stop the playable executable at main entry and display a fixed white GPU frame" OFF)
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
 	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
 	set(_psn00bsdk_cdstream_dir
@@ -465,6 +466,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT}>
 		GAME_SCENE_DEMO_DEFAULT=$<BOOL:${FUNKIN_PS1_SCENE_DEMO_DEFAULT}>
 		GAME_HEALTH_BAR_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT}>
+		GAME_STARTUP_MAIN_MARKER=$<BOOL:${FUNKIN_PS1_STARTUP_MAIN_MARKER}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
 	target_include_directories(funkin-ps1-bopeebo-playable PRIVATE
 		"${_psn00bsdk_cdstream_dir}" "${CMAKE_CURRENT_BINARY_DIR}")
