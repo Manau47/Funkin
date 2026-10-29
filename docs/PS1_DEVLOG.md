@@ -90,3 +90,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 
 À chaque prochain jalon, ajouter une entrée datée/versionnée avec : objectif et changement; commande/build ou fichiers produits; vérifications statiques/compilation; résultat observé par l’utilisateur; éléments encore non testés. Ne marquer « validé » que sur confirmation utilisateur ou preuve d’exécution explicitement observée.
 
+
+
+### 2026-10-30 — v90 → v91, repère après le BSS
+
+- v90 reste conservée intégralement avant modification dans `ps1/build/archive-v90-main-entry-marker-20261030` (113 fichiers, 765 377 656 octets). Les BIN/CUE v90 livrés restent identiques à l’archive par SHA-256. Le résultat utilisateur v90 était le logo Sony après deux minutes.
+- Le build v91 réutilise le répertoire et la configuration de v90. Le dry-run a montré uniquement compilation du fichier de sonde, liaison de l’ELF et création de l’image disque : aucune reconversion de chart, sprite, scène ou audio. Les 49 ressources dont les empreintes sont archivées sont restées identiques.
+- La sonde remplace `_start_inner`, effectue le clear BSS conforme au SDK PSn00bSDK 0.24, puis affiche un aplat ambre persistant avant initialisation du heap, copie argv, constructeurs et `main()`. Le code de jeu est conservé dans le lien par une référence conditionnelle dont le gate initialisé reste non nul.
+- Source publiée sur `ps1-port` : commits `d9f01add`, `48635d2` et `a12a1b4` (final). Désassemblage : `_start` à `0x8001D9DC` saute vers la sonde `_start_inner` à `0x8001808C`; `main` demeure lié à `0x80014B20`.
+- BIN v91 : 131 944 848 octets, SHA-256 `AAC0DF78054FC6CA1C48C678B8EF7B6D372609451267D4051642B175A1C29D4B`. Le dossier de livraison distinct archive le diff, le cache, les fichiers Ninja, les empreintes des ressources et le manifeste.
+- **État : compilé et vérifié statiquement; essai DuckStation à faire par l’utilisateur.** Aucun comportement v91 n’est déclaré observé et aucune console réelle n’a été testée.
