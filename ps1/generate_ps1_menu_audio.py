@@ -42,7 +42,7 @@ def decode_pcm(ffmpeg: Path, source: Path, rate: int, channels: int) -> array:
     return pcm
 
 
-def make_menu_vagi(ffmpeg: Path, source: Path, output: Path) -> int:
+def make_menu_vagi(ffmpeg: Path, source: Path, output: Path, label: bytes) -> int:
     pcm = decode_pcm(ffmpeg, source, MENU_RATE, 2)
     frame_count = len(pcm) // 2
     chunk_count = math.ceil(frame_count / SAMPLES_PER_CHUNK)
@@ -57,7 +57,7 @@ def make_menu_vagi(ffmpeg: Path, source: Path, output: Path) -> int:
     silence = [0] * padded_samples
     encoded = [encode_channel(channel, chunk_count)
                for channel in (left, right, silence, silence)]
-    write_vagi(output, encoded, MENU_RATE, frame_count, b"FNF FREAKY MENU")
+    write_vagi(output, encoded, MENU_RATE, frame_count, label)
     return frame_count
 
 
@@ -68,6 +68,8 @@ def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
              for name in MENU_SOUNDS]
     names.extend((name, assets / "shared" / "sounds" / f"{name}.ogg")
                  for name in MISS_SOUNDS)
+    names.append(("fnf_loss_sfx", assets / "shared" / "sounds" /
+                  "gameplay" / "gameover" / "fnf_loss_sfx.ogg"))
     for name, source in names:
         pcm = decode_pcm(ffmpeg, source, SFX_RATE, 1)
         sample_count = len(pcm)
@@ -102,7 +104,8 @@ def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
              f"#define MENU_SFX_RATE {SFX_RATE}u"]
     for index, (name, _source) in enumerate(names):
         macro = name.upper()
-        prefix = "MISS_SFX" if name.startswith("missnote") else "MENU_SFX"
+        prefix = ("MISS_SFX" if name.startswith("missnote") else
+                  "GAMEOVER_SFX" if name == "fnf_loss_sfx" else "MENU_SFX")
         lines.extend((f"#define {prefix}_{macro}_OFFSET {offsets[index]}u",
                       f"#define {prefix}_{macro}_SIZE {len(samples[index])}u",
                       f"#define {prefix}_{macro}_FRAMES {math.ceil(sample_counts[index] * 60 / SFX_RATE)}u"))
@@ -120,17 +123,26 @@ def main() -> None:
     parser.add_argument("--ffmpeg", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
     parser.add_argument("--music", type=Path, required=True)
+    parser.add_argument("--gameover-loop", type=Path, required=True)
+    parser.add_argument("--gameover-end", type=Path, required=True)
     parser.add_argument("--header", type=Path, required=True)
     args = parser.parse_args()
 
     music_source = args.assets / "preload" / "music" / "freakyMenu" / "freakyMenu.ogg"
-    frames = make_menu_vagi(args.ffmpeg, music_source, args.music)
+    frames = make_menu_vagi(args.ffmpeg, music_source, args.music, b"FNF FREAKY MENU")
+    gameover_source = args.assets / "shared" / "music" / "gameplay" / "gameover"
+    loop_frames = make_menu_vagi(args.ffmpeg, gameover_source / "gameOver.ogg",
+                                 args.gameover_loop, b"FNF GAME OVER LOOP")
+    end_frames = make_menu_vagi(args.ffmpeg, gameover_source / "gameOverEnd.ogg",
+                                args.gameover_end, b"FNF GAME OVER END")
     bank_size, max_sfx_frames = make_sfx(args.ffmpeg, args.assets, args.header)
     print(f"Menu music: pinned FreakyMenu, stereo decoded at {MENU_RATE} Hz, "
           f"two interleaved VAGi channels, "
           f"{frames / MENU_RATE:.3f} s, looping")
     print(f"Official navigation and miss SFX: VAGp ADPCM, {bank_size} SPU bytes, "
           f"max {max_sfx_frames} frames, one-shot; missnote1..3 share the playable SFX pool")
+    print(f"Game over: pinned gameOver {loop_frames / MENU_RATE:.3f}s, "
+          f"gameOverEnd {end_frames / MENU_RATE:.3f}s and fnf_loss_sfx in the resident SFX bank")
 
 
 if __name__ == "__main__":

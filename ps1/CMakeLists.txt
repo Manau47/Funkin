@@ -187,6 +187,12 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	option(FUNKIN_PS1_ARROW_DIAGNOSTIC_DEFAULT "Autostart Bopeebo with the four-direction arrow QA sheet" OFF)
 	option(FUNKIN_PS1_JUDGEMENT_TEST_DEFAULT "Autostart a no-controller four-judgement gameplay QA run" OFF)
 	option(FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT "Build a no-audio isolated four-judgement visual test" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_SOLID_PROBE_DEFAULT "Replace judgement art with a same-bounds solid GPU primitive for diagnosis" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_TEXTURE_PROBE_DEFAULT "Use a known BF miss frame through the judgement FT4 path for diagnosis" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_CLUT_PROBE_DEFAULT "Draw judgement texels with the known-working BF CLUT for diagnosis" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT "Draw known BF texels with the popup CLUT for diagnosis" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT "Load popup palette at known-working BF CLUT address for diagnosis" OFF)
+	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT "Test popup palette in a free neighboring CLUT slot" OFF)
 	option(FUNKIN_PS1_SCENE_DEMO_DEFAULT "Build a camera-only scene demo without gameplay penalties" OFF)
 	option(FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT "Build a visual-only health bar calibration disc" OFF)
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
@@ -198,9 +204,50 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		message(FATAL_ERROR "PSn00bSDK cdstream example sources were not found under ${_psn00bsdk_cdstream_dir}")
 	endif()
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
-	set(_playable_chart_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_chart.h")
+	set(_playable_chart_header "${CMAKE_CURRENT_BINARY_DIR}/week1_catalog.h")
+	set(_song_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/catalog-audio")
+	set(_song_audio_outputs
+		"${_song_audio_dir}/fresh.vag"
+		"${_song_audio_dir}/dadbattle.vag"
+		"${_song_audio_dir}/tutorial.vag"
+		"${_song_audio_dir}/spookeez.vag"
+		"${_song_audio_dir}/south.vag"
+		"${_song_audio_dir}/monster.vag"
+		"${_song_audio_dir}/pico.vag"
+		"${_song_audio_dir}/philly-nice.vag"
+		"${_song_audio_dir}/blammed.vag")
+	set(_song_chart_dir "${_song_audio_dir}/charts")
+	set(_song_chart_outputs)
+	foreach(_song tutorial bopeebo fresh dadbattle spookeez south monster pico philly-nice blammed)
+		if(_song STREQUAL "tutorial")
+			set(_chart_prefix TUT)
+		elseif(_song STREQUAL "bopeebo")
+			set(_chart_prefix BOP)
+		elseif(_song STREQUAL "fresh")
+			set(_chart_prefix FRE)
+		elseif(_song STREQUAL "dadbattle")
+			set(_chart_prefix DAD)
+		elseif(_song STREQUAL "spookeez")
+			set(_chart_prefix SPO)
+		elseif(_song STREQUAL "south")
+			set(_chart_prefix SOU)
+		elseif(_song STREQUAL "monster")
+			set(_chart_prefix MON)
+		elseif(_song STREQUAL "pico")
+			set(_chart_prefix PIC)
+		elseif(_song STREQUAL "philly-nice")
+			set(_chart_prefix PHI)
+		else()
+			set(_chart_prefix BLA)
+		endif()
+		foreach(_difficulty E N H)
+			list(APPEND _song_chart_outputs "${_song_chart_dir}/${_chart_prefix}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
 	set(FUNKIN_PS1_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../assets" CACHE PATH
 		"Root of the pinned Funkin.assets submodule")
+	set(FUNKIN_PS1_OPTIONS_ART "${CMAKE_CURRENT_SOURCE_DIR}/../outputs/menu-options-concept-v2.png" CACHE FILEPATH
+		"Approved local OPTIONS menu lettering PNG (kept outside Git)")
 	if(NOT EXISTS "${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml")
 		message(FATAL_ERROR "FUNKIN_PS1_ASSETS_DIR does not contain the pinned official asset checkout")
 	endif()
@@ -211,6 +258,9 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		message(FATAL_ERROR "Set FUNKIN_PS1_FFMPEG to an ffmpeg executable for deterministic art conversion")
 	endif()
 	set(_playable_visual_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_visual_data.h")
+	set(_week2_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene.bin")
+	set(_week1_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene.bin")
+	set(_week3_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week3-scene.bin")
 	set(_visual_asset_dependencies
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/mainStage.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stageback.png"
@@ -227,6 +277,9 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/Animation.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/spritemap1.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf-death/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf-death/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf-death/spritemap1.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/notes.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/notes.xml"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/noteStrumline.png"
@@ -234,15 +287,63 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/NOTE_hold_assets.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-dad.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-bf.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-gf.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/logoBumpin.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/logoBumpin.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/menuBG.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayBGweek1-bf.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/glowingText.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayeasy.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplaynormal.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayhard.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplaySelector.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplaySelector.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/fonts/vcr-bold.ttf"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplay-boyfriend/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplay-boyfriend/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplay-boyfriend/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/albumRoll/volume1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/gfpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/gfpixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/dadpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/dadpixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/spookypixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/spookypixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/picopixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/picopixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/mompixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/mompixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/monsterpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/monsterpixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/parents-christmaspixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/parents-christmaspixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/senpaipixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/senpaipixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/spiritpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/spiritpixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/tankmanpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/tankmanpixel.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/darnellpixel.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/freeplay/icons/darnellpixel.xml"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/freeplay.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/freeplay.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/storymode.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/storymode.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/merch.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/merch.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/options.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/options.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/credits.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/mainmenu/credits.xml"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/music/freakyMenu/freakyMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/scrollMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/confirmMenu.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/sounds/cancelMenu.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/music/gameplay/gameover/gameOver.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/music/gameplay/gameover/gameOverEnd.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/gameplay/gameover/fnf_loss_sfx.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote1.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote2.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote3.ogg"
@@ -250,32 +351,94 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/good.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/bad.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/shit.png")
+	list(APPEND _visual_asset_dependencies
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/spookyMansion.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/week2/images/halloween_bg/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/week2/images/halloween_bg/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/SpookyKids.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/SpookyKids.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-spooky.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-monster.png")
+	list(APPEND _visual_asset_dependencies
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/phillyTrain.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/sky.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/city.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/win.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/behindTrain.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/street.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-pico.png")
+	if(EXISTS "${FUNKIN_PS1_OPTIONS_ART}")
+		list(APPEND _visual_asset_dependencies "${FUNKIN_PS1_OPTIONS_ART}")
+		set(_options_art_args --options-art "${FUNKIN_PS1_OPTIONS_ART}")
+	else()
+		message(STATUS "Approved OPTIONS PNG unavailable; using pinned official options.png for fallback build")
+		set(_options_art_args)
+	endif()
 	add_custom_command(
-		OUTPUT "${_playable_visual_header}"
+		OUTPUT "${_playable_visual_header}" "${_week2_visual_payload}" "${_week1_visual_payload}" "${_week3_visual_payload}"
 		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
 			--assets "${FUNKIN_PS1_ASSETS_DIR}"
 			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			${_options_art_args}
+			--week2-pages-output "${_week2_visual_payload}"
+			--week1-pages-output "${_week1_visual_payload}"
+			--week3-pages-output "${_week3_visual_payload}"
 			--output "${_playable_visual_header}"
 		DEPENDS convert_bopeebo_visuals.py animate_preview.py ${_visual_asset_dependencies}
 		VERBATIM
 	)
+	set(_song_catalog_dependencies
+		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py")
+	foreach(_song tutorial bopeebo fresh dadbattle spookeez south monster pico philly-nice blammed)
+		list(APPEND _song_catalog_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-bf.ogg")
+		if(_song STREQUAL "tutorial")
+			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-gf.ogg")
+		elseif(_song STREQUAL "spookeez" OR _song STREQUAL "south")
+			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-spooky.ogg")
+		elseif(_song STREQUAL "monster")
+			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-monster.ogg")
+		elseif(_song STREQUAL "pico" OR _song STREQUAL "philly-nice" OR _song STREQUAL "blammed")
+			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-pico.ogg")
+		else()
+			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-dad.ogg")
+		endif()
+	endforeach()
 	add_custom_command(
-		OUTPUT "${_playable_chart_header}"
-		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_chart.py"
-			"${FUNKIN_PS1_BOPEEBO_CHART_JSON}" "${_playable_chart_header}" --rate 43008
-		DEPENDS convert_bopeebo_chart.py "${FUNKIN_PS1_BOPEEBO_CHART_JSON}"
+		OUTPUT "${_playable_chart_header}" ${_song_audio_outputs} ${_song_chart_outputs}
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+			--assets "${FUNKIN_PS1_ASSETS_DIR}"
+			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			--output-dir "${_song_audio_dir}"
+			--header "${_playable_chart_header}" --chart-dir "${_song_chart_dir}" --rate 43008
+		DEPENDS ${_song_catalog_dependencies}
 		VERBATIM
 	)
 	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}"
 		"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag" COPYONLY)
 	set(_menu_audio_header "${CMAKE_CURRENT_BINARY_DIR}/menu_audio_data.h")
 	set(_menu_audio_vagi "${CMAKE_CURRENT_BINARY_DIR}/menu.vag")
+	set(_gameover_loop_vagi "${CMAKE_CURRENT_BINARY_DIR}/gameover-loop.vag")
+	set(_gameover_end_vagi "${CMAKE_CURRENT_BINARY_DIR}/gameover-end.vag")
 	add_custom_command(
 		OUTPUT "${_menu_audio_header}" "${_menu_audio_vagi}"
+			"${_gameover_loop_vagi}" "${_gameover_end_vagi}"
 		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_menu_audio.py"
 			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
 			--assets "${FUNKIN_PS1_ASSETS_DIR}"
 			--music "${_menu_audio_vagi}"
+			--gameover-loop "${_gameover_loop_vagi}"
+			--gameover-end "${_gameover_end_vagi}"
 			--header "${_menu_audio_header}"
 		DEPENDS generate_ps1_menu_audio.py convert_bopeebo_to_vagi.py ${_visual_asset_dependencies}
 		VERBATIM
@@ -284,7 +447,8 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c"
 		"${_playable_chart_header}" "${_playable_visual_header}"
 		"${_menu_audio_header}")
-	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}")
+	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}"
+		"${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
@@ -293,6 +457,12 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		GAME_ARROW_DIAGNOSTIC_DEFAULT=$<BOOL:${FUNKIN_PS1_ARROW_DIAGNOSTIC_DEFAULT}>
 		GAME_JUDGEMENT_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_TEST_DEFAULT}>
 		GAME_JUDGEMENT_VISUAL_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_VISUAL_TEST_DEFAULT}>
+		GAME_JUDGEMENT_SOLID_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_SOLID_PROBE_DEFAULT}>
+		GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_TEXTURE_PROBE_DEFAULT}>
+		GAME_JUDGEMENT_CLUT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_CLUT_PROBE_DEFAULT}>
+		GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT}>
+		GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT}>
+		GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT}>
 		GAME_SCENE_DEMO_DEFAULT=$<BOOL:${FUNKIN_PS1_SCENE_DEMO_DEFAULT}>
 		GAME_HEALTH_BAR_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
@@ -303,8 +473,38 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		bopeebo_playable_iso.xml
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
-			"${_menu_audio_vagi}")
+			"${_week2_visual_payload}"
+			"${_week1_visual_payload}"
+			"${_week3_visual_payload}"
+			${_song_audio_outputs}
+			${_song_chart_outputs}
+			"${_menu_audio_vagi}" "${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 elseif(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON OR DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
 	message(FATAL_ERROR "Playable Bopeebo requires both FUNKIN_PS1_BOPEEBO_CHART_JSON and FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH to name existing files")
+endif()
+
+# Minimal diagnostic image: prove PS-X EXE/ISO startup and a solid GPU frame,
+# independently from gameplay, audio, fonts, CD callbacks, and scene assets.
+psn00bsdk_add_executable(funkin-ps1-boot-probe GPREL boot_probe.c)
+psn00bsdk_add_cd_image(
+	ps1-boot-probe-disc
+	funkin-ps1-boot-probe
+	boot_probe_iso.xml
+	DEPENDS funkin-ps1-boot-probe system.cnf
+)
+
+if(DEFINED _week1_visual_payload)
+# Incremental startup probe: read one verified scene page, transfer it and its
+# official CLUT to VRAM, then draw a textured quad. It does not start gameplay.
+	psn00bsdk_add_executable(funkin-ps1-startup-stage-probe GPREL
+		startup_stage_probe.c "${_playable_visual_header}")
+	target_include_directories(funkin-ps1-startup-stage-probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+	psn00bsdk_add_cd_image(
+		ps1-startup-stage-probe-disc
+		funkin-ps1-startup-stage-probe
+		startup_stage_probe_iso.xml
+		DEPENDS funkin-ps1-startup-stage-probe system.cnf
+			"${_week1_visual_payload}" "${_playable_visual_header}"
+	)
 endif()
 

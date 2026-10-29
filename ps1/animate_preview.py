@@ -171,11 +171,15 @@ class Rig:
                 else:
                     inv = 255 - alpha
                     olda = out[2][di + 3]
-                    oa = alpha + olda * inv // 255
-                    if oa:
-                        for channel in range(3):
-                            out[2][di + channel] = (self.atlas_pixels[si + channel] * alpha + out[2][di + channel] * olda * inv // 255) // oa
-                    out[2][di + 3] = oa
+                    # Composite in the same fixed-point domain for numerator
+                    # and denominator. The previous rounded denominator could
+                    # make a bright translucent overlap exceed byte range.
+                    opacity = alpha * 255 + olda * inv
+                    for channel in range(3):
+                        source = self.atlas_pixels[si + channel]
+                        target = out[2][di + channel]
+                        out[2][di + channel] = (source * alpha * 255 + target * olda * inv + opacity // 2) // opacity
+                    out[2][di + 3] = (opacity + 127) // 255
 
     def render_positioned(self, frame_index, canvas=1200):
         pixels = bytearray(canvas * canvas * 4)
@@ -223,3 +227,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

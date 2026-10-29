@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <psxapi.h>
 #include <psxetc.h>
@@ -55,9 +56,10 @@
 #include "bopeebo_sfx_data.h"
 #endif
 #if TEST_PLAYABLE_BOPEEBO
-#include "bopeebo_chart.h"
+#include "week1_catalog.h"
 #include "bopeebo_visual_data.h"
 #include "menu_audio_data.h"
+#define BOPEEBO_CHART_RATE PS1_CHART_RATE
 #define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
 #define GAME_MAX_PRIMS 220u
 /* Worst chart frame: 8 receptors + 3 textured quads for each of 58 holds
@@ -93,6 +95,24 @@
 #ifndef GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
 #define GAME_JUDGEMENT_VISUAL_TEST_DEFAULT 0
 #endif
+#ifndef GAME_JUDGEMENT_SOLID_PROBE_DEFAULT
+#define GAME_JUDGEMENT_SOLID_PROBE_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT
+#define GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_CLUT_PROBE_DEFAULT
+#define GAME_JUDGEMENT_CLUT_PROBE_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+#define GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT
+#define GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT 0
+#endif
+#ifndef GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT
+#define GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT 0
+#endif
 
 typedef struct {
 	int16_t first_center_x;
@@ -108,23 +128,71 @@ typedef enum {
 	SCREEN_MAIN_MENU,
 	SCREEN_FREEPLAY,
 	SCREEN_GAMEPLAY,
-	SCREEN_PAUSE
+	SCREEN_PAUSE,
+	SCREEN_GAME_OVER,
+	SCREEN_COUNTDOWN
 } GameScreen;
 static GameScreen game_screen = SCREEN_TITLE;
 static uint32_t menu_ticks;
+static uint32_t freeplay_dj_start_frame;
+static int freeplay_dj_frame_loaded = -1;
+static bool menu_dj_vram_loaded;
 static bool menu_visuals_loaded;
+static bool week2_visuals_loaded;
+static bool week3_visuals_loaded;
+static int menu_art_loaded = -1;
+static bool menu_capsule_loaded;
+static int menu_selection = 1; /* Freeplay is the only functional destination. */
+static int menu_selection_background_loaded = -1;
 static int menu_font_id = -1;
-typedef struct { const char *song; const char *difficulty; } FreeplayEntry;
-static const FreeplayEntry freeplay_catalog[] = {
-	{ "BOPEEBO", "NORMAL" }
+static int menu_header_font_id = -1;
+static int menu_detail_font_id = -1;
+static int menu_song_font_id = -1;
+static int menu_button_anim_loaded = -1;
+typedef enum { DEATH_INTRO, DEATH_LOOP, DEATH_CONFIRM } DeathPhase;
+static DeathPhase death_phase;
+static uint32_t death_phase_start_frame;
+static uint32_t countdown_start_frame;
+static int death_frame_loaded = -1;
+static unsigned freeplay_song_selection;
+static unsigned freeplay_difficulty_selection = 1u;
+#define FREEPLAY_CATALOG_COUNT 26u
+#define FREEPLAY_PLAYABLE_COUNT PS1_SONG_COUNT
+enum {
+	MENU_ICON_GF, MENU_ICON_DAD, MENU_ICON_SPOOKY, MENU_ICON_PICO,
+	MENU_ICON_MOM, MENU_ICON_MONSTER, MENU_ICON_PARENTS, MENU_ICON_SENPAI,
+	MENU_ICON_SPIRIT, MENU_ICON_TANKMAN, MENU_ICON_DARNELL
 };
+typedef struct { const char *label; uint8_t icon; } FreeplayCatalogEntry;
+static const FreeplayCatalogEntry freeplay_catalog[FREEPLAY_CATALOG_COUNT] = {
+	{"TUTORIAL", MENU_ICON_GF}, {"BOPEEBO", MENU_ICON_DAD},
+	{"FRESH", MENU_ICON_SPOOKY}, {"DADBATTLE", MENU_ICON_DAD},
+	{"SPOOKEEZ", MENU_ICON_SPOOKY}, {"SOUTH", MENU_ICON_SPOOKY},
+	{"MONSTER", MENU_ICON_MONSTER}, {"PICO", MENU_ICON_PICO},
+	{"PHILLY N", MENU_ICON_PICO}, {"BLAMMED", MENU_ICON_PICO},
+	{"SATIN P", MENU_ICON_MOM}, {"HIGH", MENU_ICON_MOM},
+	{"MILF", MENU_ICON_MOM}, {"COCOA", MENU_ICON_PARENTS},
+	{"EGGNOG", MENU_ICON_PARENTS}, {"WINTER H", MENU_ICON_MONSTER},
+	{"SENPAI", MENU_ICON_SENPAI}, {"ROSES", MENU_ICON_SENPAI},
+	{"THORNS", MENU_ICON_SPIRIT}, {"UGH", MENU_ICON_TANKMAN},
+	{"GUNS", MENU_ICON_TANKMAN}, {"STRESS", MENU_ICON_TANKMAN},
+	{"DARNELL", MENU_ICON_DARNELL}, {"LIT UP", MENU_ICON_DARNELL},
+	{"TWOHOT", MENU_ICON_DARNELL}, {"BLAZIN", MENU_ICON_DARNELL}
+};
+static int freeplay_icon_rows_loaded = -1;
+static uint32_t freeplay_best_score[PS1_SONG_COUNT][PS1_DIFFICULTY_COUNT];
+static uint8_t freeplay_best_percent[PS1_SONG_COUNT][PS1_DIFFICULTY_COUNT];
+static const Ps1Song *active_song = &ps1_song_catalog[0];
+static Ps1Chart loaded_chart_storage;
+static const Ps1Chart *active_chart;
+static uint8_t *active_chart_blob;
 
 /* Separate geometry/state groups preserve the future two-player split. */
 static const NoteGroupLayout note_groups[2] = {
 	{ 24, 78, 18, 16, 24, 0 }, /* Dad/autoplay: 16px arrow edge aligns with action-safe x=16 */
 	{ 176, 194, 32, 30, 100, 1 } /* BF/player: raised to leave clear lower margin */
 };
-static uint8_t game_note_state[BOPEEBO_NOTE_COUNT];
+static uint8_t game_note_state[PS1_MAX_NOTE_COUNT];
 static int16_t active_hold[4] = { -1, -1, -1, -1 };
 static uint32_t hold_last_sample[4];
 static uint32_t receiver_flash_until[2][4];
@@ -133,6 +201,7 @@ static int32_t score;
 static uint32_t combo;
 static uint32_t misses;
 static uint32_t hits;
+static uint32_t completion_hits;
 static uint16_t health_q8 = 256;
 static bool bf_miss_silenced;
 static uint8_t bf_visual_state;
@@ -145,6 +214,7 @@ static uint32_t dad_visual_until;
 static uint8_t last_judgement;
 static uint32_t judgement_until;
 static uint32_t judgement_duration_samples;
+static uint32_t judgement_generation;
 static int32_t combo_popup_value = -1;
 static uint32_t combo_popup_start_samples;
 static uint32_t combo_popup_until;
@@ -158,6 +228,29 @@ static bool judgement_last_draw_submitted;
 static uint32_t judgement_last_draw_frame;
 static uint32_t gameplay_frame_counter;
 static uint16_t last_game_pressed;
+typedef struct {
+	bool valid;
+	bool active;
+	bool superseded;
+	bool draw_attempted;
+	bool draw_submitted;
+	uint8_t judgement;
+	uint8_t page;
+	uint8_t depth;
+	uint8_t u, v;
+	uint16_t texture_w, texture_h;
+	uint16_t page_x, page_y;
+	uint16_t tpage;
+	uint16_t clut_x, clut_y;
+	uint16_t attempts, submissions;
+	int16_t x, y;
+	uint16_t width, height;
+	uint32_t hit_number;
+	uint32_t generation;
+	uint32_t hit_frame, hit_samples, expiry_samples;
+	uint32_t draw_frame, draw_samples;
+} JudgementHitTrace;
+static JudgementHitTrace last_hit_trace;
 #if GAME_JUDGEMENT_TEST_DEFAULT || GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
 static uint8_t judgement_test_next;
 static uint8_t judgement_test_hits;
@@ -279,6 +372,11 @@ static int sfx_transfer_completed;
 static bool sfx_uploaded;
 #endif
 static void abort_cd_read(void);
+static bool read_cd_file_alloc(const char *path, uint8_t **data_out, size_t *size_out);
+static bool read_cd_file_range(const char *path, unsigned sector_offset,
+	unsigned sectors, void *buffer);
+static bool load_song_chart(const char *path);
+static void release_song_chart(void);
 static bool start_stream_from_disc(void);
 #if TEST_PLAYABLE_BOPEEBO
 static bool feed_stream(void);
@@ -304,7 +402,8 @@ enum {
 	FAIL_BUFFER_TIMEOUT = 6,
 	FAIL_STREAM_START = 7,
 	FAIL_UNDERRUN = 8,
-	FAIL_SFX_UPLOAD = 9
+	FAIL_SFX_UPLOAD = 9,
+	FAIL_ASSET_LOAD = 10
 };
 
 enum {
@@ -353,19 +452,6 @@ static const char *read_error_name(int cause)
 static void init_video(void)
 {
 	ResetGraph(0);
-	FntLoad(960, 0);
-#if TEST_PLAYABLE_BOPEEBO
-		hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
-		/* Put the score on a second row under the life bar. The previous top-row
-		   placement overlapped the bar's right edge at 320x240. */
-		score_font_id = FntOpen(208, 37, 96, 9, 0, 16);
-		diagnostics_font_id = FntOpen(
-			GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 24, 56,
-			GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 272,
-			GAME_HEALTH_BAR_TEST_DEFAULT ? 24 : 164, 0,
-			GAME_HEALTH_BAR_TEST_DEFAULT ? 80 : 512);
-		menu_font_id = FntOpen(48, 183, 256, 42, 0, 48);
-#endif
 	for (int i = 0; i < 2; i++) {
 		SetDefDrawEnv(&frames[i].draw, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
 		SetDefDispEnv(&frames[i].display, 0, i * SCREEN_H, SCREEN_W, SCREEN_H);
@@ -373,26 +459,82 @@ static void init_video(void)
 		frames[i].draw.isbg = 1;
 	}
 	draw_index = 0;
+	PutDrawEnv(&frames[0].draw);
+	PutDispEnv(&frames[0].display);
+	/* First visible boot marker uses only a solid GPU fill, before font/CD/SPU
+	   setup. It distinguishes PS-X EXE startup from later asset-loading stalls. */
+	FILL boot_fill;
+	setFill(&boot_fill);
+	setRGB0(&boot_fill, 8, 8, 20);
+	setXY0(&boot_fill, 0, 0);
+	setWH(&boot_fill, SCREEN_W, SCREEN_H);
+	DrawPrim((uint32_t *)&boot_fill);
+	DrawSync(0);
 	SetDispMask(1);
+	VSync(0);
+	FntLoad(960, 0);
+#if TEST_PLAYABLE_BOPEEBO
+	hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
+	/* Put the score on a second row under the life bar. The previous top-row
+	   placement overlapped the bar's right edge at 320x240. */
+	score_font_id = FntOpen(208, 37, 96, 9, 0, 16);
+	diagnostics_font_id = FntOpen(
+		GAME_HEALTH_BAR_TEST_DEFAULT ? 16 : 8,
+		GAME_HEALTH_BAR_TEST_DEFAULT ? 56 : 104,
+		GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 304,
+		GAME_HEALTH_BAR_TEST_DEFAULT ? 24 : 48, 0,
+		GAME_HEALTH_BAR_TEST_DEFAULT ? 80 : 160);
+	menu_font_id = FntOpen(8, 191, 304, 45, 0, 96);
+	menu_header_font_id = FntOpen(164, 15, 152, 10, 0, 24);
+	menu_detail_font_id = FntOpen(24, 177, 272, 34, 0, 64);
+	menu_song_font_id = -1; /* capsule titles use the official pixel-letter atlas */
+#endif
 }
 
 #if TEST_PLAYABLE_BOPEEBO
-static void load_bopeebo_visuals(void)
+static bool load_visual_page_from_disc(unsigned page_index, uint32_t *page_data)
 {
-	/* Keep the dedicated menu page out of the gameplay VRAM residency set. */
+	if (!page_data || page_index >= BOPEEBO_VISUAL_PAGE_COUNT) return false;
+	const BopeeboVisualPage *info = &bopeebo_visual_page_table[page_index];
+	RECT rect;
+	unsigned sector, sectors;
+	if (page_index < BOPEEBO_VISUAL_PAGE8_COUNT) {
+		rect = (RECT){ (short)info->x, (short)info->y, 128, 256 };
+		sector = page_index * 32u;
+		sectors = 32u;
+	} else {
+		unsigned page4 = page_index - BOPEEBO_VISUAL_PAGE8_COUNT;
+		rect = (RECT){ (short)info->x, (short)info->y, 64, 256 };
+		sector = BOPEEBO_VISUAL_PAGE8_COUNT * 32u + page4 * 16u;
+		sectors = 16u;
+	}
+	if (!read_cd_file_range("\\W1SCENE.BIN", sector, sectors, page_data)) return false;
+	LoadImage(&rect, page_data);
+	DrawSync(0);
+	return true;
+}
+
+static bool load_bopeebo_visuals(void)
+{
+	/* The page atlas lives on CD; retain only one aligned page in main RAM. */
+	uint32_t *page_data = (uint32_t *)malloc(65536u);
+	if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
 	unsigned menu_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
 	for (unsigned page = 0; page < BOPEEBO_VISUAL_PAGE8_COUNT; page++) {
 		if (page == menu_page) continue;
-		const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
-		RECT rect = { (short)info->x, (short)info->y, 128, 256 };
-		LoadImage(&rect, (uint32_t *)bopeebo_visual_pages8[page]);
+		if (!load_visual_page_from_disc(page, page_data)) {
+			free(page_data); failure_code = FAIL_ASSET_LOAD; return false;
+		}
 	}
 	for (unsigned page = 0; page < BOPEEBO_VISUAL_PAGE4_COUNT; page++) {
-		unsigned table_index = BOPEEBO_VISUAL_PAGE8_COUNT + page;
-		const BopeeboVisualPage *info = &bopeebo_visual_page_table[table_index];
-		RECT rect = { (short)info->x, (short)info->y, 64, 256 };
-		LoadImage(&rect, (uint32_t *)bopeebo_visual_pages4[page]);
+		if (!load_visual_page_from_disc(BOPEEBO_VISUAL_PAGE8_COUNT + page, page_data)) {
+			free(page_data); failure_code = FAIL_ASSET_LOAD; return false;
+		}
 	}
+	/* LoadImage() queues asynchronous DrawOps; the SDK queue holds only 16.
+	   Drain after 10 texture-page uploads before submitting the 8 CLUT uploads. */
+	DrawSync(0);
+	free(page_data);
 	/* The second 320x240 framebuffer ends at y=495; keep CLUTs below it. */
 	RECT palette8_rect = { 0, 496, 256, 1 };
 	LoadImage(&palette8_rect, (uint32_t *)bopeebo_visual_palette8);
@@ -406,21 +548,168 @@ static void load_bopeebo_visuals(void)
 		RECT palette_rect = { x, y, 16, 1 };
 		LoadImage(&palette_rect, (uint32_t *)bopeebo_visual_palette_ui4[lane]);
 	}
-	RECT popup_palette_rect = { 272, 480, 16, 1 };
+	RECT popup_palette_rect = { 288, 480, 16, 1 };
 	LoadImage(&popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
+#if GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+	/* Preserve the v45 A/B probe that targets the old, now-disproved slot. */
+	RECT old_popup_palette_rect = { 272, 480, 16, 1 };
+	LoadImage(&old_popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
+#endif
+#if GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT
+	/* Put identical popup palette data at the BF CLUT address proven visible in v43/v44. */
+	RECT relocated_popup_palette_rect = { 256, 496, 16, 1 };
+	LoadImage(&relocated_popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
+#elif GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT
+	/* Candidate permanent slot: free row-480 CLUT space after the right-lane palette. */
+	RECT relocated_popup_palette_rect = { 288, 480, 16, 1 };
+	LoadImage(&relocated_popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
+#endif
 	DrawSync(0);
+	return true;
 }
 
-static void load_menu_visuals(void)
+static bool load_menu_visuals(void)
 {
-	if (menu_visuals_loaded) return;
+	if (menu_visuals_loaded) return true;
 	unsigned page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
-	if (page >= BOPEEBO_VISUAL_PAGE8_COUNT) return;
+	if (page >= BOPEEBO_VISUAL_PAGE8_COUNT) return false;
 	const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
 	RECT rect = { (short)info->x, (short)info->y, 128, 256 };
-	LoadImage(&rect, (uint32_t *)bopeebo_visual_pages8[page]);
+	uint32_t *page_data = (uint32_t *)malloc(65536u);
+	if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+	if (!read_cd_file_range("\\W1SCENE.BIN", page * 32u, 32u, page_data)) {
+		free(page_data); failure_code = FAIL_ASSET_LOAD; return false;
+	}
+	LoadImage(&rect, page_data);
+	DrawSync(0);
+	free(page_data);
+	RECT palette = { 0, 496, 256, 1 };
+	LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
 	DrawSync(0);
 	menu_visuals_loaded = true;
+	return true;
+}
+
+/* Week 2 overlays the first three gameplay texture pages and a dedicated
+   CLUT. Restore the original pages before any Week 1 song is entered. */
+static void load_week2_visuals(bool enable)
+{
+	if (enable != week2_visuals_loaded) {
+		DrawSync(0);
+		if (enable) {
+			/* One 64 KiB staging page at a time keeps the CD load within the
+			   PS1's tight main-RAM budget. */
+			uint32_t *page_data = (uint32_t *)malloc(65536u);
+			if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+			for (unsigned i = 0; i < BOPEEBO_WEEK2_PAGE_COUNT; i++) {
+				unsigned page_index = bopeebo_week2_page_slots[i];
+				const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+				RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+				if (!read_cd_file_range("\\W2SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+				DrawSync(0);
+			}
+			free(page_data);
+		} else {
+			uint32_t *page_data = (uint32_t *)malloc(65536u);
+			if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+			for (unsigned i = 0; i < BOPEEBO_WEEK2_PAGE_COUNT; i++) {
+				if (!load_visual_page_from_disc(bopeebo_week2_page_slots[i], page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+			}
+			free(page_data);
+		}
+	}
+	/* Menu transitions reload the normal CLUT while the Week 2 page data can
+	   remain resident. Reapply it on every Week 2 entry, even without page uploads. */
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		/* Payload layout: three full pages followed by a 256-word CLUT. */
+		if (!read_cd_file_range("\\W2SCENE.BIN", BOPEEBO_WEEK2_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week2_visuals_loaded = enable;
+}
+
+static void load_week3_visuals(bool enable)
+{
+	if (enable != week3_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		for (unsigned i = 0; i < BOPEEBO_WEEK3_PAGE_COUNT; i++) {
+			unsigned page_index = bopeebo_week3_page_slots[i];
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\W3SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(page_index, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\W3SCENE.BIN", BOPEEBO_WEEK3_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week3_visuals_loaded = enable;
+}
+
+static void load_freeplay_dj_pages(bool restore_gameplay)
+{
+	if (restore_gameplay == !menu_dj_vram_loaded) return;
+	DrawSync(0);
+	uint32_t *page_data = restore_gameplay ? (uint32_t *)malloc(65536u) : 0;
+	if (restore_gameplay && !page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+	for (unsigned i = 0; i < BOPEEBO_MENU_DJ_PAGE_COUNT; i++) {
+		unsigned page_index = BOPEEBO_MENU_DJ_FIRST_PAGE + i;
+		const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+		RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+		if (restore_gameplay) {
+			if (!load_visual_page_from_disc(page_index, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+		} else {
+			LoadImage(&rect, (uint32_t *)bopeebo_menu_dj_pages[i]);
+		}
+	}
+	if (page_data) free(page_data);
+	/* Full-page transfers are batched and drained once, like the known-good
+	   gameplay texture loader. No per-frame VRAM writes occur during Freeplay. */
+	DrawSync(0);
+	menu_dj_vram_loaded = !restore_gameplay;
+	freeplay_dj_frame_loaded = -1;
 }
 
 static void release_menu_visuals(void)
@@ -437,6 +726,238 @@ static void release_menu_visuals(void)
 	DrawPrim((uint32_t *)&fill);
 	DrawSync(0);
 	menu_visuals_loaded = false;
+	menu_art_loaded = -1;
+	menu_capsule_loaded = false;
+	freeplay_dj_frame_loaded = -1;
+	freeplay_icon_rows_loaded = -1;
+	menu_button_anim_loaded = -1;
+	menu_selection_background_loaded = -1;
+}
+
+static void load_menu_screen_art(unsigned art)
+{
+	if (art >= BOPEEBO_MENU_SCREEN_COUNT) return;
+	if (menu_art_loaded == (int)art) return;
+	if (!menu_visuals_loaded && !load_menu_visuals()) return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+	DrawSync(0);
+	LoadImage(&rect, (uint32_t *)bopeebo_menu_screen_pages[art]);
+	DrawSync(0);
+	menu_capsule_loaded = art >= SCREEN_FREEPLAY &&
+		art < SCREEN_FREEPLAY + PS1_DIFFICULTY_COUNT;
+	freeplay_dj_frame_loaded = -1;
+	menu_art_loaded = (int)art;
+	menu_button_anim_loaded = -1;
+	menu_selection_background_loaded = -1;
+	freeplay_icon_rows_loaded = -1;
+	if (menu_capsule_loaded) {
+		static const short icon_u[4] = { 196, 224, 196, 224 };
+		static const short icon_v[4] = { 192, 192, 220, 220 };
+		for (unsigned slot = 0; slot < 4u; slot++) {
+			unsigned catalog_index = freeplay_song_selection + slot;
+			if (catalog_index >= FREEPLAY_CATALOG_COUNT) continue;
+			unsigned icon = freeplay_catalog[catalog_index].icon;
+			RECT icon_rect = { (short)(page->x + icon_u[slot] / 2),
+				(short)(page->y + icon_v[slot]), 14, 28 };
+			DrawSync(0);
+			LoadImage(&icon_rect, (uint32_t *)bopeebo_menu_character_icons[icon]);
+		}
+		DrawSync(0);
+		freeplay_icon_rows_loaded = (int)freeplay_song_selection;
+	}
+	if (menu_capsule_loaded)
+		load_freeplay_dj_pages(false);
+}
+
+static void load_freeplay_icon_rows(void)
+{
+	if (!menu_capsule_loaded || menu_art_loaded < SCREEN_FREEPLAY ||
+		menu_art_loaded >= SCREEN_FREEPLAY + PS1_DIFFICULTY_COUNT ||
+		freeplay_icon_rows_loaded == (int)freeplay_song_selection)
+		return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	static const short icon_u[4] = { 196, 224, 196, 224 };
+	static const short icon_v[4] = { 192, 192, 220, 220 };
+	for (unsigned slot = 0; slot < 4u; slot++) {
+		unsigned catalog_index = freeplay_song_selection + slot;
+		if (catalog_index >= FREEPLAY_CATALOG_COUNT) continue;
+		unsigned icon = freeplay_catalog[catalog_index].icon;
+		RECT icon_rect = { (short)(page->x + icon_u[slot] / 2),
+			(short)(page->y + icon_v[slot]), 14, 28 };
+		DrawSync(0);
+		LoadImage(&icon_rect, (uint32_t *)bopeebo_menu_character_icons[icon]);
+	}
+	DrawSync(0);
+	freeplay_icon_rows_loaded = (int)freeplay_song_selection;
+}
+
+static void load_menu_selection_background(unsigned selection)
+{
+	if (selection > 3u || menu_selection_background_loaded == (int)selection) return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	static const short source_y[4] = { 19, 58, 96, 134 };
+	/* Rebuild the base before clearing the new row, restoring the prior row's
+	   idle label instead of leaving a blank trail as selection moves. */
+	if (menu_selection_background_loaded >= 0) {
+		RECT screen = { (short)page->x, (short)page->y, 128, 256 };
+		DrawSync(0);
+		LoadImage(&screen, (uint32_t *)bopeebo_menu_screen_pages[SCREEN_MAIN_MENU]);
+		DrawSync(0);
+	}
+	RECT rect = { (short)(page->x + 32), (short)(page->y + source_y[selection]), 64, 36 };
+	DrawSync(0);
+	LoadImage(&rect, (uint32_t *)bopeebo_menu_row_backgrounds[selection]);
+	DrawSync(0);
+	menu_selection_background_loaded = (int)selection;
+}
+
+static void load_menu_button_frame(unsigned selection, unsigned animation)
+{
+	if (selection > 3u || animation > 2u) return;
+	unsigned frame = selection * 3u + animation;
+	if (menu_button_anim_loaded == (int)frame) return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	RECT rect = { (short)page->x, (short)(page->y + 192), 64, 36 };
+	DrawSync(0);
+	LoadImage(&rect, (uint32_t *)bopeebo_menu_button_frames[frame]);
+	DrawSync(0);
+	menu_button_anim_loaded = (int)frame;
+}
+
+static void draw_menu_texture_sprite(unsigned u, unsigned v, unsigned source_w, unsigned source_h,
+				    int x, int y, int width, int height)
+{
+	if (visual_prim_count >= visual_prim_limit) return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	setUV4(p, u, v, u + source_w - 1u, v, u, v + source_h - 1u,
+		u + source_w - 1u, v + source_h - 1u);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static int freeplay_letter_index(char letter)
+{
+	static const char letters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	for (int i = 0; letters[i]; i++)
+		if (letters[i] == letter) return i;
+	return -1;
+}
+
+static void draw_freeplay_text(const char *text, int x, int y, int max_width,
+	int glyph_w, int glyph_h, int advance, unsigned char r, unsigned char g,
+	unsigned char b)
+{
+	int cursor = 0;
+	while (*text && cursor + glyph_w <= max_width) {
+		char letter = *text++;
+		if (letter == ' ') {
+			cursor += advance;
+			continue;
+		}
+		int index = freeplay_letter_index(letter);
+		if (index < 0) continue;
+		unsigned u = 148u + (unsigned)(index % 8) * 6u;
+		unsigned v = 192u + (unsigned)(index / 8) * 9u;
+		if (visual_prim_count < visual_prim_limit) {
+			unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+			POLY_FT4 *p = &visual_prims[visual_prim_count++];
+			setPolyFT4(p);
+			setRGB0(p, r, g, b);
+			setXY4(p, x + cursor, y, x + cursor + glyph_w, y,
+				x + cursor, y + glyph_h, x + cursor + glyph_w, y + glyph_h);
+		/* Each VCR glyph owns a 6x9 atlas cell. Draw its 6x8 ink bounds,
+		   leaving the last row/column as a guard against adjacent UV bleed. */
+		setUV4(p, u, v, u + 5u, v, u, v + 7u, u + 5u, v + 7u);
+			p->tpage = getTPage(page->depth, 0, page->x, page->y);
+			setClut(p, 0, 496);
+			DrawPrim((uint32_t *)p);
+		}
+		cursor += advance;
+	}
+}
+
+static void draw_freeplay_catalog(void)
+{
+	static const short row_y[4] = { 56, 92, 128, 164 };
+	static const short row_x[4] = { 115, 131, 133, 117 };
+	if (!menu_capsule_loaded) return;
+	load_freeplay_icon_rows();
+	for (unsigned slot = 0; slot < 4u; slot++) {
+		unsigned catalog_index = freeplay_song_selection + slot;
+		if (catalog_index >= FREEPLAY_CATALOG_COUNT) continue;
+		int x = row_x[slot];
+		int y = row_y[slot];
+		draw_menu_texture_sprite(0, slot == 0u ? 192u : 224u,
+			BOPEEBO_MENU_CAPSULE_W, BOPEEBO_MENU_CAPSULE_H,
+			x, y, BOPEEBO_MENU_CAPSULE_W, BOPEEBO_MENU_CAPSULE_H);
+
+		unsigned icon = freeplay_catalog[catalog_index].icon;
+		int icon_u = 196 + (int)(slot & 1u) * 28;
+		int icon_v = 192 + (int)(slot >> 1u) * 28;
+		const uint8_t *bounds = bopeebo_menu_icon_bounds[icon];
+		int icon_x = x + 18 - bounds[2];
+		int icon_y = y + 16 - ((int)bounds[1] + bounds[3]) / 2;
+		draw_menu_texture_sprite((unsigned)icon_u, (unsigned)icon_v, 28, 28,
+			icon_x, icon_y, 28, 28);
+
+		bool locked = catalog_index >= FREEPLAY_PLAYABLE_COUNT;
+		/* Playable titles use the full text cavity. Locked entries reserve the
+		   right-hand capsule well for their LOCKED badge, as in the mockup. */
+		draw_freeplay_text(freeplay_catalog[catalog_index].label, x + 29,
+			y + 12, locked ? 59 : 89, 6, 8, 7, 224u, 224u, 224u);
+		if (locked)
+			draw_freeplay_text("LOCKED", x + 91, y + 13, 25, 4, 6, 4,
+				235u, 145u, 64u);
+	}
+}
+
+static void update_freeplay_dj_frame(void)
+{
+	if (game_screen != SCREEN_FREEPLAY || !menu_capsule_loaded ||
+		!menu_dj_vram_loaded) return;
+	/* The pinned Animate timeline runs at 24 fps. Intro and Idle are sampled
+	   every other source frame for a stable 12 fps menu playback rate. */
+	uint32_t elapsed = gameplay_frame_counter - freeplay_dj_start_frame;
+	uint32_t source_frame = (uint32_t)(((uint64_t)elapsed * 2u) / 5u);
+	unsigned sequence_index;
+	if (source_frame < 17u) {
+		sequence_index = source_frame / 2u;
+	} else {
+		sequence_index = 9u + ((source_frame - 17u) / 2u) % 7u;
+	}
+	if (sequence_index >= BOPEEBO_MENU_DJ_FRAME_COUNT ||
+		(int)sequence_index == freeplay_dj_frame_loaded)
+		return;
+	freeplay_dj_frame_loaded = (int)sequence_index;
+}
+
+static void draw_menu_strip_sprite(unsigned u, int x, int y, int width, int height)
+{
+	draw_menu_texture_sprite(u, 192, 128, 36, x, y, width, height);
+}
+
+static void load_death_frame(unsigned frame)
+{
+	if (frame >= 22u || death_frame_loaded == (int)frame) return;
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	RECT rect = { (short)page->x, (short)page->y, 40, 96 };
+	DrawSync(0);
+	LoadImage(&rect, (uint32_t *)bopeebo_death_frames[frame]);
+	DrawSync(0);
+	death_frame_loaded = (int)frame;
 }
 #endif
 
@@ -850,10 +1371,10 @@ static int32_t pbot1_score(uint32_t delta_samples, uint32_t rate)
 static uint32_t judgement_popup_duration(uint32_t samples, uint32_t rate)
 {
 	unsigned tempo_index = 0;
-	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
-		bopeebo_tempo_changes[tempo_index + 1u].sample <= samples)
+	while (tempo_index + 1u < active_chart->tempo_count &&
+		active_chart->tempos[tempo_index + 1u].sample <= samples)
 		tempo_index++;
-	uint32_t bpm_centi = bopeebo_tempo_changes[tempo_index].bpm_centi;
+	uint32_t bpm_centi = active_chart->tempos[tempo_index].bpm_centi;
 	uint64_t two_beats = bpm_centi ? (uint64_t)rate * 12000u / bpm_centi : (uint64_t)rate * 2u;
 	return (uint32_t)(two_beats + rate / 5u);
 }
@@ -874,12 +1395,45 @@ static void update_combo_popup(uint32_t previous_combo, uint32_t current_combo,
 	combo_popup_start_samples = samples;
 
 	unsigned tempo_index = 0;
-	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
-		bopeebo_tempo_changes[tempo_index + 1u].sample <= samples)
+	while (tempo_index + 1u < active_chart->tempo_count &&
+		active_chart->tempos[tempo_index + 1u].sample <= samples)
 		tempo_index++;
-	uint32_t bpm_centi = bopeebo_tempo_changes[tempo_index].bpm_centi;
+	uint32_t bpm_centi = active_chart->tempos[tempo_index].bpm_centi;
 	uint64_t two_beats = bpm_centi ? (uint64_t)rate * 12000u / bpm_centi : (uint64_t)rate;
 	combo_popup_until = samples + (uint32_t)(two_beats + rate / 5u);
+}
+
+static void snapshot_judgement_geometry(JudgementHitTrace *trace)
+{
+	static const uint8_t popup_frame[5] = {
+		0u, VIS_UI_JUDGEMENT_SICK, VIS_UI_JUDGEMENT_GOOD,
+		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
+	};
+	if (trace->judgement == 0u || trace->judgement > 4u) return;
+	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[trace->judgement]];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[popup->page];
+	unsigned clut_x = 0, clut_y = 496;
+	if (popup->palette == 1u) { clut_x = 256; clut_y = 496; }
+	else if (popup->palette == 2u) { clut_x = 0; clut_y = 480; }
+	else if (popup->palette >= 3u && popup->palette <= 5u)
+		clut_x = 272u + (popup->palette - 3u) * 16u;
+	else if (popup->palette == 6u) { clut_x = 256; clut_y = 480; }
+	else if (popup->palette == 7u) { clut_x = 288; clut_y = 480; }
+	trace->page = popup->page;
+	trace->depth = page->depth;
+	trace->page_x = page->x;
+	trace->page_y = page->y;
+	trace->u = popup->u;
+	trace->v = popup->v;
+	trace->texture_w = popup->w;
+	trace->texture_h = popup->h;
+	trace->x = (int16_t)((SCREEN_W - ((int)popup->w * 164 + 50) / 100) / 2);
+	trace->y = 57;
+	trace->width = (uint16_t)(((int)popup->w * 164 + 50) / 100);
+	trace->height = (uint16_t)(((int)popup->h * 164 + 50) / 100);
+	trace->tpage = getTPage(page->depth, 0, page->x, page->y);
+	trace->clut_x = (uint16_t)clut_x;
+	trace->clut_y = (uint16_t)clut_y;
 }
 
 static int find_player_note(unsigned lane, uint32_t samples)
@@ -887,12 +1441,12 @@ static int find_player_note(unsigned lane, uint32_t samples)
 	int best = -1;
 	uint32_t best_delta = GAME_WINDOW_SAMPLES + 1u;
 	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		if (game_note_state[i] || bopeebo_notes[i].lane >= 4u ||
-		    bopeebo_notes[i].lane != lane)
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		if (game_note_state[i] || active_chart->notes[i].lane >= 4u ||
+		    active_chart->notes[i].lane != lane)
 			continue;
-		uint32_t delta = samples > bopeebo_notes[i].head ?
-			samples - bopeebo_notes[i].head : bopeebo_notes[i].head - samples;
+		uint32_t delta = samples > active_chart->notes[i].head ?
+			samples - active_chart->notes[i].head : active_chart->notes[i].head - samples;
 		if ((uint64_t)delta * 1000u <= (uint64_t)rate * 160u && delta < best_delta) {
 			best = (int)i;
 			best_delta = delta;
@@ -912,9 +1466,10 @@ static void game_miss(unsigned index, uint32_t samples, uint32_t rate)
 	add_health(-20);
 	bf_miss_silenced = true;
 	bf_visual_state = 2;
-	bf_visual_lane = (uint8_t)(bopeebo_notes[index].lane & 3u);
+	bf_visual_lane = (uint8_t)(active_chart->notes[index].lane & 3u);
 	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u; /* miss -> Shit; does not alter existing judgement math */
+	judgement_generation++;
 	last_judgement_delta_ms = 0xffffffffu;
 	judgement_duration_samples = judgement_popup_duration(samples, rate);
 	judgement_until = samples + judgement_duration_samples;
@@ -938,6 +1493,7 @@ static void game_hold_drop(unsigned lane, uint32_t remaining_samples, uint32_t r
 	bf_visual_start = samples;
 	bf_visual_until = samples + rate * 350u / 1000u;
 	last_judgement = 4u;
+	judgement_generation++;
 	last_judgement_delta_ms = 0xffffffffu;
 	judgement_duration_samples = judgement_popup_duration(samples, rate);
 	judgement_until = samples + judgement_duration_samples;
@@ -949,18 +1505,18 @@ static void game_update(uint32_t samples)
 {
 	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
 	static const uint16_t masks[4] = { PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT };
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		if (bopeebo_notes[i].lane >= 4u && !game_note_state[i] && samples >= bopeebo_notes[i].head) {
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		if (active_chart->notes[i].lane >= 4u && !game_note_state[i] && samples >= active_chart->notes[i].head) {
 			game_note_state[i] = 3; /* Dad chart lane: audio stem performs the note. */
-			dad_visual_lane = (uint8_t)(bopeebo_notes[i].lane & 3u);
+			dad_visual_lane = (uint8_t)(active_chart->notes[i].lane & 3u);
 			receiver_flash_until[0][dad_visual_lane] = samples + rate * 140u / 1000u;
 			dad_visual_start = samples;
-			dad_visual_until = bopeebo_notes[i].tail > bopeebo_notes[i].head ?
-				bopeebo_notes[i].tail : samples + rate * 250u / 1000u;
+			dad_visual_until = active_chart->notes[i].tail > active_chart->notes[i].head ?
+				active_chart->notes[i].tail : samples + rate * 250u / 1000u;
 		}
-		if (bopeebo_notes[i].lane < 4u && !game_note_state[i] &&
-		    samples > bopeebo_notes[i].head &&
-		    (uint64_t)(samples - bopeebo_notes[i].head) * 1000u > (uint64_t)rate * 160u)
+		if (active_chart->notes[i].lane < 4u && !game_note_state[i] &&
+		    samples > active_chart->notes[i].head &&
+		    (uint64_t)(samples - active_chart->notes[i].head) * 1000u > (uint64_t)rate * 160u)
 			game_miss(i, samples, rate);
 	}
 
@@ -969,7 +1525,7 @@ static void game_update(uint32_t samples)
 		bool down = (game_buttons & mask) == 0;
 		int16_t index = active_hold[lane];
 		if (index >= 0) {
-			uint32_t end = bopeebo_notes[index].tail;
+			uint32_t end = active_chart->notes[index].tail;
 			uint32_t until = samples < end ? samples : end;
 			if (until > hold_last_sample[lane]) {
 				uint32_t delta = until - hold_last_sample[lane];
@@ -1005,12 +1561,13 @@ static void game_update(uint32_t samples)
 			bf_visual_start = samples;
 			bf_visual_until = samples + rate * 350u / 1000u;
 			last_judgement = 4u;
+			judgement_generation++;
 			last_judgement_delta_ms = 0xffffffffu;
 			judgement_duration_samples = judgement_popup_duration(samples, rate);
 			judgement_until = samples + judgement_duration_samples;
 			continue;
 		}
-		uint32_t head = bopeebo_notes[target].head;
+		uint32_t head = active_chart->notes[target].head;
 		uint32_t diff = samples > head ? samples - head : head - samples;
 		game_note_state[target] = 1;
 		int32_t award = pbot1_score(diff, rate);
@@ -1022,17 +1579,28 @@ static void game_update(uint32_t samples)
 		else if (timing <= (uint64_t)rate * 90u) { combo++; add_health(4); last_judgement = 2u; }
 		else if (timing <= (uint64_t)rate * 135u) { combo = 0; last_judgement = 3u; }
 		else { combo = 0; add_health(-5); last_judgement = 4u; }
+		if (last_judgement <= 2u) completion_hits++;
+		judgement_generation++;
 		update_combo_popup(previous_combo, combo, samples, rate);
 		judgement_duration_samples = judgement_popup_duration(samples, rate);
 		judgement_until = samples + judgement_duration_samples;
 		hits++;
+		memset(&last_hit_trace, 0, sizeof(last_hit_trace));
+		last_hit_trace.valid = true;
+		last_hit_trace.judgement = last_judgement;
+		last_hit_trace.hit_number = hits;
+		last_hit_trace.generation = judgement_generation;
+		last_hit_trace.hit_frame = gameplay_frame_counter;
+		last_hit_trace.hit_samples = samples;
+		last_hit_trace.expiry_samples = judgement_until;
+		snapshot_judgement_geometry(&last_hit_trace);
 		receiver_flash_until[1][lane] = samples + rate * 140u / 1000u;
 		bf_miss_silenced = false;
 		bf_visual_state = 1;
 		bf_visual_lane = (uint8_t)lane;
-		bf_visual_until = bopeebo_notes[target].tail > samples ?
-			bopeebo_notes[target].tail : samples + rate * 220u / 1000u;
-		if (bopeebo_notes[target].tail > head && (game_buttons & mask) == 0) {
+		bf_visual_until = active_chart->notes[target].tail > samples ?
+			active_chart->notes[target].tail : samples + rate * 220u / 1000u;
+		if (active_chart->notes[target].tail > head && (game_buttons & mask) == 0) {
 			active_hold[lane] = (int16_t)target;
 			hold_last_sample[lane] = samples;
 		}
@@ -1052,14 +1620,14 @@ static void inject_judgement_test_hit(uint32_t samples, uint32_t rate)
 	if (judgement_test_next >= 4u) return;
 	/* Retire unrelated BF notes only in this QA build so their misses cannot
 	   replace a popup before its audio-clock window has elapsed. */
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		if (bopeebo_notes[i].lane >= 4u) continue;
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		if (active_chart->notes[i].lane >= 4u) continue;
 		bool scheduled = false;
 		for (unsigned j = judgement_test_next; j < 4u; j++)
 			if (note_indices[j] == i) scheduled = true;
 		if (!scheduled && !game_note_state[i]) game_note_state[i] = 1u;
 	}
-	const BopeeboNote *note = &bopeebo_notes[note_indices[judgement_test_next]];
+	const Ps1Note *note = &active_chart->notes[note_indices[judgement_test_next]];
 	if (note->lane >= 4u || note->tail != note->head) return;
 	uint32_t target = note->head + (uint32_t)(((uint64_t)rate * offsets_ms[judgement_test_next]) / 1000u);
 	if (samples < target) return;
@@ -1080,6 +1648,21 @@ static void draw_rect(int x, int y, int width, int height, uint8_t r, uint8_t g,
 	DrawPrim((uint32_t *)p);
 }
 
+#if GAME_JUDGEMENT_SOLID_PROBE_DEFAULT
+/* Diagnostic substitute for exactly the popup quad's bounds and draw point. */
+static bool draw_judgement_solid_probe(int x, int y, int width, int height)
+{
+	if (game_prim_count >= GAME_MAX_PRIMS || width <= 0 || height <= 0) return false;
+	POLY_F4 *p = &game_prims[game_prim_count++];
+	setPolyF4(p);
+	setRGB0(p, 255, 255, 0);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	DrawPrim((uint32_t *)p);
+	return true;
+}
+
+#endif
+
 static void draw_triangle(int x0, int y0, int x1, int y1, int x2, int y2,
 	uint8_t r, uint8_t g, uint8_t b)
 {
@@ -1093,17 +1676,19 @@ static void draw_triangle(int x0, int y0, int x1, int y1, int x2, int y2,
 
 static void set_visual_clut(POLY_FT4 *p, const BopeeboVisualFrame *visual)
 {
-	if (visual->palette == 1u) setClut(p, 256, 496);
+	if (visual->palette == 8u) setClut(p, 304, 480);
+	else if (visual->palette == 1u) setClut(p, 256, 496);
 	else if (visual->palette == 2u) setClut(p, 0, 480);
 	else if (visual->palette >= 3u && visual->palette <= 5u)
 		setClut(p, 272 + (visual->palette - 3u) * 16u, 496);
 	else if (visual->palette == 6u) setClut(p, 256, 480);
-	else if (visual->palette == 7u) setClut(p, 272, 480);
+	else if (visual->palette == 7u) setClut(p, 288, 480);
 	else setClut(p, 0, 496);
 }
 
-static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
-	uint8_t r, uint8_t g, uint8_t b)
+static bool draw_textured_frame_tinted_clut(unsigned frame, int x, int y, int width, int height,
+	uint8_t r, uint8_t g, uint8_t b, bool override_clut, unsigned override_clut_x,
+	unsigned override_clut_y)
 {
 	if (visual_prim_count >= visual_prim_limit) {
 		visual_prim_rejected++;
@@ -1122,14 +1707,29 @@ static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, 
 		visual->u, (uint8_t)(visual->v + visual->h - 1u),
 		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
 	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	set_visual_clut(p, visual);
+	if (override_clut) setClut(p, override_clut_x, override_clut_y);
+	else set_visual_clut(p, visual);
 	DrawPrim((uint32_t *)p);
 	return true;
+}
+
+static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
+	uint8_t r, uint8_t g, uint8_t b)
+{
+	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
+		r, g, b, false, 0u, 0u);
 }
 
 static bool draw_textured_frame(unsigned frame, int x, int y, int width, int height)
 {
 	return draw_textured_frame_tinted(frame, x, y, width, height, 128, 128, 128);
+}
+
+static bool draw_textured_frame_with_clut(unsigned frame, int x, int y, int width, int height,
+	unsigned clut_x, unsigned clut_y)
+{
+	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
+		128, 128, 128, true, clut_x, clut_y);
 }
 
 /* Sustain-only UV flip: rotate body and end-cap 180 degrees, leaving arrows
@@ -1269,8 +1869,8 @@ static void draw_note_group(uint32_t samples, unsigned group_index)
 			layout->arrow_size, layout->arrow_size);
 	}
 
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		const BopeeboNote *note = &bopeebo_notes[i];
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		const Ps1Note *note = &active_chart->notes[i];
 		bool dad_note = note->lane >= 4u;
 		if ((group_index == 0u) != dad_note) continue;
 		unsigned lane = note->lane & 3u;
@@ -1299,10 +1899,9 @@ static void draw_note_group(uint32_t samples, unsigned group_index)
 	}
 }
 
-/* Select toggles a GPU-side comparison sheet over the live song. Keeping the
-   art in the normal primitive path makes this useful for checking CLUT/tpage
-   residency after menu -> song transitions, rather than only inspecting the
-   generated atlas offline. */
+#if GAME_ARROW_DIAGNOSTIC_DEFAULT
+/* The arrow sheet is a separate QA build mode. Select in the playable build
+   is reserved for the compact judgement trace and never draws this overlay. */
 static void draw_arrow_diagnostic_sheet(void)
 {
 	static const uint8_t note[4] = {
@@ -1340,9 +1939,37 @@ static void draw_arrow_diagnostic_sheet(void)
 		draw_textured_frame(tail[lane], column_x[lane] + 1, 193, 12, 16);
 	}
 }
+#endif
 
 static void camera_target_for_focus(int focus, int *x, int *y)
 {
+	if (active_song->stage_id == 3u) {
+		switch (focus) {
+		case 1:
+			*x = BOPEEBO_WEEK3_PICO_X + BOPEEBO_WEEK3_PICO_CAMERA_X;
+			*y = BOPEEBO_WEEK3_PICO_Y - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_PICO_CAMERA_Y; break;
+		case 0:
+			*x = BOPEEBO_WEEK3_BF_X + BOPEEBO_WEEK3_BF_CAMERA_X;
+			*y = BOPEEBO_WEEK3_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_BF_CAMERA_Y; break;
+		case 2:
+			*x = BOPEEBO_WEEK3_GF_X + BOPEEBO_WEEK3_GF_CAMERA_X;
+			*y = BOPEEBO_WEEK3_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_GF_CAMERA_Y; break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
+	if (active_song->stage_id == 2u) {
+		switch (focus) {
+		case 1: *x = 48 + 19; *y = 108 - 40 - 13; break;
+		case 0: *x = 124 - 13; *y = 111 - (int)(BOPEEBO_BF_FRAME_H / 2u) - 13; break;
+		case 2: *x = 94; *y = 98 - 40; break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
 	switch (focus) {
 	case 1: /* mainStage.json: Dad origin and camera offset */
 		*x = BOPEEBO_DAD_X + BOPEEBO_DAD_CAMERA_X;
@@ -1367,9 +1994,9 @@ static uint32_t music_beat_q16(uint32_t samples)
 {
 	uint32_t rate = BOPEEBO_CHART_RATE;
 	unsigned tempo_index = 0;
-	while (tempo_index + 1u < BOPEEBO_TEMPO_CHANGE_COUNT &&
-	       bopeebo_tempo_changes[tempo_index + 1u].sample <= samples) tempo_index++;
-	const BopeeboTempoChange *tempo = &bopeebo_tempo_changes[tempo_index];
+	while (tempo_index + 1u < active_chart->tempo_count &&
+	       active_chart->tempos[tempo_index + 1u].sample <= samples) tempo_index++;
+	const Ps1Tempo *tempo = &active_chart->tempos[tempo_index];
 	uint64_t beat = tempo->beat_q16 +
 		(uint64_t)(samples - tempo->sample) * tempo->bpm_centi * 65536u /
 		((uint64_t)rate * 6000u);
@@ -1386,20 +2013,24 @@ static void draw_scene(uint32_t samples)
 	const uint32_t pulse_window_q16 = 22937u; /* first 35% of each tempo-mapped beat */
 	unsigned pulse_q8 = beat_phase < pulse_window_q16 ?
 		(unsigned)(((uint64_t)(pulse_window_q16 - beat_phase) * 7u) / pulse_window_q16) : 0u;
-	unsigned zoom_q8 = BOPEEBO_STAGE_CAMERA_ZOOM_Q8 + pulse_q8;
+	bool week2 = active_song->stage_id == 2u;
+	bool week3 = active_song->stage_id == 3u;
+	unsigned base_zoom_q8 = week2 ? BOPEEBO_WEEK2_CAMERA_ZOOM_Q8 :
+		week3 ? BOPEEBO_WEEK3_CAMERA_ZOOM_Q8 : BOPEEBO_STAGE_CAMERA_ZOOM_Q8;
+	unsigned zoom_q8 = base_zoom_q8 + pulse_q8;
 	/* Focus targets and stage transforms are generated from the official stage
 	   data; smooth transitions follow chart events, never individual note hits. */
 	unsigned event_index = 0;
-	while (event_index + 1u < BOPEEBO_CAMERA_EVENT_COUNT &&
-	       bopeebo_camera_events[event_index + 1u].sample <= samples) event_index++;
-	int target_focus = BOPEEBO_CAMERA_EVENT_COUNT ? bopeebo_camera_events[event_index].focus : 1;
-	int previous_focus = event_index ? bopeebo_camera_events[event_index - 1u].focus : target_focus;
+	while (event_index + 1u < active_chart->camera_count &&
+	       active_chart->camera[event_index + 1u].sample <= samples) event_index++;
+	int target_focus = active_chart->camera_count ? active_chart->camera[event_index].focus : 1;
+	int previous_focus = event_index ? active_chart->camera[event_index - 1u].focus : target_focus;
 	int from_x, from_y, to_x, to_y;
 	camera_target_for_focus(previous_focus, &from_x, &from_y);
 	camera_target_for_focus(target_focus, &to_x, &to_y);
 	uint32_t transition = rate * CAMERA_FOCUS_TIME_MS / 1000u;
-	uint32_t elapsed = samples >= bopeebo_camera_events[event_index].sample ?
-		samples - bopeebo_camera_events[event_index].sample : transition;
+	uint32_t elapsed = samples >= active_chart->camera[event_index].sample ?
+		samples - active_chart->camera[event_index].sample : transition;
 	if (elapsed > transition) elapsed = transition;
 	uint32_t t = transition ? (uint32_t)(((uint64_t)elapsed * 256u) / transition) : 256u;
 	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
@@ -1410,10 +2041,22 @@ static void draw_scene(uint32_t samples)
 
 	/* One world transform covers official stage props and characters; the
 	   extended stage composition safely overfills all camera crop edges. */
-	draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
-		camera_x, camera_y, zoom_q8, 256);
-	draw_visual_frame(VIS_STAGE_SCENE_1, BOPEEBO_STAGE_SCENE_X + 256,
-		BOPEEBO_STAGE_SCENE_Y, camera_x, camera_y, zoom_q8, 256);
+	if (week2) {
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, BOPEEBO_WEEK2_STAGE_X,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, BOPEEBO_WEEK2_STAGE_X + 256,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_0, BOPEEBO_WEEK3_STAGE_X,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_1, BOPEEBO_WEEK3_STAGE_X + 256,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+	} else {
+		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
+			camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_STAGE_SCENE_1, BOPEEBO_STAGE_SCENE_X + 256,
+			BOPEEBO_STAGE_SCENE_Y, camera_x, camera_y, zoom_q8, 256);
+	}
 
 	unsigned dad_frame;
 	if (samples < dad_visual_until) {
@@ -1434,15 +2077,84 @@ static void draw_scene(uint32_t samples)
 	unsigned gf_pose = (unsigned)((uint64_t)beat_phase * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT >> 16);
 	if (gf_pose >= BOPEEBO_GF_DANCE_FRAMES_PER_BEAT)
 		gf_pose = BOPEEBO_GF_DANCE_FRAMES_PER_BEAT - 1u;
-	draw_visual_frame(VIS_GF_DANCE_0 + gf_side + gf_pose,
+	unsigned gf_frame = VIS_GF_DANCE_0 + gf_side + gf_pose;
+	if (active_song->opponent_kind == PS1_OPPONENT_GF && samples < dad_visual_until) {
+		static const uint8_t gf_sing_frames[4] = {
+			VIS_GF_SING_LEFT, VIS_GF_SING_DOWN, VIS_GF_SING_UP, VIS_GF_SING_RIGHT
+		};
+		gf_frame = gf_sing_frames[dad_visual_lane & 3u];
+	}
+	if (week2) {
+		static const uint8_t week2_gf_dance[2] = {
+			VIS_WEEK2_GF_DANCE_0, VIS_WEEK2_GF_DANCE_1
+		};
+		gf_frame = week2_gf_dance[beat & 1u];
+		draw_visual_frame(gf_frame,
+			94 - (int)(BOPEEBO_GF_FRAME_W / 2u), 98 - (int)BOPEEBO_GF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		static const uint8_t week3_gf_dance[2] = {
+			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1
+		};
+		draw_visual_frame(week3_gf_dance[beat & 1u],
+			BOPEEBO_WEEK3_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
+			BOPEEBO_WEEK3_GF_Y - (int)BOPEEBO_GF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	}
+	else draw_visual_frame(gf_frame,
 		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
 		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
 		camera_x, camera_y, zoom_q8, 256);
-	/* mainStage z-indices: GF=100, Dad=200, BF=300; stage props are behind. */
-	draw_visual_frame(dad_frame,
-		BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
-		BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
-		camera_x, camera_y, zoom_q8, 256);
+	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
+	if (week2) {
+		unsigned opponent_frame;
+		unsigned lane = dad_visual_lane & 3u;
+		if (samples < dad_visual_until) {
+			if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
+				static const uint8_t sing[4][2] = {
+					{ VIS_WEEK2_SPOOKY_SING_LEFT_0, VIS_WEEK2_SPOOKY_SING_LEFT_1 },
+					{ VIS_WEEK2_SPOOKY_SING_DOWN_0, VIS_WEEK2_SPOOKY_SING_DOWN_1 },
+					{ VIS_WEEK2_SPOOKY_SING_UP_0, VIS_WEEK2_SPOOKY_SING_UP_1 },
+					{ VIS_WEEK2_SPOOKY_SING_RIGHT_0, VIS_WEEK2_SPOOKY_SING_RIGHT_1 }
+				};
+				opponent_frame = sing[lane][(beat_phase >> 15) & 1u];
+			} else {
+				static const uint8_t sing[4] = { VIS_WEEK2_MONSTER_SING_LEFT,
+					VIS_WEEK2_MONSTER_SING_DOWN, VIS_WEEK2_MONSTER_SING_UP,
+					VIS_WEEK2_MONSTER_SING_RIGHT };
+				opponent_frame = sing[lane];
+			}
+		} else if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
+			static const uint8_t idle[4] = { VIS_WEEK2_SPOOKY_IDLE_0,
+				VIS_WEEK2_SPOOKY_IDLE_1, VIS_WEEK2_SPOOKY_IDLE_2,
+				VIS_WEEK2_SPOOKY_IDLE_3 };
+			unsigned idle_pose = (unsigned)((uint64_t)beat_phase * 4u >> 16);
+			if (idle_pose > 3u) idle_pose = 3u;
+			opponent_frame = idle[idle_pose];
+		} else {
+			opponent_frame = (beat_phase < 32768u) ? VIS_WEEK2_MONSTER_IDLE : VIS_WEEK2_MONSTER_IDLE_HOLD;
+		}
+		draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
+			108 - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		static const uint8_t pico_sing[4][2] = {
+			{ VIS_WEEK3_PICO_SING_LEFT_0, VIS_WEEK3_PICO_SING_LEFT_1 },
+			{ VIS_WEEK3_PICO_SING_DOWN_0, VIS_WEEK3_PICO_SING_DOWN_1 },
+			{ VIS_WEEK3_PICO_SING_UP_0, VIS_WEEK3_PICO_SING_UP_1 },
+			{ VIS_WEEK3_PICO_SING_RIGHT_0, VIS_WEEK3_PICO_SING_RIGHT_1 }
+		};
+		unsigned pico_frame = samples < dad_visual_until ?
+			pico_sing[dad_visual_lane & 3u][(beat_phase >> 15) & 1u] :
+			((beat_phase < 32768u) ? VIS_WEEK3_PICO_IDLE_0 : VIS_WEEK3_PICO_IDLE_1);
+		draw_visual_frame(pico_frame,
+			BOPEEBO_WEEK3_PICO_X - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_W / 2u),
+			BOPEEBO_WEEK3_PICO_Y - (int)BOPEEBO_WEEK3_CHARACTER_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (active_song->opponent_kind == PS1_OPPONENT_DAD)
+		draw_visual_frame(dad_frame,
+			BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
+			BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
 
 	unsigned bf_frame;
 	if (bf_visual_state == 2u) {
@@ -1462,9 +2174,11 @@ static void draw_scene(uint32_t samples)
 				idle_step = BOPEEBO_BF_IDLE_SEQUENCE_LENGTH - 1u;
 			bf_frame = VIS_BF_IDLE_0 + bopeebo_bf_idle_sequence[idle_step];
 		}
+	int bf_world_x = week3 ? BOPEEBO_WEEK3_BF_X : BOPEEBO_BF_X;
+	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : BOPEEBO_BF_Y;
 	draw_visual_frame(bf_frame,
-		BOPEEBO_BF_X - (int)(BOPEEBO_BF_FRAME_W / 2u),
-		BOPEEBO_BF_Y - (int)BOPEEBO_BF_FRAME_H,
+		bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
+		bf_world_y - (int)BOPEEBO_BF_FRAME_H,
 		camera_x, camera_y, zoom_q8, 256);
 }
 
@@ -1478,8 +2192,9 @@ static void draw_gameplay(uint32_t samples)
 	draw_scene(samples);
 	draw_note_group(samples, 0);
 	draw_note_group(samples, 1);
-	if (diagnostics_visible)
+	#if GAME_ARROW_DIAGNOSTIC_DEFAULT
 		draw_arrow_diagnostic_sheet();
+	#endif
 	/* Reserve primitives for the final screen-space feedback layer. */
 	gameplay_visual_prim_count = visual_prim_count;
 	visual_prim_limit = VISUAL_MAX_PRIMS;
@@ -1526,34 +2241,45 @@ static void draw_gameplay(uint32_t samples)
 	hud_dad_icon_x = dad_x;
 	hud_bf_icon_x = bf_x;
 	/* Transparent official portraits sit above fills/frame and share one anchor. */
-	draw_textured_frame(VIS_UI_ICON_DAD, dad_x, 13, icon_w, icon_w);
+	unsigned opponent_icon = active_song->opponent_kind == PS1_OPPONENT_GF ? VIS_UI_ICON_GF :
+		active_song->opponent_kind == PS1_OPPONENT_SPOOKY ? VIS_WEEK2_SPOOKY_ICON :
+		active_song->opponent_kind == PS1_OPPONENT_MONSTER ? VIS_WEEK2_MONSTER_ICON :
+		active_song->opponent_kind == PS1_OPPONENT_PICO ? VIS_WEEK3_PICO_ICON : VIS_UI_ICON_DAD;
+	draw_textured_frame(opponent_icon,
+		dad_x, 13, icon_w, icon_w);
 	/* The legacy two-frame BF sheet is idle/default + losing, not win + loss.
 	   Match HealthIcon's original 20% loss threshold; its 80% winning state has
 	   no distinct source frame in this sheet, so it uses the idle/default art. */
 	draw_textured_frame(hud_health_q8 <= 102u ? VIS_UI_ICON_BF_LOSE : VIS_UI_ICON_BF_WIN,
 		bf_x, 13, icon_w, icon_w);
-	if (diagnostics_visible) {
-		/* Approximate title/action-safe frames for 4:3 CRT setup checks. */
-		draw_rect(8, 6, 304, 1, 48, 96, 112);
-		draw_rect(8, 233, 304, 1, 48, 96, 112);
-		draw_rect(8, 6, 1, 228, 48, 96, 112);
-		draw_rect(311, 6, 1, 228, 48, 96, 112);
-		draw_rect(16, 12, 288, 1, 96, 160, 128);
-		draw_rect(16, 227, 288, 1, 96, 160, 128);
-		draw_rect(16, 12, 1, 216, 96, 160, 128);
-		draw_rect(303, 12, 1, 216, 96, 160, 128);
-	}
+}
+
+/* Share the audio-clock float and brief entrance scale between both kinds of
+   popups so judgement and combo feedback move as one visual system. */
+static int popup_motion_y_delta(uint32_t elapsed_ms)
+{
+	return -(int)(36u * elapsed_ms / 1000u) +
+		(int)(34u * elapsed_ms * elapsed_ms / 1000000u);
+}
+
+static uint32_t popup_motion_scale_permille(uint32_t elapsed_ms)
+{
+	return elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
 }
 
 /* This is the final screen-space pass. The normal frontend draws score and font
    HUD after draw_gameplay(), so submit judgements only after those layers. */
 static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 {
-	(void)rate;
 	judgement_drawn = false;
 	judgement_last_draw_attempted = false;
 	judgement_last_draw_submitted = false;
 	judgement_last_draw_frame = gameplay_frame_counter;
+	if (last_hit_trace.valid) {
+		last_hit_trace.active = false;
+		if (last_hit_trace.generation != judgement_generation)
+			last_hit_trace.superseded = true;
+	}
 	if (samples >= judgement_until || !last_judgement || last_judgement > 4u)
 		return;
 	static const uint8_t popup_frame[5] = {
@@ -1561,15 +2287,164 @@ static void draw_judgement_popup(uint32_t samples, uint32_t rate)
 		VIS_UI_JUDGEMENT_BAD, VIS_UI_JUDGEMENT_SHIT
 	};
 	const BopeeboVisualFrame *popup = &bopeebo_visual_frames[popup_frame[last_judgement]];
-	/* Restore the fixed v32 placement/scale that was observed visible in-game.
-	   The later audio-clock transform was not visible in user captures, so keep
-	   the judgement art stable until its audio-clock lifetime expires. */
-	int popup_w = ((int)popup->w * 164 + 50) / 100;
-	int popup_h = ((int)popup->h * 164 + 50) / 100;
+	/* Reduce the judgement 20% from its previous 164% size; leave combo digits
+	   unchanged. The combo's entrance scale and float are shared below. */
+	uint32_t elapsed_samples = judgement_duration_samples - (judgement_until - samples);
+	uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)elapsed_samples * 1000u) / rate) : 0u;
+	uint32_t entrance_scale = popup_motion_scale_permille(elapsed_ms);
+	int popup_w = ((int)popup->w * 131 * (int)entrance_scale + 50000) / 100000;
+	int popup_h = ((int)popup->h * 131 * (int)entrance_scale + 50000) / 100000;
+	int popup_x = (SCREEN_W - popup_w) / 2;
+	int popup_y = 57 + popup_motion_y_delta(elapsed_ms);
+	if (popup_x < 0) popup_x = 0;
+	if (popup_x + popup_w > SCREEN_W) popup_x = SCREEN_W - popup_w;
+	if (popup_y < 0) popup_y = 0;
+	if (popup_y + popup_h > SCREEN_H) popup_y = SCREEN_H - popup_h;
+	unsigned draw_frame = popup_frame[last_judgement];
+	const BopeeboVisualFrame *draw_texture = popup;
+#if GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT
+	/* Known frame on the popup's own 4bpp page, with the established BF CLUT. */
+	draw_frame = VIS_BF_MISS_LEFT_0;
+	draw_texture = &bopeebo_visual_frames[draw_frame];
+#elif GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+	/* Hold the frame/UV constant from v43 and test only popup CLUT residency. */
+	draw_frame = VIS_BF_MISS_LEFT_0;
+	draw_texture = &bopeebo_visual_frames[draw_frame];
+#endif
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[draw_texture->page];
+	unsigned clut_x = 0, clut_y = 496;
+	if (draw_texture->palette == 1u) { clut_x = 256; clut_y = 496; }
+	else if (draw_texture->palette == 2u) { clut_x = 0; clut_y = 480; }
+	else if (draw_texture->palette >= 3u && draw_texture->palette <= 5u)
+		clut_x = 272u + (draw_texture->palette - 3u) * 16u;
+	else if (draw_texture->palette == 6u) { clut_x = 256; clut_y = 480; }
+	else if (draw_texture->palette == 7u) { clut_x = 288; clut_y = 480; }
+#if GAME_JUDGEMENT_CLUT_PROBE_DEFAULT
+	/* Keep the selected judgement frame's own UVs; substitute only the known BF CLUT. */
+	clut_x = 256;
+	clut_y = 496;
+#elif GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT
+	/* Same popup pixels/palette values, relocated to the known-working BF CLUT address. */
+	clut_x = 256;
+	clut_y = 496;
+#elif GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT
+	clut_x = 288;
+	clut_y = 480;
+#elif GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+	/* Keep the known BF frame/UV and substitute only the popup CLUT. */
+	clut_x = 272;
+	clut_y = 480;
+#endif
+	uint16_t tpage = getTPage(page->depth, 0, page->x, page->y);
+	if (last_hit_trace.valid && last_hit_trace.generation == judgement_generation) {
+		last_hit_trace.active = true;
+		last_hit_trace.page = draw_texture->page;
+		last_hit_trace.depth = page->depth;
+		last_hit_trace.page_x = page->x;
+		last_hit_trace.page_y = page->y;
+		last_hit_trace.u = draw_texture->u;
+		last_hit_trace.v = draw_texture->v;
+		last_hit_trace.texture_w = draw_texture->w;
+		last_hit_trace.texture_h = draw_texture->h;
+		last_hit_trace.x = (int16_t)popup_x;
+		last_hit_trace.y = (int16_t)popup_y;
+		last_hit_trace.width = (uint16_t)popup_w;
+		last_hit_trace.height = (uint16_t)popup_h;
+		last_hit_trace.tpage = tpage;
+		last_hit_trace.clut_x = (uint16_t)clut_x;
+		last_hit_trace.clut_y = (uint16_t)clut_y;
+		last_hit_trace.draw_frame = gameplay_frame_counter;
+		last_hit_trace.draw_samples = samples;
+		last_hit_trace.draw_attempted = true;
+		if (last_hit_trace.attempts < 0xffffu) last_hit_trace.attempts++;
+	}
 	judgement_last_draw_attempted = true;
-	judgement_drawn = draw_textured_frame(popup_frame[last_judgement],
-		(SCREEN_W - popup_w) / 2, 57, popup_w, popup_h);
+#if GAME_JUDGEMENT_SOLID_PROBE_DEFAULT
+	judgement_drawn = draw_judgement_solid_probe(popup_x, popup_y, popup_w, popup_h);
+#elif GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT
+	judgement_drawn = draw_textured_frame(draw_frame, popup_x, popup_y, popup_w, popup_h);
+#elif GAME_JUDGEMENT_CLUT_PROBE_DEFAULT
+	judgement_drawn = draw_textured_frame_with_clut(draw_frame, popup_x, popup_y,
+		popup_w, popup_h, 256u, 496u);
+#elif GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+	judgement_drawn = draw_textured_frame_with_clut(draw_frame, popup_x, popup_y,
+		popup_w, popup_h, 272u, 480u);
+#elif GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT
+	judgement_drawn = draw_textured_frame_with_clut(draw_frame, popup_x, popup_y,
+		popup_w, popup_h, 256u, 496u);
+#elif GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT
+	judgement_drawn = draw_textured_frame_with_clut(draw_frame, popup_x, popup_y,
+		popup_w, popup_h, 288u, 480u);
+#else
+	judgement_drawn = draw_textured_frame(draw_frame, popup_x, popup_y, popup_w, popup_h);
+#endif
 	judgement_last_draw_submitted = judgement_drawn;
+	if (last_hit_trace.valid && last_hit_trace.generation == judgement_generation) {
+		last_hit_trace.draw_submitted = judgement_drawn;
+		if (judgement_drawn && last_hit_trace.submissions < 0xffffu)
+			last_hit_trace.submissions++;
+	}
+}
+
+static const char *judgement_name(uint8_t judgement)
+{
+	switch (judgement) {
+	case 1u: return "SICK";
+	case 2u: return "GOOD";
+	case 3u: return "BAD";
+	case 4u: return "SHIT";
+	default: return "NONE";
+	}
+}
+
+/* Select shows only this compact, transparent, screen-space trace. The last
+   successful hit snapshot persists until another successful hit replaces it. */
+static void draw_judgement_trace_diagnostics(void)
+{
+	if (!last_hit_trace.valid) {
+		FntPrint(diagnostics_font_id, "NO HIT YET - PLAY A PLAYER NOTE");
+		FntFlush(diagnostics_font_id);
+		return;
+	}
+	FntPrint(diagnostics_font_id,
+		"HIT#%lu %s %s\nHIT F%lu S%lu END%lu\nDRAW F%lu S%lu A%u CMD%u N%u/%u\n"
+		"XY%d,%d WH%ux%u UV%u,%u %ux%u\nPG%u D%u VRAM%u,%u TP%u CL%u,%u",
+		(unsigned long)last_hit_trace.hit_number,
+		judgement_name(last_hit_trace.judgement),
+		last_hit_trace.superseded ? "SUPERSEDED" :
+			(last_hit_trace.active ? "ACTIVE" : "EXPIRED"),
+		(unsigned long)last_hit_trace.hit_frame,
+		(unsigned long)last_hit_trace.hit_samples,
+		(unsigned long)last_hit_trace.expiry_samples,
+		(unsigned long)last_hit_trace.draw_frame,
+		(unsigned long)last_hit_trace.draw_samples,
+		(unsigned)last_hit_trace.draw_attempted,
+		(unsigned)last_hit_trace.draw_submitted,
+		(unsigned)last_hit_trace.attempts,
+		(unsigned)last_hit_trace.submissions,
+		(int)last_hit_trace.x, (int)last_hit_trace.y,
+		(unsigned)last_hit_trace.width, (unsigned)last_hit_trace.height,
+		(unsigned)last_hit_trace.u, (unsigned)last_hit_trace.v,
+		(unsigned)last_hit_trace.texture_w, (unsigned)last_hit_trace.texture_h,
+		(unsigned)last_hit_trace.page,
+		(unsigned)(last_hit_trace.depth == 0u ? 4u : 8u),
+		(unsigned)last_hit_trace.page_x, (unsigned)last_hit_trace.page_y,
+		(unsigned)last_hit_trace.tpage,
+		(unsigned)last_hit_trace.clut_x, (unsigned)last_hit_trace.clut_y);
+#if GAME_JUDGEMENT_SOLID_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE SOLID RECT ONLY - VRAM READ OFF");
+#elif GAME_JUDGEMENT_TEXTURE_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE FT4 BF MISS LEFT - NO VRAM READ");
+#elif GAME_JUDGEMENT_CLUT_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE JUDGEMENT UV + BF CLUT - NO VRAM READ");
+#elif GAME_JUDGEMENT_POPUP_CLUT_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE BF UV + POPUP CLUT - NO VRAM READ");
+#elif GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE POPUP PALETTE @ BF CLUT - NO VRAM READ");
+#elif GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT
+	FntPrint(diagnostics_font_id, "PROBE POPUP PALETTE @ 288,480");
+#endif
+	FntFlush(diagnostics_font_id);
 }
 
 static void draw_score_display(void)
@@ -1605,8 +2480,8 @@ static void draw_combo_popup(uint32_t samples, uint32_t rate)
 	uint32_t elapsed_ms = rate ? (uint32_t)(((uint64_t)(samples - combo_popup_start_samples) * 1000u) / rate) : 0u;
 	uint32_t remaining_ms = rate ? (uint32_t)(((uint64_t)(combo_popup_until - samples) * 1000u) / rate) : 0u;
 	/* The original digits float upward, ease under gravity, then fade. */
-	int y_delta = -(int)(36u * elapsed_ms / 1000u) + (int)(34u * elapsed_ms * elapsed_ms / 1000000u);
-	uint32_t scale_permille = elapsed_ms >= 100u ? 1000u : 900u + elapsed_ms;
+	int y_delta = popup_motion_y_delta(elapsed_ms);
+	uint32_t scale_permille = popup_motion_scale_permille(elapsed_ms);
 	uint8_t tint = remaining_ms >= 200u ? 128u : (uint8_t)(remaining_ms * 128u / 200u);
 	/* Match PopUpStuff's least-significant digit on the right and modest overlap. */
 	for (unsigned i = 0; i < count; i++) {
@@ -1629,36 +2504,104 @@ static void draw_menu_screen(void)
 		/* Keep the paused stage visible under a compact, screen-space overlay. */
 		draw_rect(55, 158, 210, 74, 14, 12, 28);
 		draw_rect(59, 162, 202, 66, 66, 51, 111);
-		FntPrint(menu_font_id, "PAUSED\nCROSS RESUME\nCIRCLE FREEPLAY");
-		FntFlush(menu_font_id);
+		FntPrint(menu_detail_font_id, "PAUSED  CROSS RESUME\nCIRCLE FREEPLAY");
+		FntFlush(menu_detail_font_id);
+		return;
+	}
+	if (game_screen == SCREEN_GAME_OVER) {
+		uint32_t elapsed = gameplay_frame_counter - death_phase_start_frame;
+		unsigned frame = death_phase == DEATH_INTRO ?
+			(elapsed * 10u / 145u < 10u ? elapsed * 10u / 145u : 9u) :
+			death_phase == DEATH_LOOP ? 10u + ((elapsed * 24u / 60u) % 34u) * 6u / 34u :
+			16u + (elapsed * 6u / 85u < 6u ? elapsed * 6u / 85u : 5u);
+		load_death_frame(frame);
+		draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0);
+		unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+		const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+		POLY_FT4 *p = &visual_prims[visual_prim_count++];
+		setPolyFT4(p);
+		setRGB0(p, 128, 128, 128);
+		setXY4(p, 101, 39, 219, 39, 101, 181, 219, 181);
+		setUV4(p, 0, 0, 79, 0, 0, 95, 79, 95);
+		p->tpage = getTPage(page->depth, 0, page->x, page->y);
+		setClut(p, 0, 496);
+		DrawPrim((uint32_t *)p);
+		if (death_phase != DEATH_CONFIRM) {
+			FntPrint(menu_font_id, "CROSS RETRY    CIRCLE FREEPLAY");
+			FntFlush(menu_font_id);
+		}
 		return;
 	}
 
-	/* Use separate title/main/freeplay compositions. All menu art is official
-	   pinned material; the only selectable destination remains Freeplay. */
-	if (game_screen == SCREEN_TITLE) {
-		draw_textured_frame(VIS_MENU_LOGO, 42, 8, 176, 132);
-	} else if (game_screen == SCREEN_MAIN_MENU) {
-		draw_textured_frame(VIS_MENU_LOGO, 18, 8, 142, 106);
-		draw_textured_frame(VIS_MENU_FREEPLAY_BUTTON, 18, 128, 150, 42);
-	} else {
-		draw_textured_frame(VIS_MENU_FREEPLAY_BG, 132, 18, 176, 99);
+	/* Official menu background, logo and Freeplay art are composed offline into
+	   one 4:3 texture. Its VRAM page is reused for each menu state. */
+	unsigned art = (unsigned)game_screen;
+	if (game_screen == SCREEN_FREEPLAY)
+		art = SCREEN_FREEPLAY + freeplay_difficulty_selection;
+	load_menu_screen_art(art);
+	update_freeplay_dj_frame();
+	unsigned page_index = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	if (visual_prim_count < visual_prim_limit) {
+		POLY_FT4 *p = &visual_prims[visual_prim_count++];
+		setPolyFT4(p);
+		setRGB0(p, 128, 128, 128);
+		setXY4(p, 0, 0, SCREEN_W, 0, 0, SCREEN_H, SCREEN_W, SCREEN_H);
+		setUV4(p, 0, 0, 255, 0, 0, 191, 255, 191);
+		p->tpage = getTPage(page->depth, 0, page->x, page->y);
+		setClut(p, 0, 496);
+		DrawPrim((uint32_t *)p);
+	}
+	if (game_screen == SCREEN_FREEPLAY && menu_dj_vram_loaded &&
+		freeplay_dj_frame_loaded >= 0) {
+		draw_textured_frame(VIS_MENU_FREEPLAY_DJ_FRAME_000 +
+			(unsigned)freeplay_dj_frame_loaded,
+			10, 31, (BOPEEBO_MENU_DJ_FRAME_W * 7) / 4,
+			(BOPEEBO_MENU_DJ_FRAME_H * 7) / 4);
+	}
+	if (game_screen == SCREEN_FREEPLAY) draw_freeplay_catalog();
+	if (game_screen == SCREEN_MAIN_MENU) {
+		static const short item_y[4] = { 24, 72, 120, 168 };
+		load_menu_selection_background((unsigned)menu_selection);
+		/* Every selected row uses the same 3-pose cadence. OPTIONS keeps its
+		   white fill still and moves only the black contour by a single pixel. */
+		unsigned frame;
+		if (menu_selection == 2) {
+			/* A short, uneven sequence makes the custom OPTIONS contour feel hand-animated. */
+			static const uint8_t options_jitter[16] = {
+				0, 2, 1, 0, 1, 2, 2, 0, 2, 1, 0, 2, 1, 1, 0, 2
+			};
+			frame = options_jitter[(menu_ticks / 4u) % 16u];
+		} else {
+			frame = (menu_ticks / 8u) % 3u;
+		}
+		load_menu_button_frame((unsigned)menu_selection, frame);
+		draw_menu_strip_sprite(0, 80, item_y[menu_selection], 160, 45);
 	}
 	unsigned beat = (menu_ticks / 36u) & 1u;
 	unsigned pose = (menu_ticks / 4u) % BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
-	if (game_screen != SCREEN_FREEPLAY)
+	if (game_screen == SCREEN_TITLE) {
+		/* The official logo is composited over a dark title field; GF's
+		   official dance frames supply the visible beat animation. */
 		draw_textured_frame(VIS_GF_DANCE_0 + beat * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
-			game_screen == SCREEN_TITLE ? 210 : 206,
-			game_screen == SCREEN_TITLE ? 142 : 126,
-			BOPEEBO_GF_FRAME_W, BOPEEBO_GF_FRAME_H);
-	if (game_screen == SCREEN_TITLE)
-		FntPrint(menu_font_id, "PRESS START TO CONTINUE");
-	else if (game_screen == SCREEN_MAIN_MENU)
-		FntPrint(menu_font_id, "CROSS FREEPLAY");
-	else
-		FntPrint(menu_font_id, "FREEPLAY\n> %s - %s\nCROSS PLAY  CIRCLE BACK",
-			freeplay_catalog[0].song, freeplay_catalog[0].difficulty);
-	FntFlush(menu_font_id);
+			177, 130, 74, 68);
+		FntPrint(menu_font_id, "PRESS START TO BEGIN");
+	} else if (game_screen == SCREEN_MAIN_MENU) {
+		FntPrint(menu_font_id, "UP/DOWN NAVIGATE  CROSS SELECT");
+	} else {
+		unsigned song_index = freeplay_song_selection;
+		unsigned difficulty = freeplay_difficulty_selection;
+		if (song_index >= FREEPLAY_PLAYABLE_COUNT) {
+			FntPrint(menu_header_font_id, "BEST ------- --%%");
+		} else {
+			FntPrint(menu_header_font_id, "BEST %07lu %u%%",
+				(unsigned long)freeplay_best_score[song_index][difficulty],
+				(unsigned)freeplay_best_percent[song_index][difficulty]);
+		}
+		FntFlush(menu_header_font_id);
+		FntFlush(menu_font_id);
+	}
+	if (game_screen != SCREEN_FREEPLAY) FntFlush(menu_font_id);
 }
 
 static void reset_game_state(void)
@@ -1667,6 +2610,7 @@ static void reset_game_state(void)
 	memset(receiver_flash_until, 0, sizeof(receiver_flash_until));
 	for (unsigned lane = 0; lane < 4; lane++) active_hold[lane] = -1;
 	score = combo = misses = hits = 0;
+	completion_hits = 0;
 	hold_drops = 0;
 	health_q8 = 256;
 	bf_miss_silenced = false;
@@ -1687,12 +2631,16 @@ static void reset_game_state(void)
 	combo_popup_start_samples = 0;
 	combo_popup_until = 0;
 	last_judgement_delta_ms = 0;
+	judgement_generation = 0;
+	memset(&last_hit_trace, 0, sizeof(last_hit_trace));
 #if GAME_JUDGEMENT_TEST_DEFAULT
 	judgement_test_next = 0;
 	judgement_test_hits = 0;
 #endif
 	dad_lanes_visible = GAME_DAD_LANES_DEFAULT != 0;
-	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0 || GAME_ARROW_DIAGNOSTIC_DEFAULT != 0;
+	/* Select toggles only the compact last-hit trace in the playable build.
+	   Arrow sheets and CRT guides are separate QA targets, never gameplay HUD. */
+	diagnostics_visible = GAME_DIAGNOSTICS_DEFAULT != 0;
 }
 
 #if GAME_SCENE_DEMO_DEFAULT
@@ -1702,8 +2650,8 @@ static void update_scene_demo_visuals(uint32_t samples)
 {
 	dad_visual_until = 0;
 	bf_visual_until = 0;
-	for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++) {
-		const BopeeboNote *note = &bopeebo_notes[i];
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		const Ps1Note *note = &active_chart->notes[i];
 		if (note->head > samples) break;
 		uint32_t until = note->tail > note->head ? note->tail :
 			note->head + BOPEEBO_CHART_RATE * 280u / 1000u;
@@ -1790,10 +2738,106 @@ static void release_song_resources(void)
 	(void)CdControlB(CdlPause, 0, 0);
 }
 
-static bool enter_bopeebo(void)
+static void play_loss_sfx(void)
+{
+	unsigned voice = 11u; /* Outside music 0..3 and the existing SFX pools. */
+	uint32_t key = 1u << voice;
+	SpuSetKey(0, key);
+	SPU_CH_ADDR(voice) = getSPUAddr(MENU_SFX_SPURAM_ADDR + GAMEOVER_SFX_FNF_LOSS_SFX_OFFSET);
+	SPU_CH_FREQ(voice) = getSPUSampleRate(MENU_SFX_RATE);
+	SPU_CH_ADSR1(voice) = 0x00ff;
+	SPU_CH_ADSR2(voice) = 0;
+	SPU_CH_VOL_L(voice) = 0x1400;
+	SPU_CH_VOL_R(voice) = 0x1400;
+	SpuSetKey(1, key);
+}
+
+static void enter_game_over(void)
 {
 	release_song_resources();
+	game_screen = SCREEN_GAME_OVER;
+	death_phase = DEATH_INTRO;
+	death_phase_start_frame = gameplay_frame_counter;
+	death_frame_loaded = -1;
+	RECT palette = { 0, 496, 256, 1 };
+	DrawSync(0);
+	LoadImage(&palette, (uint32_t *)bopeebo_death_palette8);
+	DrawSync(0);
+	play_loss_sfx();
+}
+
+/* Static transition card is presented in both framebuffers before blocking CD
+   reads. No music feed or GPU texture upload is attempted while it is shown. */
+static void show_loading_screen(const char *label)
+{
+	for (int i = 0; i < 2; i++) {
+		game_prim_count = 0;
+		visual_prim_count = 0;
+		PutDrawEnv(&frames[i].draw);
+		draw_rect(0, 0, SCREEN_W, SCREEN_H, 8, 7, 20);
+		draw_rect(30, 68, 260, 104, 20, 18, 36);
+		draw_rect(34, 72, 252, 96, 68, 52, 104);
+		FntPrint(menu_header_font_id, "FUNKIN'  PS1");
+		FntFlush(menu_header_font_id);
+		FntPrint(menu_detail_font_id, "LOADING\n%s", label ? label : "PLEASE WAIT");
+		FntFlush(menu_detail_font_id);
+		DrawSync(0);
+		PutDispEnv(&frames[i].display);
+		VSync(0);
+	}
+	draw_index = 0;
+	PutDrawEnv(&frames[draw_index].draw);
+	PutDispEnv(&frames[draw_index].display);
+}
+
+static void begin_retry_countdown(void)
+{
+	release_song_resources();
+	show_loading_screen("RETRYING SONG");
+	SpuSetKey(0, 1u << 11u);
+	/* The death screen replaces the shared CLUT and the W2 atlas page 8;
+	   restore the selected song package before presenting the countdown. */
+	if (active_song->stage_id == 2u) week2_visuals_loaded = false;
+	if (active_song->stage_id == 3u) week3_visuals_loaded = false;
+	if (active_song->stage_id == 2u) {
+		load_week3_visuals(false);
+		load_week2_visuals(true);
+	} else if (active_song->stage_id == 3u) {
+		load_week2_visuals(false);
+		load_week3_visuals(true);
+	} else {
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+	}
+	reset_game_state();
+	countdown_start_frame = gameplay_frame_counter;
+	game_screen = SCREEN_COUNTDOWN;
+}
+
+static bool enter_bopeebo(void)
+{
+	if (freeplay_song_selection >= FREEPLAY_PLAYABLE_COUNT) return false;
+	failure_code = 0;
+	active_song = &ps1_song_catalog[freeplay_song_selection];
+	release_song_resources();
+	show_loading_screen(active_song->name);
+	if (!load_song_chart(active_song->chart_paths[freeplay_difficulty_selection])) {
+		failure_code = FAIL_ASSET_LOAD;
+		return false;
+	}
+	load_freeplay_dj_pages(true);
 	release_menu_visuals();
+	if (active_song->stage_id == 2u) {
+		load_week3_visuals(false);
+		load_week2_visuals(true);
+	} else if (active_song->stage_id == 3u) {
+		load_week2_visuals(false);
+		load_week3_visuals(true);
+	} else {
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+	}
+	if (failure_code == FAIL_ASSET_LOAD) return false;
 	reset_game_state();
 	song_finished = false;
 	if (!start_stream_from_disc()) return false;
@@ -1803,10 +2847,38 @@ static bool enter_bopeebo(void)
 
 static void return_to_freeplay(void)
 {
+	if (game_screen == SCREEN_GAMEPLAY && song_finished && active_chart) {
+		unsigned song_index = (unsigned)(active_song - ps1_song_catalog);
+		unsigned difficulty = freeplay_difficulty_selection;
+		unsigned total_player_notes = 0;
+		for (unsigned i = 0; i < active_chart->note_count; i++)
+			if (active_chart->notes[i].lane < 4u) total_player_notes++;
+		uint32_t completed = completion_hits;
+		uint32_t penalties = misses + hold_drops;
+		completed = completed > penalties ? completed - penalties : 0u;
+		unsigned percent = total_player_notes ?
+			(unsigned)(((uint64_t)completed * 100u) / total_player_notes) : 0u;
+		if (percent > 100u) percent = 100u;
+		uint32_t result_score = score > 0 ? (uint32_t)score : 0u;
+		if (song_index < PS1_SONG_COUNT && difficulty < PS1_DIFFICULTY_COUNT &&
+			(result_score > freeplay_best_score[song_index][difficulty] ||
+			(result_score == freeplay_best_score[song_index][difficulty] &&
+			percent > freeplay_best_percent[song_index][difficulty]))) {
+			freeplay_best_score[song_index][difficulty] = result_score;
+			freeplay_best_percent[song_index][difficulty] = (uint8_t)percent;
+		}
+	}
 	release_song_resources();
-	load_menu_visuals();
+	show_loading_screen("RETURNING TO FREEPLAY");
+	release_song_chart();
+	load_week2_visuals(false);
+	load_week3_visuals(false);
+	load_freeplay_dj_pages(false);
+	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 	song_finished = true;
 	game_screen = SCREEN_FREEPLAY;
+	freeplay_dj_start_frame = gameplay_frame_counter;
+	freeplay_dj_frame_loaded = -1;
 	if (CdControlB(CdlPause, 0, 0) != 1 ||
 		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
 		show_error(failure_code ? failure_code : FAIL_CD_READ);
@@ -1817,6 +2889,10 @@ static void run_playable_frontend(void)
 	reset_game_state();
 	game_screen = SCREEN_TITLE;
 	menu_ticks = 0;
+	menu_selection = 1;
+	freeplay_song_selection = 0u;
+	freeplay_difficulty_selection = 1u;
+	active_song = &ps1_song_catalog[freeplay_song_selection];
 	if (!upload_menu_sfx() ||
 		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
 		show_error(failure_code ? failure_code : FAIL_CD_READ);
@@ -1847,13 +2923,13 @@ static void run_playable_frontend(void)
 				show_error(read_ctx.read_error ? FAIL_CD_READ : FAIL_UNDERRUN);
 			samples = Stream_GetSamplesPlayed(&stream);
 			rate = (unsigned)stream.config.sample_rate;
-			uint32_t song_end = TEST_TOTAL_SAMPLES +
+			uint32_t song_end = active_song->sample_count +
 				(uint32_t)(2u * (stream.config.interleave / 16u * 28u));
 			if (!song_finished && samples >= song_end) {
 				Stream_Stop();
 				song_finished = true;
 			}
-			if (samples > TEST_TOTAL_SAMPLES) samples = TEST_TOTAL_SAMPLES;
+			if (samples > active_song->sample_count) samples = active_song->sample_count;
 			if (game_pressed & PAD_START) {
 				abort_cd_read();
 				Stream_Stop();
@@ -1870,13 +2946,36 @@ static void run_playable_frontend(void)
 				#if GAME_JUDGEMENT_TEST_DEFAULT
 				if (hits > hits_before_test) judgement_test_hits++;
 				#endif
-				if (!health_q8 && Stream_IsActive(&stream)) {
-					Stream_Stop();
-					song_finished = true;
-				}
+				if (!health_q8 && Stream_IsActive(&stream))
+					enter_game_over();
 #endif
 			}
 			if (song_finished) return_to_freeplay();
+		} else if (game_screen == SCREEN_GAME_OVER) {
+			uint32_t elapsed = gameplay_frame_counter - death_phase_start_frame;
+			if (death_phase == DEATH_INTRO && elapsed >= 145u) {
+				if (!start_stream_file("\\GOLOOP.VAG", MENU_MUSIC_CHANNELS, true, true))
+					show_error(failure_code ? failure_code : FAIL_CD_READ);
+				death_phase = DEATH_LOOP;
+				death_phase_start_frame = gameplay_frame_counter;
+			} else if (death_phase != DEATH_CONFIRM && (game_pressed & PAD_CIRCLE)) {
+				play_menu_sfx(2u);
+				return_to_freeplay();
+			} else if (death_phase != DEATH_CONFIRM &&
+				(game_pressed & PAD_CROSS) &&
+				(death_phase == DEATH_LOOP || elapsed >= 60u)) {
+				release_song_resources();
+				if (!start_stream_file("\\GOEND.VAG", MENU_MUSIC_CHANNELS, false, true))
+					show_error(failure_code ? failure_code : FAIL_CD_READ);
+				death_phase = DEATH_CONFIRM;
+				death_phase_start_frame = gameplay_frame_counter;
+			} else if (death_phase == DEATH_CONFIRM && elapsed >= 130u) {
+				begin_retry_countdown();
+			}
+		} else if (game_screen == SCREEN_COUNTDOWN) {
+			if (gameplay_frame_counter - countdown_start_frame >= 108u &&
+				!enter_bopeebo())
+				show_error(failure_code ? failure_code : FAIL_CD_READ);
 		} else if (game_screen == SCREEN_PAUSE) {
 			if (game_pressed & PAD_CROSS) {
 				play_menu_sfx(1u);
@@ -1892,58 +2991,72 @@ static void run_playable_frontend(void)
 				game_screen = SCREEN_MAIN_MENU;
 			}
 		} else if (game_screen == SCREEN_MAIN_MENU) {
-			if (game_pressed & PAD_CROSS) {
+			if (game_pressed & PAD_UP) {
+				menu_selection = (menu_selection + 3) % 4;
+				play_menu_sfx(0u);
+			} else if (game_pressed & PAD_DOWN) {
+				menu_selection = (menu_selection + 1) % 4;
+				play_menu_sfx(0u);
+			} else if (game_pressed & PAD_CROSS) {
 				play_menu_sfx(1u);
-				game_screen = SCREEN_FREEPLAY;
+				if (menu_selection == 1) {
+					game_screen = SCREEN_FREEPLAY;
+					freeplay_dj_start_frame = gameplay_frame_counter;
+					freeplay_dj_frame_loaded = -1;
+				}
 			}
 		} else if (game_screen == SCREEN_FREEPLAY) {
 			if (game_pressed & PAD_CIRCLE) {
 				play_menu_sfx(2u);
 				game_screen = SCREEN_MAIN_MENU;
-			}
-			else if (game_pressed & PAD_CROSS) {
-				play_menu_sfx(1u);
-				if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
-				samples = 0;
+			} else if ((game_pressed & PAD_UP) && freeplay_song_selection > 0u) {
+				freeplay_song_selection--;
+				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT)
+					active_song = &ps1_song_catalog[freeplay_song_selection];
+				freeplay_icon_rows_loaded = -1;
+				load_freeplay_icon_rows();
+				play_menu_sfx(0u);
+			} else if ((game_pressed & PAD_DOWN) &&
+				freeplay_song_selection + 1u < FREEPLAY_CATALOG_COUNT) {
+				freeplay_song_selection++;
+				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT)
+					active_song = &ps1_song_catalog[freeplay_song_selection];
+				freeplay_icon_rows_loaded = -1;
+				load_freeplay_icon_rows();
+				play_menu_sfx(0u);
+			} else if (game_pressed & PAD_LEFT) {
+				freeplay_difficulty_selection = (freeplay_difficulty_selection + PS1_DIFFICULTY_COUNT - 1u) % PS1_DIFFICULTY_COUNT;
+				play_menu_sfx(0u);
+			} else if (game_pressed & PAD_RIGHT) {
+				freeplay_difficulty_selection = (freeplay_difficulty_selection + 1u) % PS1_DIFFICULTY_COUNT;
+				play_menu_sfx(0u);
+			} else if (game_pressed & PAD_CROSS) {
+				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT) {
+					play_menu_sfx(1u);
+					if (!enter_bopeebo()) show_error(failure_code ? failure_code : FAIL_CD_READ);
+					samples = 0;
+				} else {
+					play_menu_sfx(0u);
+				}
 			}
 		}
 
-		if (game_screen == SCREEN_GAMEPLAY || game_screen == SCREEN_PAUSE) {
+		if (game_screen == SCREEN_GAMEPLAY || game_screen == SCREEN_PAUSE ||
+			game_screen == SCREEN_COUNTDOWN) {
 			uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
-			draw_gameplay(samples);
+			draw_gameplay(game_screen == SCREEN_COUNTDOWN ? 0u : samples);
 			if (game_screen == SCREEN_PAUSE) {
 				draw_menu_screen();
+			} else if (game_screen == SCREEN_COUNTDOWN) {
+				uint32_t beats = (gameplay_frame_counter - countdown_start_frame) / 36u;
+				FntPrint(menu_detail_font_id, "RETRY  %u", (unsigned)(3u - (beats < 3u ? beats : 2u)));
+				FntFlush(menu_detail_font_id);
 			} else {
 				draw_score_display();
-				if (diagnostics_visible) {
-					FntPrint(diagnostics_font_id, "AUDIO %02u:%02u.%03u  PAD %s\n",
-						milliseconds / 60000u, (milliseconds / 1000u) % 60u,
-						milliseconds % 1000u, pad_connected ? "ON" : "OFF");
-					FntPrint(diagnostics_font_id, "BUF %u/%u CD %u U %u\n",
-						(unsigned)stream.buffer.length, (unsigned)stream.config.buffer_size,
-						(unsigned)read_errors, (unsigned)underruns);
-					FntPrint(diagnostics_font_id, "VIS %u/%u J %u LEFT %lums MISS %u\n",
-						visual_prim_count, VISUAL_MAX_PRIMS, (unsigned)last_judgement,
-						(unsigned long)(samples < judgement_until && rate ?
-							((uint64_t)(judgement_until - samples) * 1000u) / rate : 0u),
-						misses + hold_drops);
-					FntPrint(diagnostics_font_id, "WORLD %u HIGH %u DROP %u\n",
-						gameplay_visual_prim_count, visual_prim_high_water, visual_prim_rejected);
-					FntPrint(diagnostics_font_id, "SCORE FONT %u J LAST %u/%u F%lu\n",
-						(unsigned)score_text_flushed,
-						(unsigned)judgement_last_draw_attempted,
-						(unsigned)judgement_last_draw_submitted,
-						(unsigned long)judgement_last_draw_frame);
-					FntPrint(diagnostics_font_id, "HITS %u EDGE %04x J %u DMS %lu\n",
-						(unsigned)hits, (unsigned)last_game_pressed, (unsigned)last_judgement,
-						(unsigned long)last_judgement_delta_ms);
-					FntPrint(diagnostics_font_id, "TRI DAD  C VOICE  L1/R1 PAN  J SFX  START PAUSE\n");
-					FntFlush(diagnostics_font_id);
-				}
-				/* Diagnostics use an opaque bitmap-font background. Submit popup
-				   sprites after that layer so enabling Select cannot hide them. */
 				draw_judgement_popup(samples, rate);
 				draw_combo_popup(samples, rate);
+				if (diagnostics_visible)
+					draw_judgement_trace_diagnostics();
 #if GAME_JUDGEMENT_TEST_DEFAULT
 				static const char *const judgement_names[] = { "NONE", "SICK", "GOOD", "BAD", "SHIT" };
 				FntPrint(judgement_test_font_id, "AUTO HITS %u/4  %s  DRAW %u\nT %u.%03u  DELTA %lu MS LEFT %lu",
@@ -1986,10 +3099,10 @@ static void run_judgement_visual_test(void)
 		if (phase != active_phase) {
 			active_phase = phase;
 			reset_game_state();
-			for (unsigned i = 0; i < BOPEEBO_NOTE_COUNT; i++)
-				if (bopeebo_notes[i].lane < 4u && i != note_indices[phase])
+			for (unsigned i = 0; i < active_chart->note_count; i++)
+				if (active_chart->notes[i].lane < 4u && i != note_indices[phase])
 					game_note_state[i] = 1u;
-			const BopeeboNote *note = &bopeebo_notes[note_indices[phase]];
+			const Ps1Note *note = &active_chart->notes[note_indices[phase]];
 			test_sample = note->head + (uint32_t)(((uint64_t)rate * offsets_ms[phase]) / 1000u);
 			game_buttons = 0xffffu;
 			game_pressed = lane_masks[note->lane];
@@ -2068,6 +3181,111 @@ static void abort_cd_read(void)
 		}
 		VSync(0);
 	}
+}
+
+/* Read a sector range into aligned main-RAM storage. This path is used only
+   after the previous SPU stream has stopped; refill_length stays zero, so the
+   CD callback cannot feed these asset bytes into the audio stream. */
+static bool read_cd_file_range(const char *path, unsigned sector_offset,
+	unsigned sectors, void *buffer)
+{
+	CdlFILE file;
+	if (!path || !buffer || !sectors || read_ctx.read_pending ||
+	    (stream_initialized && Stream_IsActive(&stream)))
+		return false;
+	if (!CdSearchFile(&file, path)) return false;
+	uint64_t byte_offset = (uint64_t)sector_offset * CD_SECTOR_SIZE;
+	uint64_t byte_count = (uint64_t)sectors * CD_SECTOR_SIZE;
+	if (byte_offset + byte_count > ((uint64_t)file.size + CD_SECTOR_SIZE - 1u) /
+	    CD_SECTOR_SIZE * CD_SECTOR_SIZE)
+		return false;
+	CdlLOC position;
+	CdIntToPos(CdPosToInt(&file.pos) + (int)sector_offset, &position);
+	if (CdControl(CdlSetloc, &position, 0) != 1) return false;
+	read_ctx.read_error = 0;
+	read_ctx.refill_length = 0;
+	read_ctx.last_read_sectors = sectors;
+	read_ctx.read_pending = 1;
+	read_ctx.total_requested_sectors += sectors;
+	unsigned callbacks_before = read_ctx.callbacks_complete;
+	CdReadCallback(cd_read_handler);
+	read_ctx.last_cdread_return = CdRead((int)sectors, (uint32_t *)buffer, CdlModeSpeed);
+	if (read_ctx.last_cdread_return <= 0) {
+		read_ctx.read_pending = 0;
+		set_read_error(READ_ERROR_START);
+		CdReadCallback(0);
+		return false;
+	}
+	if (!wait_for_cd_read(MAX_WAIT_FRAMES) ||
+	    read_ctx.callbacks_complete == callbacks_before)
+		return false;
+	return true;
+}
+
+static bool read_cd_file_alloc(const char *path, uint8_t **data_out, size_t *size_out)
+{
+	if (!data_out || !size_out) return false;
+	*data_out = 0;
+	*size_out = 0;
+	CdlFILE file;
+	if (!CdSearchFile(&file, path) || file.size <= 0) return false;
+	unsigned sectors = ((unsigned)file.size + CD_SECTOR_SIZE - 1u) / CD_SECTOR_SIZE;
+	size_t padded_size = (size_t)sectors * CD_SECTOR_SIZE;
+	uint8_t *data = (uint8_t *)malloc(padded_size);
+	if (!data) return false;
+	if (!read_cd_file_range(path, 0, sectors, data)) {
+		free(data);
+		return false;
+	}
+	*data_out = data;
+	*size_out = (size_t)file.size;
+	return true;
+}
+
+static void release_song_chart(void)
+{
+	if (active_chart_blob) free(active_chart_blob);
+	active_chart_blob = 0;
+	memset(&loaded_chart_storage, 0, sizeof(loaded_chart_storage));
+	active_chart = 0;
+}
+
+static bool load_song_chart(const char *path)
+{
+	uint8_t *blob;
+	size_t size;
+	release_song_chart();
+	if (!read_cd_file_alloc(path, &blob, &size)) return false;
+	if (size < 16u) { free(blob); return false; }
+	uint16_t note_count, tempo_count, camera_count;
+	uint16_t reserved;
+	uint32_t sample_count;
+	memcpy(&note_count, blob + 4u, sizeof(note_count));
+	memcpy(&tempo_count, blob + 6u, sizeof(tempo_count));
+	memcpy(&camera_count, blob + 8u, sizeof(camera_count));
+	memcpy(&reserved, blob + 10u, sizeof(reserved));
+	memcpy(&sample_count, blob + 12u, sizeof(sample_count));
+	uint64_t required = 16u + (uint64_t)note_count * 12u +
+		(uint64_t)tempo_count * 12u + (uint64_t)camera_count * 8u;
+	if (memcmp(blob, "FNC1", 4u) || reserved || !sample_count ||
+	    sample_count != active_song->sample_count || !note_count ||
+	    note_count > PS1_MAX_NOTE_COUNT || !tempo_count || tempo_count > 255u ||
+	    camera_count > 255u || required > size ||
+	    sizeof(Ps1Note) != 12u || sizeof(Ps1Tempo) != 12u ||
+	    sizeof(Ps1CameraEvent) != 8u) {
+		free(blob);
+		return false;
+	}
+	loaded_chart_storage.notes = (const Ps1Note *)(blob + 16u);
+	loaded_chart_storage.note_count = note_count;
+	loaded_chart_storage.tempos = (const Ps1Tempo *)(blob + 16u + (size_t)note_count * 12u);
+	loaded_chart_storage.tempo_count = (uint8_t)tempo_count;
+	loaded_chart_storage.camera = (const Ps1CameraEvent *)
+		((const uint8_t *)loaded_chart_storage.tempos + (size_t)tempo_count * 12u);
+	loaded_chart_storage.camera_count = (uint8_t)camera_count;
+	active_chart_blob = blob;
+	active_chart = &loaded_chart_storage;
+	return true;
 }
 
 static bool feed_stream(void)
@@ -2299,21 +3517,21 @@ static bool start_stream_file(const char *path, unsigned expected_channels,
 
 static bool start_stream_from_disc(void)
 {
+#if TEST_PLAYABLE_BOPEEBO
+	return start_stream_file(active_song->audio_path, TEST_CHANNELS,
+		TEST_NO_LOOP ? false : true, false);
+#else
 	return start_stream_file("\\STREAM.VAG", TEST_CHANNELS,
 		TEST_NO_LOOP ? false : true, false);
+#endif
 }
 
 int main(void)
 {
 	init_video();
-#if TEST_PLAYABLE_BOPEEBO
-	load_bopeebo_visuals();
-	load_menu_visuals();
-#if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
-	run_judgement_visual_test();
-	return 0;
-#endif
-#endif
+	/* Startup loads the large Week 1 atlas from CD before entering the menu.
+	   Show a visible transition before any blocking disc reads begin. */
+	show_loading_screen("LOADING GAME");
 	SpuInit();
 	reset_spu_channels();
 	CdInit();
@@ -2333,6 +3551,15 @@ int main(void)
 		show_error(FAIL_CD_COMMAND);
 
 #if TEST_PLAYABLE_BOPEEBO
+	if (!load_bopeebo_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
+	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
+#if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
+	active_song = &ps1_song_catalog[0];
+	if (!load_song_chart(active_song->chart_paths[1])) show_error(FAIL_ASSET_LOAD);
+	if (active_song->stage_id == 2u) load_week2_visuals(true);
+	run_judgement_visual_test();
+	return 0;
+#endif
 	run_playable_frontend();
 	return 0;
 #else

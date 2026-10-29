@@ -43,6 +43,12 @@ The generated image should be `build/funkin-ps1-probe.bin` with a matching `.cue
 
 See [the port scope and source analysis](../docs/PS1_PORT.md) for the larger project, engine findings, and next steps.
 
+### Menus and next presentation steps
+
+The user has validated v52's animated judgment/combo popups in DuckStation. Palette-transfer synchronization in the visual loader is retained. The current menu prototype has official title/freeplay backgrounds, logo, GF dance, FreakyMenu music, and official navigation sounds. v54 adds the three-frame selected Freeplay graphic and labels the sole playable entry `BOPEEBO / NORMAL`. Build it with the configured `bopeebo-playable-normal-4ch` CMake directory; the user-facing BIN/CUE is in `outputs/FNF-PS1-v54-menu-freeplay/`.
+
+v53's title was observed in DuckStation; its Freeplay screen was also seen. v54 compiles but has not yet been observed in the emulator. The complete controller path, menu audio during transitions, song launch/return, Game Over/retry, results, and real-console behavior remain to be verified. The current C code still returns to Freeplay on both health depletion and song completion; it has no Game Over or results state. See the latest v52-v54 entries and source audit in [PS1_PORT.md](../docs/PS1_PORT.md).
+
 ## Optional CD audio clock probe
 
 The CD audio probe builds a separate disc image with a 12-second synthetic click track. It displays CD-DA track position read from the drive's Subchannel Q data and derives a 120 BPM visual pulse from that position. It does not use a video-frame counter as its music clock. The generated audio is only a timing fixture; it contains no FNF music.
@@ -97,6 +103,8 @@ The four-channel attenuation test is intentionally deferred until stereo playbac
 ## Current playable milestone: Bopeebo UI
 
 The current branch adds isolated Dad/BF note groups, colored outlined arrows and hold shapes, a compact HUD, and audio-clocked camera movement. Triangle toggles Dad's autoplay display; the underlying lanes, chart and animation remain active. The current compact-HUD disc is `build/bopeebo-fnf-ui-v9/funkin-ps1-bopeebo-playable.cue`; configure `FUNKIN_PS1_DIAGNOSTICS_DEFAULT=ON` for a diagnostics-on QA build. Conversion and live DuckStation findings, including the pending verification of the 4bpp miss-page fix, are documented in [the PS1 port notes](../docs/PS1_PORT.md#interface-de-notes-et-composition-v6). Build inputs (PSn00bSDK, chart, VAGi, art assets and FFmpeg) remain local/outside Git. The final disc, comparison disc and captured screenshots are in ignored `ps1/build/bopeebo-fnf-ui-v9/`, `ps1/build/bopeebo-fnf-ui-off-v9/` and `ps1/build/bopeebo-fnf-ui-v7/` folders.
+
+The current menu-layout test is `outputs/FNF-PS1-v57-options-menu-test/FNF-PS1-v57-options-menu-test.cue`. It replaces Merch with the user-approved Options lettering. Square (`J`) previews its selected animation; Cross (`K`) continues to Freeplay as before. Load the CUE in DuckStation manually; v57 compiled but has not yet been observed running. The previous v56 image remains in `outputs/FNF-PS1-v56-menu-layout/`. Details and the backup of pre-integration sources are in [the v57 port notes](../docs/PS1_PORT.md#v57-essai-intégré-du-libellé-options).
 
 ### Retry after preload timeout
 
@@ -276,4 +284,148 @@ Le diagnostic `J DRAW` de v38 était affiché avant le rendu de la frame courant
 Build v39 : [BIN](../outputs/FNF-PS1-v39-judgement-render-trace/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v39-judgement-render-trace/funkin-ps1-bopeebo-playable.cue). PSn00bSDK 0.24 / GCC MIPS 12.3 a compilé l’image : BIN 23 324 784 octets, CUE 93 octets, SHA-256 `F4F97A9301F656E7DD1C44EE0C98348B16DF22C932FD965A3DA2CB3A3B388CB6`. Le disque n’a pas été exécuté en gameplay dans DuckStation; la fenêtre active et la soumission réelle au hit manuel restent à relever. Aucun test console.
 
 Select affiche les diagnostics. Pendant un hit, `LEFT` doit être positif si l’état de popup est encore actif; `J LAST a/s Fnn` donne la tentative/soumission mémorisée après le rendu précédent (1/1 signifie primitive remise au GPU, pas pixels confirmés). Capturer ensuite le même hit diagnostics masqués. La durée v38 (1,4 s à 100 BPM) et les règles de jeu sont conservées.
+# Menus et Game Over — build v55
+
+`FNF-PS1-v55-menu-gameover` fournit un parcours titre → menu principal → Freeplay → Bopeebo Normal et un écran Game Over avec BF Death officiel, sons de perte, boucle Game Over, Croix pour réessayer et Rond pour revenir. Les diagnostics sont masqués au démarrage. Le parcours n’a pas été exécuté dans DuckStation pour cette version : charge le CUE manuellement, puis confirme ici que l’émulateur l’a ouvert. On fera ensuite l’essai ensemble avec le clavier visuel. Résultats après réussite non inclus.
+
+Assets et dépendances restent sous le checkout local `assets/`; les conversions générées sont dans le répertoire build ignoré. `generate_ps1_menu_audio.py` convertit FreakyMenu, gameOver/gameOverEnd et les sons officiels navigation/faute/perte. Build local : cible CMake `ps1-bopeebo-playable-disc`, avec les variables PSn00bSDK, chart, VAGi Bopeebo et ffmpeg définies comme dans `docs/PS1_PORT.md`.
+
+## Essai menu v62
+
+`outputs/FNF-PS1-v62-options-contour-noise/funkin-ps1-bopeebo-playable.cue` est le nouveau build à essayer. Il conserve la taille et la disposition validées en v60/v61, élargit légèrement le contour noir de sélection et lui donne une variation déterministe plus irrégulière. BIN/CUE compilés; v62 attend l’essai utilisateur dans DuckStation. Diagnostics masqués au démarrage. Détails : `docs/PS1_PORT.md`, section v62.
+## Build v63 — Week 1 et Tutorial
+
+Le Freeplay propose Tutorial, Bopeebo, Fresh et Dadbattle. Haut/Bas sélectionne le morceau; Gauche/Droite choisit Easy, Normal ou Hard; Croix joue et Rond revient. Bopeebo Normal reste le défaut. Erect/Nightmare sont des placeholders sans entrée jouable.
+
+Les charts officiels sont convertis à 43 008 Hz; Tutorial utilise GF comme adversaire, les morceaux Week 1 Dad. Audio quatre canaux : instrumental stéréo, adversaire mono, BF mono, tous alignés à la même origine. Les ressources officielles et fichiers convertis restent hors Git.
+
+Le BIN/CUE v63 est compilé mais attend l’essai DuckStation de l’utilisateur : [BIN](../outputs/FNF-PS1-v63-week1-songs/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v63-week1-songs/funkin-ps1-bopeebo-playable.cue). Diagnostics masqués au démarrage; vérifier navigation Freeplay, quatre morceaux, trois difficultés, transitions audio et retour menu. Pas de validation console réelle.
+
+Assets utilisés : sous-module épinglé `assets` à `724eba9de9e76761d9cefd52169926bc51c760a5`.
+
+## v64 — Tutorial en tête et Freeplay 4:3
+
+L’utilisateur estime les quatre morceaux corrects et demande Tutorial en premier. Le catalogue est maintenant ordonné Tutorial, Bopeebo, Fresh, Dadbattle; Normal reste la difficulté par défaut. Le Freeplay utilise le rig officiel animé BF DJ à gauche, le fond Week 1 à droite, la liste de quatre titres, la capsule de sélection et la pochette Volume 1, adaptés en 4:3. Erect/Nightmare restent indisponibles. Contrôles : Haut/Bas chanson, Gauche/Droite difficulté, Croix lancer, Rond retour.
+
+Le nouveau Freeplay est compilé mais doit encore être essayé dans DuckStation; vérifier l’ordre, les quatre lignes sélectionnables, les trois difficultés et les transitions avant de le déclarer validé. La compilation mesure 1 496 762 octets de sections résidentes; le FIFO audio reste à 96 Kio, environ 362 Kio restent avant stack/allocations ponctuelles dans l’estimation de RAM disponible. VRAM inchangée : 9 pages 8bpp et 2 pages 4bpp (655 360 octets). [BIN v64](../outputs/FNF-PS1-v64-tutorial-first-freeplay/funkin-ps1-bopeebo-playable.bin) · [CUE v64](../outputs/FNF-PS1-v64-tutorial-first-freeplay/funkin-ps1-bopeebo-playable.cue). Les détails et limites sont dans `docs/PS1_PORT.md`, section v64.
+
+## v65 — crash Freeplay
+
+Après le crash de v64 à l’ouverture de Freeplay, les quatre régions texte par chanson ont été regroupées dans une seule région, ramenant le nombre total de `FntOpen` au niveau précédent. La cause exacte reste à confirmer dans DuckStation. Essai attendu : ouvrir Freeplay, déplacer la sélection et confirmer que le jeu reste actif. Voir `docs/PS1_PORT.md`, section v65.
+
+## v66 — Freeplay jouable, catalogue étendu
+
+Le Freeplay utilise la composition 4:3 corrigée : inscriptions officielles en nuances distinctes, fond officiel recadré sur Dad, capsules et portraits pixel officiels agrandis et alignés. Tutorial, Bopeebo, Fresh et Dadbattle restent lançables; le reste du catalogue se parcourt avec l’état `LOCKED` et ne démarre rien. Flèches haut/bas pour parcourir, gauche/droite pour changer Easy/Normal/Hard, Croix pour lancer les quatre morceaux disponibles, Rond pour revenir. Les diagnostics restent masqués par défaut.
+
+Le BIN/CUE v66 est compilé et prêt à charger dans DuckStation : [BIN](../outputs/FNF-PS1-freeplay-v66/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-freeplay-v66/funkin-ps1-bopeebo-playable.cue). L’essai manuel est en attente; le parcours menu/Freeplay et les transitions audio ne sont pas déclarés validés. BF DJ est affiché dans une pose officielle fixe; son animation reste différée. Budgets, hash et résultats de compilation sont consignés dans `docs/PS1_PORT.md`, section v66.
+
+## v67 — intégration Freeplay alignée sur la maquette
+
+v67 remplace les titres trop réduits par des glyphes dérivés de la police VCR du mockup, utilise les images officielles Easy/Normal/Hard et leurs flèches, et corrige le panoramique de l’illustration afin de garder Dad visible sans GF ni agrandissement par crop. Les titres lançables ont leur largeur de cavité complète; les entrées verrouillées conservent un compartiment séparé. Une petite bande de difficulté est mise à jour dans la page menu existante; VRAM et navigation restent inchangées.
+
+[BIN v67](../outputs/FNF-PS1-v67-freeplay-reference-match/funkin-ps1-bopeebo-playable.bin) · [CUE v67](../outputs/FNF-PS1-v67-freeplay-reference-match/funkin-ps1-bopeebo-playable.cue). Build PSn00bSDK réussi, diagnostics masqués au démarrage. v67 n’a pas été exécuté dans DuckStation : charge le CUE et confirme ici. La capture framebuffer native 320×240 et la comparaison visuelle restent à faire après ton chargement; voir `docs/PS1_PORT.md`, section v67 pour les coordonnées, les budgets et les résultats détaillés.
+
+## v68 — test sans transfert VRAM partiel à l’ouverture
+
+Pour isoler le gel signalé en entrant dans Freeplay sous v67, v68 remplace le chargement partiel du sélecteur de difficulté par Easy/Normal/Hard composés dans des pages complètes, chargées par le chemin déjà utilisé pour les autres écrans menu. Compilation réussie; le gel reste à retester par l’utilisateur.
+
+[BIN v68](../outputs/FNF-PS1-v68-freeplay-no-partial-vram-load/funkin-ps1-bopeebo-playable.bin) · [CUE v68](../outputs/FNF-PS1-v68-freeplay-no-partial-vram-load/funkin-ps1-bopeebo-playable.cue). L’utilisateur confirme ensuite que Freeplay s’ouvre et fonctionne dans DuckStation. Les deux pages complètes supplémentaires coûtent environ 128 Kio de mémoire statique; la carte VRAM ne change pas. Les diagnostics sont masqués au démarrage. Résultats et budget complet dans `docs/PS1_PORT.md`, section v68.
+
+## v69 — titres Freeplay plus lisibles
+
+L’utilisateur confirme que v68 ouvre Freeplay, puis valide la lisibilité des titres et la marge haute en v69. v69 agrandit et éclaircit les titres des chansons, et descend le bandeau supérieur pour préserver une marge au bord de l’écran. La disposition générale, les capsules et la navigation restent identiques. Build v69 : [BIN](../outputs/FNF-PS1-v69-freeplay-title-legibility/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v69-freeplay-title-legibility/funkin-ps1-bopeebo-playable.cue).
+
+## v70 — animation officielle BF DJ dans Freeplay
+
+Le rig Animate officiel joue son intro à l’entrée de Freeplay, puis boucle son idle à 12 images/s. L’utilisateur a rapporté un gel immédiat à l’ouverture de Freeplay; la cause n’est pas confirmée. Le chemin de mise à jour partielle VRAM à chaque pose est retiré en v71. Détails : `docs/PS1_PORT.md`, sections v70/v71.
+
+## v71 — correctif candidat du gel Freeplay
+
+Les poses BF sont packées dans trois pages 8bpp temporaires chargées par transferts complets synchronisés à l’entrée de Freeplay. Le jeu restaure les pages du gameplay avant de lancer un morceau; les changements de pose n’envoient plus d’écritures VRAM. Carte VRAM toujours 655 360 octets de textures; atlas résident 196 608 octets; ELF `size` total 1 710 878 octets. L’utilisateur confirme que v71 s’ouvre et fonctionne, mais signale que le DJ est trop petit. Build : [BIN](../outputs/FNF-PS1-v71-freeplay-dj-atlas/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v71-freeplay-dj-atlas/funkin-ps1-bopeebo-playable.cue). Les animations confirm/fist-pump restent différées.
+
+## v72 — BF DJ agrandi
+
+Le rig officiel conserve ses pixels transparents et son ancrage; les poses sont recadrées à leur emprise commune 31×90 puis rendues à 1,75× (environ 54×157) dans la zone basse gauche. Le fond et les capsules restent en couches distinctes. Un seul atlas temporaire 8bpp (65 536 octets) est chargé en Freeplay et restauré avant le jeu. La VRAM reste à 655 360 octets de textures; ELF `size` total 1 579 802 octets. Build compilé, exécution DuckStation à confirmer : [BIN](../outputs/FNF-PS1-v72-freeplay-dj-size/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v72-freeplay-dj-size/funkin-ps1-bopeebo-playable.cue). Détails et budget dans `docs/PS1_PORT.md`, section v72.
+
+## Build v73 — première adaptation Week 2
+
+Freeplay ajoute Spookeez, South et Monster après les quatre entrées déjà jouables. Easy, Normal et Hard sont disponibles pour ces sept chansons; les autres titres restent verrouillés. Les trois charts, stems et le décor/habillage Week 2 viennent des assets épinglés. Les voix courtes sont complétées de silence en fin de flux pour partager la même origine et la même durée de lecture.
+
+Le jeu reprend l’arrière-plan Spooky Mansion, les poses de chant de Spooky Kids/Monster, leurs icônes et le cadrage de scène. Le fond reste statique et seules des poses échantillonnées des rigs sont présentes; éclair, secousse et séquences d’animation complètes restent différés. Le DJ Freeplay reste inchangé, conformément au retour utilisateur.
+
+Compilation PSn00bSDK 0.24 réussie. BIN/CUE à charger manuellement dans DuckStation : [BIN v73](../outputs/FNF-PS1-v73-week2-adaptation/funkin-ps1-week2-playable.bin) · [CUE v73](../outputs/FNF-PS1-v73-week2-adaptation/funkin-ps1-week2-playable.cue). Le build n’a pas encore été observé en émulateur; demander confirmation avant de poursuivre les essais interactifs. Budget relevé : 1 817 142 octets de sections résidentes, 3 pages temporaires Week 2 (196 608 octets), VRAM inchangée à 655 360 octets de textures. Voir [PS1_PORT.md](../docs/PS1_PORT.md#v73--première-adaptation-jouable-de-la-week-2).
+
+## v74 — charts et scène Week 2 chargés depuis le CD
+
+Les 21 combinaisons chanson/difficulté sont des fichiers chart autonomes sur le disque. Le programme ne conserve en RAM que le chart choisi : il le lit au lancement après l’arrêt de la musique de menu, le garde pendant gameplay/retry, puis le libère au retour au Freeplay. La scène Week 2 (`W2SCENE.BIN`, 197 120 octets) est aussi séparée de l’exécutable; ses trois pages VRAM sont lues une par une avec un tampon temporaire de 64 Kio. La musique du morceau ne démarre qu’après le chargement du chart et de la scène.
+
+Les sections résidentes ELF passent de 1 817 142 octets en v73 à 1 559 922 en v74 (257 220 octets économisés). Le plafond de calcul projet est 1 966 080 octets; après les sections résidentes et le FIFO audio de 96 Kio, il reste 307 854 octets avant staging, chart, pile et autres allocations. Le pic RAM n’a pas été mesuré. Les pages Week 1 et données des menus restent intégrées à l’exécutable.
+
+Build compilé, essai DuckStation attendu : [BIN v74](../outputs/FNF-PS1-v74-independent-song-loading/funkin-ps1-bopeebo-playable.bin) · [CUE v74](../outputs/FNF-PS1-v74-independent-song-loading/funkin-ps1-bopeebo-playable.cue). Vérifier les transitions Week 1/Week 2, audio, retry et retour au Freeplay.
+
+## v75 — pages Week 1 à la demande, Week 2 enrichie
+
+Les pages de texture du gameplay Week 1 sont maintenant dans `W1SCENE.BIN` (640 Kio), lues depuis le CD par pages de 64 Kio et restaurées quand les pages VRAM sont réutilisées. Les ressources d’interface et BF DJ restent séparées. Week 2 a été régénérée avec un décor de 362×256, Spooky Kids à 72×84 avec plusieurs poses d’idle/chant et deux poses officielles de danse GF. Son paquet fait 328 192 octets : cinq pages 8bpp et une CLUT. Les pages Week 2 remplacent temporairement 0, 1, 2, 3 et 8; le retour restaure la scène Week 1. VRAM totale inchangée à 655 360 octets de textures.
+
+ELF : 905 398 octets de sections résidentes; après le FIFO audio de 96 Kio, la marge arithmétique est 962 378 octets sous l’enveloppe de calcul projet, avant staging/runtime. Le staging de scène est 64 Kio. Ces valeurs sont des budgets calculés, pas des pics mesurés. BIN/CUE compilés : [BIN v75](../outputs/FNF-PS1-v75-week1-on-demand-week2-enhanced/funkin-ps1-bopeebo-playable.bin) · [CUE v75](../outputs/FNF-PS1-v75-week1-on-demand-week2-enhanced/funkin-ps1-bopeebo-playable.cue). L’utilisateur confirme v75 validée dans DuckStation. Aucun test console réelle.
+
+## v76 — Week 2, première Week 3 et écran de chargement
+
+L’utilisateur a validé v75 dans DuckStation. v76 reprend le zoom officiel propre à chaque stage pour corriger le cadrage Week 2 et commence la Week 3 (Pico, Philly Nice, Blammed; Easy/Normal/Hard). Philly utilise ses couches de scène officielles fixes; le train mobile est différé. Les scènes de semaine sont chargées depuis le CD avec écran de transition; chaque morceau conserve ses ressources isolées. BIN/CUE compilés, essai utilisateur en attente : [BIN](../outputs/FNF-PS1-v76-week2-week3-loading/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v76-week2-week3-loading/funkin-ps1-bopeebo-playable.cue).
+
+## v77 — correction du démarrage v76
+
+L’utilisateur a signalé que v76 restait sur l’écran Sony PlayStation. L’audit ISO a trouvé `W1SCENE.BIN` au LBA 53 257, après les gros fichiers audio, alors que le programme la lit avant son premier écran. v77 place les trois scènes au début du disque, avec W1 au LBA 446, et affiche « LOADING GAME » avant les lectures. BIN/CUE compilés, à essayer dans DuckStation : [BIN](../outputs/FNF-PS1-v77-startup-loading-fix/funkin-ps1-bopeebo-playable.bin) · [CUE](../outputs/FNF-PS1-v77-startup-loading-fix/funkin-ps1-bopeebo-playable.cue). La cause et la correction restent à confirmer par l’essai utilisateur.
+
+### v78 — repère de démarrage précoce
+
+v77 reste bloquée sur le logo Sony selon le dernier essai utilisateur. v78 dessine un aplat GPU après ResetGraph, avant les polices et les initialisations CD/SPU, sans capture VRAM. BIN/CUE compilés : outputs/FNF-PS1-v78-early-boot-marker/. Résultat DuckStation en attente; repère bleu-noir = entrée dans l'initialisation vidéo, écran LOADING GAME = démarrage franchi. Aucun essai console réelle.
+
+### v79 — sonde minimale PS-X
+
+Image séparée avec `SYSTEM.CNF` + `FUNKIN.EXE` seulement. La sonde affiche un aplat bleu par une primitive GPU et reste dessus, sans polices, CD/SPU, manette, assets ou gameplay. Elle utilise le même PSn00bSDK et la même cible CMake de disque que le jeu. [BIN](../outputs/FNF-PS1-v79-minimal-boot-probe/funkin-ps1-boot-probe.bin) · [CUE](../outputs/FNF-PS1-v79-minimal-boot-probe/funkin-ps1-boot-probe.cue). Essai utilisateur requis avant toute réintroduction d’initialisations.
+
+### v80 — repères persistants de démarrage
+
+À partir de la sonde v79, cette image ajoute des aplats de couleur avant/après l’initialisation vidéo, polices, SPU, CD (CdInit uniquement) et manette. Elle utilise une BSS de 39 640 octets, proche des 39 152 octets de l’exécutable v78, pour comparer l’initialisation CRT. La couleur atteinte reste à l’écran si une routine suivante se bloque. Aucun asset ni lecture CD/scène. [BIN](../outputs/FNF-PS1-v80-startup-stage-checkpoints/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v80-startup-stage-checkpoints/funkin-ps1-startup-stage-probe.cue). Tableau des couleurs et détails dans `docs/PS1_PORT.md`, section v80.
+
+### v81 — checkpoint CdlPause
+
+Suite à la capture v80 (repère vert final), v81 ajoute uniquement `CdControlB(CdlPause)`. Écran bleu marine = avant la commande, jaune-orangé = succès, rose-rouge = retour d’erreur. Aucun fichier n’est lu. [BIN](../outputs/FNF-PS1-v81-cd-pause-checkpoint/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v81-cd-pause-checkpoint/funkin-ps1-startup-stage-probe.cue). Essai utilisateur requis avant d’ajouter une lecture CD.
+
+### v82 — recherche du package Week 1
+
+Suite au succès de `CdlPause` en v81, v82 teste une allocation de 64 Kio puis `CdSearchFile("\\W1SCENE.BIN")` et sa taille. Le disque inclut W1SCENE pour la recherche; aucun secteur n’est lu ou chargé en VRAM. Orange = avant malloc, cyan = allocation réussie, bleu marine = avant recherche, rose = introuvable, jaune = taille inattendue, vert = recherche valide, blanc = tampon libéré. [BIN](../outputs/FNF-PS1-v82-allocation-file-search/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v82-allocation-file-search/funkin-ps1-startup-stage-probe.cue).
+
+### v83 — `CdSetloc`
+
+L’utilisateur confirme le blanc v82 : allocation, recherche du fichier et validation de taille passent. v83 ajoute la conversion de position et `CdControl(CdlSetloc)` avec repères persistants, sans `CdRead` ni transfert de secteur. L’utilisateur confirme ensuite le blanc v83, donc la commande a réussi. [BIN](../outputs/FNF-PS1-v83-cd-setloc-checkpoint/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v83-cd-setloc-checkpoint/funkin-ps1-startup-stage-probe.cue).
+
+### v84 — lecture d’un secteur, sans chargement VRAM
+
+La sonde tente un seul secteur de 2048 octets dans le tampon RAM, appelle `CdRead` puis interroge `CdReadSync(1)` avec un délai de 300 images. Elle vérifie le CRC-32 du contenu (attendu `0x569EEEF7`), n’installe aucun callback et n’envoie rien à la VRAM. L’utilisateur confirme le blanc : le secteur est lu et le CRC correspond. [BIN](../outputs/FNF-PS1-v84-cd-read-first-sector/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v84-cd-read-first-sector/funkin-ps1-startup-stage-probe.cue).
+
+### v85 — callback de lecture
+
+Cette sonde ajoute un callback au même test d’un secteur et attend un événement unique `CdlDataReady` (valeur enum 1), un payload présent et le CRC attendu, avec polling `CdReadSync(1)` borné à 300 images. Le commentaire de l’en-tête `CdReadCallback` parle de `CdlComplete`/`CdlDiskError`; cette sonde isole l’événement runtime. Aucun transfert VRAM. L’utilisateur a observé le bleu : événement reçu, payload nul; le CRC n’a donc pas été contrôlé par v85. [BIN](../outputs/FNF-PS1-v85-cd-read-callback/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v85-cd-read-callback/funkin-ps1-startup-stage-probe.cue).
+
+### v86 — validation du secteur malgré un payload callback nul
+
+v86 garde le callback `CdlDataReady` et vérifie le CRC après la fin de lecture même si le pointeur payload du callback est nul. L’utilisateur confirme le vert : callback/CRC valides avec payload nul. [BIN](../outputs/FNF-PS1-v86-cd-read-null-payload-check/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v86-cd-read-null-payload-check/funkin-ps1-startup-stage-probe.cue).
+
+### v87 — lecture d’une page de scène complète
+
+La lecture passe à 32 secteurs (65 536 octets), taille d’une page du chargeur. Callback `CdlDataReady` unique, polling `CdReadSync(1)` borné et CRC-32 `0xA3BEABD8` vérifiés; aucune écriture VRAM. L’utilisateur confirme le vert : la page et son CRC sont valides malgré le payload callback nul. [BIN](../outputs/FNF-PS1-v87-cd-read-one-scene-page/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v87-cd-read-one-scene-page/funkin-ps1-startup-stage-probe.cue).
+
+### v88 — lecture de la scène complète
+
+Cette sonde lit les 320 secteurs `W1SCENE.BIN` en 11 blocs (9×32 secteurs 8bpp, 2×16 secteurs 4bpp), avec le même tampon réutilisé de 64 Kio. Elle vérifie callbacks et CRC-32 global `0xF32FB433`, sans `LoadImage`. L’utilisateur confirme le vert : lecture et CRC complets valides avec payloads callback nuls. [BIN](../outputs/FNF-PS1-v88-read-full-week1-scene/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v88-read-full-week1-scene/funkin-ps1-startup-stage-probe.cue).
+
+### v89 — première page de scène vers VRAM
+
+Après lecture de 32 secteurs et vérification du CRC de la première page, la sonde transfère cette page 8bpp et sa palette officielle en VRAM, puis dessine un quad texturé couvrant l’écran avec synchronisations GPU autour des transferts. Un carré vert en haut à gauche suit le quad. Les écrans de couleur persistants marquent les étapes. Cette version ne démarre pas le jeu et ne charge pas les autres pages. Build réussi; essai DuckStation requis. [BIN](../outputs/FNF-PS1-v89-first-scene-vram-upload/funkin-ps1-startup-stage-probe.bin) · [CUE](../outputs/FNF-PS1-v89-first-scene-vram-upload/funkin-ps1-startup-stage-probe.cue).
+
+## Journal de développement
+
+La chronologie des jalons, diagnostics et validations utilisateur est tenue dans [docs/PS1_DEVLOG.md](../docs/PS1_DEVLOG.md). Les mesures et détails techniques des images restent dans [docs/PS1_PORT.md](../docs/PS1_PORT.md).
 

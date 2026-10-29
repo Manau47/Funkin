@@ -1,6 +1,8 @@
 .DS_STORE
 .haxelib/
 /ps1/build/
+/outputs/
+/work/
 .vs/
 APIStuff.hx
 dump/
@@ -38,3 +40,4 @@ __pycache__/
 package.json
 package-lock.json
 .aider*
+

@@ -24,6 +24,12 @@ FRAME_H = 52
 PAGE_W = 256
 PAGE_H = 256
 PAGE_BYTES = PAGE_W * PAGE_H // 2
+MENU_DJ_SOURCE_CANVAS_W = 82
+MENU_DJ_FRAME_H = 90
+MENU_DJ_SOURCE_FRAMES = tuple(range(0, 17, 2)) + tuple(range(17, 31, 2))
+WEEK2_CHAR_W = 72
+WEEK2_CHAR_H = 84
+WEEK2_STAGE_DIVISOR = 7
 
 BF_ANIMS = [
     ("idle", "BF idle dance"),
@@ -143,6 +149,127 @@ def extract_stage(ffmpeg: str, png: pathlib.Path, width: int, height: int) -> by
     return run_ffmpeg(ffmpeg, png, filters, width, height)
 
 
+def extract_menu_cover(ffmpeg: str, png: pathlib.Path, width: int, height: int) -> bytearray:
+    """Fill the 4:3 menu viewport by cropping the sides, never stretching art."""
+    filters = (f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=area,"
+               f"crop={width}:{height}:(iw-ow)/2:(ih-oh)/2,format=rgba")
+    return run_ffmpeg(ffmpeg, png, filters, width, height)
+
+
+def vcr_letter_atlas(ffmpeg: str, font_path: pathlib.Path) -> bytearray:
+    """Rasterize the mockup's VCR face into 6x9 cells for Freeplay titles."""
+    filters = ["format=rgba"]
+    for index, letter in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+        x, y = (index % 8) * 6, (index // 8) * 9
+        filters.append(
+            f"drawtext=fontfile=vcr-bold.ttf:text={letter}:fontsize=7:"
+            f"fontcolor=white:borderw=1:bordercolor=0x090810@1:x={x}:y={y}"
+        )
+    command = [ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+               "color=c=black@0.0:s=48x36:d=1", "-vf", ",".join(filters),
+               "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1"]
+    result = subprocess.run(command, check=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, cwd=font_path.parent)
+    if len(result.stdout) != 48 * 36 * 4:
+        raise ValueError(f"unexpected VCR letter atlas size: {len(result.stdout)}")
+    return bytearray(result.stdout)
+
+
+def mirror_rgba(pixels: bytearray, width: int, height: int) -> bytearray:
+    mirrored = bytearray(len(pixels))
+    for y in range(height):
+        for x in range(width):
+            src = (y * width + x) * 4
+            dst = (y * width + (width - 1 - x)) * 4
+            mirrored[dst:dst + 4] = pixels[src:src + 4]
+    return mirrored
+
+
+def extract_menu_contain(ffmpeg: str, png: pathlib.Path, width: int, height: int,
+                         background: tuple[int, int, int]) -> bytearray:
+    """Fit complete menu artwork inside 4:3 with simple dark letterboxing."""
+    color = "0x%02x%02x%02x" % background
+    filters = (f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=area,"
+               f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={color},format=rgba")
+    return run_ffmpeg(ffmpeg, png, filters, width, height)
+
+
+def menu_label_states(ffmpeg: str, png: pathlib.Path) -> tuple[bytearray, list[bytearray]]:
+    """Fit approved OPTIONS lettering to the menu label box and animate its ink."""
+    base = run_ffmpeg(ffmpeg, png,
+        "scale=128:36:force_original_aspect_ratio=decrease:flags=neighbor,"
+        "pad=128:36:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba", 128, 36)
+    source_mask = [base[i + 3] >= 128 for i in range(0, len(base), 4)]
+    width, height = 128, 36
+    xs = [x for y in range(height) for x in range(width) if source_mask[y * width + x]]
+    ys = [y for y in range(height) for x in range(width) if source_mask[y * width + x]]
+    if not xs:
+        raise ValueError(f"OPTIONS artwork has no visible pixels: {png}")
+    left, top, right, bottom = min(xs), min(ys), max(xs) + 1, max(ys) + 1
+    source_w, source_h = right - left, bottom - top
+    # Atlas rows are 36px tall; fit the custom art to a similar visible height
+    # and width as Merch while preserving its lettering proportions.
+    target_w = min(116, source_w + 10)
+    target_h = min(31, max(1, round(source_h * target_w / source_w * 1.22)))
+    mask = [False] * (width * height)
+    dest_x, dest_y = (width - target_w) // 2, (height - target_h) // 2
+    for y in range(target_h):
+        sy = top + min(source_h - 1, (y * source_h) // target_h)
+        for x in range(target_w):
+            sx = left + min(source_w - 1, (x * source_w) // target_w)
+            mask[(dest_y + y) * width + dest_x + x] = source_mask[sy * width + sx]
+    # Give the idle OPTIONS label a slightly heavier white contour.
+    # The selected-state frames below redraw the black outline independently.
+    idle_dilated = bytearray(width * height)
+    for y in range(height):
+        for x in range(width):
+            if not mask[y * width + x]:
+                continue
+            for oy in range(-3, 4):
+                for ox in range(-3, 4):
+                    nx, ny = x + ox, y + oy
+                    if 0 <= nx < width and 0 <= ny < height:
+                        idle_dilated[ny * width + nx] = 1
+    idle = bytearray(width * height * 4)
+    for i, inside in enumerate(mask):
+        border = bool(idle_dilated[i]) and not inside
+        offset = i * 4
+        if inside:
+            idle[offset:offset + 4] = bytes((0, 0, 0, 255))
+        elif border:
+            idle[offset:offset + 4] = bytes((255, 255, 255, 255))
+    selected_frames = []
+    # Keep the white letter fill fixed and redraw only its black contour in
+    # three small, irregular shape variations, like the selected frames on the other rows.
+    # A deterministic pixel hash adds a little roughness without changing the lettering.
+    for frame_index, (radius_x, radius_y) in enumerate(((3, 3), (4, 3), (3, 4))):
+        outline = bytearray(width * height)
+        for y in range(height):
+            for x in range(width):
+                if not mask[y * width + x]:
+                    continue
+                for oy in range(-radius_y, radius_y + 1):
+                    for ox in range(-radius_x, radius_x + 1):
+                        nx, ny = x + ox, y + oy
+                        if not 0 <= nx < width or not 0 <= ny < height:
+                            continue
+                        # Keep the inner outline solid; let only the new outer
+                        # pixel fringe flicker in small deterministic clusters.
+                        outer = abs(ox) == radius_x or abs(oy) == radius_y
+                        noise = (nx * 17 + ny * 31 + frame_index * 13 + ox * 7 + oy * 19) & 7
+                        if not outer or noise < 6:
+                            outline[ny * width + nx] = 1
+        selected = bytearray(width * height * 4)
+        for i, inside in enumerate(mask):
+            offset = i * 4
+            if inside:
+                selected[offset:offset + 4] = bytes((255, 255, 255, 255))
+            elif outline[i]:
+                selected[offset:offset + 4] = bytes((0, 0, 0, 255))
+        selected_frames.append(selected)
+    return idle, selected_frames
+
+
 def blend_at(background: bytearray, back_size: tuple[int, int], foreground: bytearray,
              foreground_size: tuple[int, int], offset: tuple[int, int]) -> None:
     """Alpha-composite a stage prop at its official, camera-world position."""
@@ -170,6 +297,28 @@ def blend_at(background: bytearray, back_size: tuple[int, int], foreground: byte
                 background[di + channel] = (foreground[si + channel] * alpha +
                                             background[di + channel] * inv) // 255
             background[di + 3] = alpha + background[di + 3] * inv // 255
+
+
+def ink_on_yellow(pixels: bytearray, width: int, height: int) -> bytearray:
+    """Trace the official pose's color/alpha edges as ink on the yellow card."""
+    result = bytearray(len(pixels))
+    for y in range(height):
+        for x in range(width):
+            i = (y * width + x) * 4
+            if pixels[i + 3] < 96:
+                continue
+            edge = x == 0 or y == 0 or x == width - 1 or y == height - 1
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if not (0 <= nx < width and 0 <= ny < height):
+                    edge = True
+                    continue
+                ni = (ny * width + nx) * 4
+                if pixels[ni + 3] < 96 or max(abs(pixels[i + c] - pixels[ni + c])
+                                               for c in range(3)) >= 56:
+                    edge = True
+            if edge:
+                result[i:i + 4] = bytes((18, 12, 17, 255))
+    return result
 
 
 def load_stage_layout(assets: pathlib.Path) -> tuple[dict, tuple[int, int, int, int]]:
@@ -395,7 +544,28 @@ def write_header(output: pathlib.Path,
                  stage_layout: dict[str, int], scene_bounds: tuple[int, int, int, int],
                  pages8: list[bytearray], pages4: list[bytearray],
                  page_table: list[tuple[int, int, int]], bf_idle_sequence: list[int],
-                 descriptors: dict[str, dict]) -> None:
+                 descriptors: dict[str, dict], menu_screen_pages: list[bytearray],
+                 menu_dj_pages: list[bytearray], menu_dj_frame_names: list[str],
+                 menu_dj_first_page: int,
+                 menu_dj_frame_size: tuple[int, int],
+                 week2_stage_pages: list[bytearray],
+                 week2_character_pages: list[bytearray],
+                 week2_palette: list[tuple[int, int, int]],
+                 week2_stage_origin: tuple[int, int],
+                 week2_camera_zoom_q8: int,
+                 week2_character_first_page: int,
+                 week3_stage_pages: list[bytearray],
+                 week3_character_pages: list[bytearray],
+                 week3_palette: list[tuple[int, int, int]],
+                 week3_stage_origin: tuple[int, int],
+                 week3_camera_zoom_q8: int,
+                 week3_char_layout: dict[str, int],
+                 menu_character_icons: list[list[int]],
+                 menu_icon_bounds: list[tuple[int, int, int, int]],
+                 death_palette8: list[tuple[int, int, int]],
+                 death_frames: list[bytearray],
+                 menu_button_frames: list[bytearray],
+                 menu_row_backgrounds: list[bytearray]) -> None:
     lines = ["/* Generated by convert_bopeebo_visuals.py; do not edit. */",
              "#ifndef BOPEEBO_VISUAL_DATA_H", "#define BOPEEBO_VISUAL_DATA_H",
              "#include <stdint.h>",
@@ -404,6 +574,33 @@ def write_header(output: pathlib.Path,
              f"#define BOPEEBO_VISUAL_PAGE_COUNT {len(page_table)}u",
              f"#define BOPEEBO_VISUAL_PAGE8_COUNT {len(pages8)}u",
              f"#define BOPEEBO_VISUAL_PAGE4_COUNT {len(pages4)}u",
+             f"#define BOPEEBO_MENU_SCREEN_COUNT {len(menu_screen_pages)}u",
+             f"#define BOPEEBO_MENU_DJ_FRAME_COUNT {len(menu_dj_frame_names)}u",
+             f"#define BOPEEBO_MENU_DJ_PAGE_COUNT {len(menu_dj_pages)}u",
+             f"#define BOPEEBO_MENU_DJ_FIRST_PAGE {menu_dj_first_page}u",
+             f"#define BOPEEBO_MENU_DJ_FRAME_W {menu_dj_frame_size[0]}u",
+             f"#define BOPEEBO_MENU_DJ_FRAME_H {menu_dj_frame_size[1]}u",
+             f"#define BOPEEBO_WEEK2_STAGE_X ({week2_stage_origin[0]})",
+             f"#define BOPEEBO_WEEK2_STAGE_Y ({week2_stage_origin[1]})",
+             f"#define BOPEEBO_WEEK2_CAMERA_ZOOM_Q8 {week2_camera_zoom_q8}u",
+             f"#define BOPEEBO_WEEK2_CHARACTER_FIRST_PAGE {week2_character_first_page}u",
+             f"#define BOPEEBO_WEEK2_STAGE_PAGE_COUNT {len(week2_stage_pages)}u",
+             f"#define BOPEEBO_WEEK2_CHARACTER_PAGE_COUNT {len(week2_character_pages)}u",
+             f"#define BOPEEBO_WEEK2_PAGE_COUNT {len(week2_stage_pages) + len(week2_character_pages)}u",
+             f"#define BOPEEBO_WEEK2_CHARACTER_FRAME_W {WEEK2_CHAR_W}u",
+             f"#define BOPEEBO_WEEK2_CHARACTER_FRAME_H {WEEK2_CHAR_H}u",
+             f"#define BOPEEBO_WEEK3_STAGE_X ({week3_stage_origin[0]})",
+             f"#define BOPEEBO_WEEK3_STAGE_Y ({week3_stage_origin[1]})",
+             f"#define BOPEEBO_WEEK3_CAMERA_ZOOM_Q8 {week3_camera_zoom_q8}u",
+             f"#define BOPEEBO_WEEK3_STAGE_PAGE_COUNT {len(week3_stage_pages)}u",
+             f"#define BOPEEBO_WEEK3_CHARACTER_PAGE_COUNT {len(week3_character_pages)}u",
+             f"#define BOPEEBO_WEEK3_PAGE_COUNT {len(week3_stage_pages) + len(week3_character_pages)}u",
+             "#define BOPEEBO_WEEK3_CHARACTER_FRAME_W 72u",
+             "#define BOPEEBO_WEEK3_CHARACTER_FRAME_H 84u",
+             "#define BOPEEBO_MENU_CAPSULE_W 148u",
+             "#define BOPEEBO_MENU_CAPSULE_H 32u",
+             "#define BOPEEBO_MENU_ICON_COUNT 11u",
+             "#define BOPEEBO_MENU_ICON_WORDS 392u",
              f"#define BOPEEBO_VISUAL_FRAME_COUNT {len(descriptors)}u",
              f"#define BOPEEBO_STAGE_SCENE_X ({scene_bounds[0]})",
              f"#define BOPEEBO_STAGE_SCENE_Y ({scene_bounds[1]})",
@@ -412,7 +609,11 @@ def write_header(output: pathlib.Path,
              f"#define BOPEEBO_STAGE_CAMERA_ZOOM_Q8 {stage_layout['camera_zoom_q8']}u",
              "#define BOPEEBO_DAD_FRAME_W 53u", "#define BOPEEBO_DAD_FRAME_H 96u",
              "#define BOPEEBO_GF_FRAME_W 87u", "#define BOPEEBO_GF_FRAME_H 79u",
-             "#define BOPEEBO_GF_DANCE_FRAMES_PER_BEAT 9u",
+             "#define BOPEEBO_GF_DANCE_FRAMES_PER_BEAT 5u",
+             "#define BOPEEBO_DEATH_FRAME_W 80u", "#define BOPEEBO_DEATH_FRAME_H 96u",
+             "#define BOPEEBO_DEATH_INTRO_COUNT 10u",
+             "#define BOPEEBO_DEATH_LOOP_COUNT 6u",
+             "#define BOPEEBO_DEATH_CONFIRM_COUNT 6u",
              f"#define BOPEEBO_BF_FRAME_W {FRAME_W}u", f"#define BOPEEBO_BF_FRAME_H {FRAME_H}u"]
     for name in ("dad", "gf", "bf"):
         for component in ("x", "y", "camera_x", "camera_y"):
@@ -423,6 +624,14 @@ def write_header(output: pathlib.Path,
     for x, y, depth in page_table:
         lines.append(f"\t{{{x}, {y}, {depth}}},")
     lines.append("};")
+    w2_page_slots = [0, 1] + [2, 3, 8][:len(week2_character_pages)]
+    lines.append("static const uint8_t bopeebo_week2_page_slots[BOPEEBO_WEEK2_PAGE_COUNT] = {" +
+                 ",".join(str(slot) for slot in w2_page_slots) + "};")
+    w3_page_slots = [0, 1] + [2, 3][:len(week3_character_pages)]
+    lines.append("static const uint8_t bopeebo_week3_page_slots[BOPEEBO_WEEK3_PAGE_COUNT] = {" +
+                 ",".join(str(slot) for slot in w3_page_slots) + "};")
+    for name, value in week3_char_layout.items():
+        lines.append(f"#define BOPEEBO_WEEK3_{name.upper()} ({value})")
     values = [0] + [rgb555(c) for c in palette_popup4[:15]]
     values += [0] * (16 - len(values))
     lines.append("static const uint16_t bopeebo_visual_palette_popup4[16] = {" +
@@ -430,6 +639,10 @@ def write_header(output: pathlib.Path,
     values = [0] + [rgb555(c) for c in palette8[:255]]
     values += [0] * (256 - len(values))
     lines.append("static const uint16_t bopeebo_visual_palette8[256] = {" +
+                  ",".join(f"0x{x:04x}" for x in values) + "};")
+    values = [0] + [rgb555(c) for c in death_palette8[:255]]
+    values += [0] * (256 - len(values))
+    lines.append("static const uint16_t bopeebo_death_palette8[256] = {" +
                   ",".join(f"0x{x:04x}" for x in values) + "};")
     values = [0] + [rgb555(c) for c in palette4[:15]]
     values += [0] * (16 - len(values))
@@ -452,22 +665,53 @@ def write_header(output: pathlib.Path,
     lines.append(f"#define BOPEEBO_BF_IDLE_SEQUENCE_LENGTH {len(bf_idle_sequence)}u")
     lines.append("static const uint8_t bopeebo_bf_idle_sequence[BOPEEBO_BF_IDLE_SEQUENCE_LENGTH] = {" +
                  ",".join(str(frame) for frame in bf_idle_sequence) + "};")
-    lines.append(f"static const uint16_t bopeebo_visual_pages8[{len(pages8)}][32768] = {{")
-    for page in pages8:
+    lines.append(f"static const uint16_t bopeebo_menu_button_frames[{len(menu_button_frames)}][2304] __attribute__((aligned(4))) = {{")
+    for frame in menu_button_frames:
+        words = [frame[i] | (frame[i + 1] << 8) for i in range(0, len(frame), 2)]
+        lines.append("\t{" + ",".join(f"0x{v:04x}" for v in words) + "},")
+    lines.append("};")
+    lines.append("static const uint16_t bopeebo_menu_row_backgrounds[4][2304] __attribute__((aligned(4))) = {")
+    for pixels in menu_row_backgrounds:
+        words = [pixels[i] | (pixels[i + 1] << 8) for i in range(0, len(pixels), 2)]
+        lines.append("{")
+        for i in range(0, len(words), 16):
+            lines.append("\t" + ",".join(f"0x{v:04x}" for v in words[i:i + 16]) + ",")
+        lines.append("},")
+    lines.append("};")
+    lines.append(f"static const uint16_t bopeebo_death_frames[{len(death_frames)}][3840] __attribute__((aligned(4))) = {{")
+    for frame in death_frames:
+        words = [frame[i] | (frame[i + 1] << 8) for i in range(0, len(frame), 2)]
+        lines.append("\t{")
+        for i in range(0, len(words), 16):
+            lines.append("\t\t" + ",".join(f"0x{v:04x}" for v in words[i:i + 16]) + ",")
+        lines.append("\t},")
+    lines.append("};")
+    lines.append(f"static const uint16_t bopeebo_menu_dj_pages[{len(menu_dj_pages)}][32768] __attribute__((aligned(4))) = {{")
+    for page in menu_dj_pages:
         words = [page[i] | (page[i + 1] << 8) for i in range(0, len(page), 2)]
         lines.append("\t{")
         for i in range(0, len(words), 16):
             lines.append("\t\t" + ",".join(f"0x{v:04x}" for v in words[i:i + 16]) + ",")
         lines.append("\t},")
     lines.append("};")
-    lines.append(f"static const uint16_t bopeebo_visual_pages4[{len(pages4)}][16384] = {{")
-    for page in pages4:
+    lines.append(f"static const uint16_t bopeebo_menu_screen_pages[{len(menu_screen_pages)}][32768] = {{")
+    for page in menu_screen_pages:
         words = [page[i] | (page[i + 1] << 8) for i in range(0, len(page), 2)]
         lines.append("\t{")
         for i in range(0, len(words), 16):
             lines.append("\t\t" + ",".join(f"0x{v:04x}" for v in words[i:i + 16]) + ",")
         lines.append("\t},")
-    lines.extend(("};", "#endif"))
+    lines.append("};")
+    lines.append(f"static const uint16_t bopeebo_menu_character_icons[{len(menu_character_icons)}][BOPEEBO_MENU_ICON_WORDS] __attribute__((aligned(4))) = {{")
+    for icon in menu_character_icons:
+        lines.append("\t{" + ",".join(f"0x{v:04x}" for v in icon) + "},")
+    lines.append("};")
+    lines.append(f"static const uint8_t bopeebo_menu_icon_bounds[{len(menu_icon_bounds)}][4] = {{")
+    for left, top, right, bottom in menu_icon_bounds:
+        lines.append(f"\t{{{left}, {top}, {right}, {bottom}}},")
+    lines.append("};")
+    lines.append("/* 8bpp/4bpp gameplay pages are stored in W1SCENE.BIN and loaded on demand. */")
+    lines.extend(("#endif",))
     output.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
@@ -507,6 +751,99 @@ def build(args: argparse.Namespace) -> None:
         frame_name = f"stage_scene_{tile}"
         temp_images[frame_name] = crop
         frame_sizes[frame_name] = (width, scene_h)
+
+    # Official Week 2 stage background and opponent rigs. Spooky Kids are a
+    # Sparrow duet; Monster is an Animate rig. Keep their pages separate from
+    # Week 1 palettes and temporarily reuse VRAM pages 0..2 during Week 2.
+    week2_stage_json = json.loads(
+        (assets / "preload" / "data" / "stages" / "spookyMansion.json").read_text(encoding="utf-8"))
+    # Match the existing Week 1 world-to-screen calibration: its authored
+    # cameraZoom 1.1 maps to Q8 640 (2.5x), after the scene art is downscaled.
+    week2_camera_zoom_q8 = max(1, int(float(week2_stage_json["cameraZoom"]) * 640.0 / 1.1 + 0.5))
+    week2_prop = next(prop for prop in week2_stage_json["props"] if prop["name"] == "halloweenBG")
+    week2_atlas_path = assets / "week2" / "images" / "halloween_bg" / "spritemap1.json"
+    week2_atlas = json.loads(week2_atlas_path.read_text(encoding="utf-8"))["ATLAS"]
+    week2_bg_sprite = next(item["SPRITE"] for item in week2_atlas["SPRITES"]
+                           if item["SPRITE"]["name"] == "0")
+    week2_source_size = png_size(assets / "week2" / "images" / "halloween_bg" / "spritemap1.png")
+    week2_bg_w = max(1, round(int(week2_bg_sprite["w"]) / WEEK2_STAGE_DIVISOR))
+    week2_bg_raw_h = max(1, round(int(week2_bg_sprite["h"]) / WEEK2_STAGE_DIVISOR))
+    week2_bg_h = min(week2_bg_raw_h, PAGE_H)
+    week2_crop_y = (week2_bg_raw_h - week2_bg_h) // 2
+    week2_stage_origin = (
+        math.floor(float(week2_prop["position"][0]) / WEEK2_STAGE_DIVISOR + 0.5),
+        math.floor(float(week2_prop["position"][1]) / WEEK2_STAGE_DIVISOR + 0.5) - week2_crop_y)
+    week2_bg = run_ffmpeg(ffmpeg, assets / "week2" / "images" / "halloween_bg" / "spritemap1.png",
+        f"crop={week2_bg_sprite['w']}:{week2_bg_sprite['h']}:{week2_bg_sprite['x']}:{week2_bg_sprite['y']},"
+        f"scale={week2_bg_w}:{week2_bg_raw_h}:flags=area,crop={week2_bg_w}:{week2_bg_h}:0:{week2_crop_y},"
+        f"format=rgba", week2_bg_w, week2_bg_h)
+    week2_bg_base = bytearray(week2_bg_w * week2_bg_h * 4)
+    for i in range(0, len(week2_bg_base), 4):
+        week2_bg_base[i:i + 4] = bytes((36, 35, 54, 255))
+    alpha_over(week2_bg_base, week2_bg)
+    week2_stage_names = []
+    for tile, x0 in enumerate((0, STAGE_TILE_W)):
+        width = min(STAGE_TILE_W, week2_bg_w - x0)
+        crop = bytearray()
+        for y in range(week2_bg_h):
+            start = (y * week2_bg_w + x0) * 4
+            crop.extend(week2_bg_base[start:start + width * 4])
+        name = f"week2_stage_scene_{tile}"
+        temp_images[name] = crop
+        frame_sizes[name] = (width, week2_bg_h)
+        week2_stage_names.append(name)
+
+    week2_character_names: list[str] = []
+    spooky_groups = atlas_frames(chars / "SpookyKids.xml")
+    spooky_png = chars / "SpookyKids.png"
+    spooky_selection = [
+        (f"week2_spooky_idle_{pose}", "spooky dance idle", frame_index)
+        for pose, frame_index in enumerate((0, 4, 8, 12))
+    ]
+    spooky_selection += [
+        (f"week2_spooky_sing_left_{pose}", "note sing left", frame_index)
+        for pose, frame_index in enumerate((0, 7))
+    ]
+    spooky_selection += [
+        (f"week2_spooky_sing_down_{pose}", "spooky DOWN note", frame_index)
+        for pose, frame_index in enumerate((0, 12))
+    ]
+    spooky_selection += [
+        (f"week2_spooky_sing_up_{pose}", "spooky UP NOTE", frame_index)
+        for pose, frame_index in enumerate((0, 2))
+    ]
+    spooky_selection += [
+        (f"week2_spooky_sing_right_{pose}", "spooky sing right", frame_index)
+        for pose, frame_index in enumerate((0, 12))
+    ]
+    for name, group, frame_index in spooky_selection:
+        frames = spooky_groups.get(group)
+        if not frames or frame_index >= len(frames):
+            raise ValueError(f"missing Week 2 Spooky Kids frame {group}[{frame_index}]")
+        temp_images[name] = extract_sparrow_frame(ffmpeg, spooky_png, frames[frame_index],
+                                                 (WEEK2_CHAR_W, WEEK2_CHAR_H))
+        frame_sizes[name] = (WEEK2_CHAR_W, WEEK2_CHAR_H)
+        week2_character_names.append(name)
+
+    monster_rig = Rig(chars / "monster", ffmpeg)
+    monster_source_ids = (0, 12, 16, 26, 36, 48)
+    monster_poses = fit_anchored_rig(monster_rig, list(monster_source_ids),
+                                     WEEK2_CHAR_W, WEEK2_CHAR_H)
+    monster_selection = (
+        ("week2_monster_idle", 0), ("week2_monster_idle_hold", 12),
+        ("week2_monster_sing_right", 16), ("week2_monster_sing_left", 26),
+        ("week2_monster_sing_up", 36), ("week2_monster_sing_down", 48),
+    )
+    for name, source_id in monster_selection:
+        temp_images[name] = monster_poses[source_id]
+        frame_sizes[name] = (WEEK2_CHAR_W, WEEK2_CHAR_H)
+        week2_character_names.append(name)
+    for name, png in (("week2_spooky_icon", assets / "preload" / "images" / "icons" / "icon-spooky.png"),
+                      ("week2_monster_icon", assets / "preload" / "images" / "icons" / "icon-monster.png")):
+        temp_images[name] = extract_crop(ffmpeg, png, 0, 0, 150, 150, (24, 24))
+        frame_sizes[name] = (24, 24)
+        week2_character_names.append(name)
+    week2_character_palette_names = week2_stage_names + week2_character_names
 
     bf_groups = atlas_frames(chars / "BOYFRIEND.xml")
     bf_png = chars / "BOYFRIEND.png"
@@ -551,14 +888,112 @@ def build(args: argparse.Namespace) -> None:
         frame_sizes[name] = (53, 96)
 
     # Week 1 GF defines danceLeft frames 0..14 and danceRight 15..29.
-    # Sample nine genuine source poses per side; the rig includes its original
-    # looping speaker instances, so those pulses are captured with the poses.
-    gf_source_ids = (0, 2, 4, 5, 7, 9, 10, 12, 14,
-                     15, 17, 19, 20, 22, 24, 25, 27, 29)
+    # Sample five genuine source poses per side. This preserves the official
+    # left/right alternation and 8 Hz pose cadence at 100 BPM while leaving
+    # 8bpp VRAM room for Tutorial's GF singing directions.
+    gf_source_ids = (0, 3, 6, 9, 12, 15, 18, 21, 24, 27)
     gf_anchored = fit_anchored_rig(gf_rig, list(gf_source_ids), 87, 79)
     for i, source_frame in enumerate(gf_source_ids):
         temp_images[f"gf_dance_{i}"] = gf_anchored[source_frame]
         frame_sizes[f"gf_dance_{i}"] = (87, 79)
+    # Week 2 uses its own CLUT for the additional character atlas. Include
+    # two official GF dance poses in that atlas so replacing the Week 1 palette
+    # during Week 2 cannot recolor GF incorrectly.
+    week2_gf_names = []
+    for pose, source_index in enumerate((0, 5)):
+        name = f"week2_gf_dance_{pose}"
+        temp_images[name] = bytearray(temp_images[f"gf_dance_{source_index}"])
+        frame_sizes[name] = frame_sizes[f"gf_dance_{source_index}"]
+        week2_gf_names.append(name)
+        week2_character_names.append(name)
+    week2_character_palette_names.extend(week2_gf_names)
+
+    # Week 3's train platform is composed from the pinned stage props at the
+    # same 1/6 world scale used for its character anchors. The moving train is
+    # deliberately left out of this first static scene package; it will be an
+    # independently streamed animation layer in a later pass.
+    week3_stage_json = json.loads(
+        (assets / "preload" / "data" / "stages" / "phillyTrain.json").read_text(encoding="utf-8"))
+    week3_camera_zoom_q8 = max(1, int(float(week3_stage_json["cameraZoom"]) * 640.0 / 1.1 + 0.5))
+    week3_stage_divisor = 6
+    week3_stage_w, week3_stage_h = 512, 256
+    week3_stage_origin = (-64, 0)
+    def week3_world(value: float) -> int:
+        return math.floor(float(value) / week3_stage_divisor + 0.5)
+    week3_stage_chars = week3_stage_json["characters"]
+    week3_char_layout = {}
+    for out_name, stage_name in (("pico", "dad"), ("bf", "bf"), ("gf", "gf")):
+        source_char = week3_stage_chars[stage_name]
+        week3_char_layout[f"{out_name}_x"] = week3_world(source_char["position"][0])
+        week3_char_layout[f"{out_name}_y"] = week3_world(source_char["position"][1])
+        camera_offset = source_char.get("cameraOffsets", [0, 0])
+        week3_char_layout[f"{out_name}_camera_x"] = week3_world(camera_offset[0])
+        week3_char_layout[f"{out_name}_camera_y"] = week3_world(camera_offset[1])
+    week3_stage_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
+    for i in range(0, len(week3_stage_rgba), 4):
+        week3_stage_rgba[i:i + 4] = bytes((14, 13, 27, 255))
+    week3_props = sorted(week3_stage_json["props"], key=lambda prop: int(prop.get("zIndex", 0)))
+    week3_layer_names = {"sky": "sky", "city": "city", "lights": "win",
+                         "behindTrain": "behindTrain", "street": "street"}
+    for prop in week3_props:
+        if prop.get("name") not in week3_layer_names:
+            continue
+        layer_name = week3_layer_names[prop["name"]]
+        source = assets / "week3" / "images" / "philly" / f"{layer_name}.png"
+        src_w, src_h = png_size(source)
+        scale = prop.get("scale", [1.0, 1.0])
+        if not isinstance(scale, list):
+            scale = [scale, scale]
+        width = max(1, round(src_w * float(scale[0]) / week3_stage_divisor))
+        height = max(1, round(src_h * float(scale[1]) / week3_stage_divisor))
+        layer = run_ffmpeg(ffmpeg, source, f"scale={width}:{height}:flags=area,format=rgba",
+                           width, height)
+        px = math.floor(float(prop["position"][0]) / week3_stage_divisor + 0.5) - week3_stage_origin[0]
+        py = math.floor(float(prop["position"][1]) / week3_stage_divisor + 0.5) - week3_stage_origin[1]
+        blend_at(week3_stage_rgba, (week3_stage_w, week3_stage_h), layer, (width, height), (px, py))
+    week3_stage_names = []
+    for tile in range(2):
+        name = f"week3_stage_scene_{tile}"
+        pixels = bytearray()
+        for y in range(week3_stage_h):
+            start = (y * week3_stage_w + tile * 256) * 4
+            pixels.extend(week3_stage_rgba[start:start + 256 * 4])
+        temp_images[name] = pixels
+        frame_sizes[name] = (256, week3_stage_h)
+        week3_stage_names.append(name)
+
+    pico_rig = Rig(assets / "shared" / "images" / "characters" / "pico" / "basic-animations", ffmpeg)
+    week3_pico_sources = {
+        "week3_pico_idle_0": 0, "week3_pico_idle_1": 7,
+        "week3_pico_sing_left_0": 31, "week3_pico_sing_left_1": 35,
+        "week3_pico_sing_down_0": 62, "week3_pico_sing_down_1": 66,
+        "week3_pico_sing_up_0": 48, "week3_pico_sing_up_1": 52,
+        "week3_pico_sing_right_0": 14, "week3_pico_sing_right_1": 18,
+    }
+    pico_poses = fit_anchored_rig(pico_rig, list(week3_pico_sources.values()), 72, 84)
+    week3_character_names = []
+    for name, source_frame in week3_pico_sources.items():
+        temp_images[name] = mirror_rgba(pico_poses[source_frame], 72, 84)
+        frame_sizes[name] = (72, 84)
+        week3_character_names.append(name)
+    for pose, source_index in enumerate((0, 5)):
+        name = f"week3_gf_dance_{pose}"
+        temp_images[name] = bytearray(temp_images[f"gf_dance_{source_index}"])
+        frame_sizes[name] = frame_sizes[f"gf_dance_{source_index}"]
+        week3_character_names.append(name)
+    pico_icon = assets / "preload" / "images" / "icons" / "icon-pico.png"
+    temp_images["week3_pico_icon"] = extract_crop(ffmpeg, pico_icon, 0, 0, 150, 150, (24, 24))
+    frame_sizes["week3_pico_icon"] = (24, 24)
+    week3_character_names.append("week3_pico_icon")
+    week3_palette_names = week3_stage_names + week3_character_names
+
+    # Tutorial uses Girlfriend as the opponent; keep her official four singing
+    # poses available so opponent charts do not animate Dad over GF vocals.
+    gf_sing_sources = {"left": 64, "down": 47, "up": 33, "right": 79}
+    gf_sing_frames = fit_anchored_rig(gf_rig, list(gf_sing_sources.values()), 87, 79)
+    for direction, source_frame in gf_sing_sources.items():
+        temp_images[f"gf_sing_{direction}"] = gf_sing_frames[source_frame]
+        frame_sizes[f"gf_sing_{direction}"] = (87, 79)
 
     # Bopeebo's standard note style uses these pinned official sprites, not
     # the older NOTE_assets chart-editor atlas or generated geometric arrows.
@@ -673,6 +1108,13 @@ def build(args: argparse.Namespace) -> None:
         temp_images[icon_name] = extract_crop(ffmpeg, icon_png, x, 0, 150, 150, (24, 24))
         frame_sizes[icon_name] = (24, 24)
         icon_names.append(icon_name)
+    # Tutorial's GF portrait uses the existing 4bpp popup page and CLUT. This
+    # avoids allocating another full 8bpp page for a single 24x24 icon.
+    gf_icon_name = "ui_icon_gf"
+    temp_images[gf_icon_name] = extract_crop(ffmpeg,
+        icon_dir / "icon-gf.png", 0, 0, 150, 150, (24, 24))
+    frame_sizes[gf_icon_name] = (24, 24)
+    popup_names.append(gf_icon_name)
 
     # Official menu artwork shares the portrait texture page, so title/menu
     # navigation adds no additional page to the fixed VRAM map.
@@ -683,18 +1125,257 @@ def build(args: argparse.Namespace) -> None:
         raise ValueError("missing official logo bumpin frame in pinned assets")
     temp_images["menu_logo"] = extract_sparrow_frame(ffmpeg, logo_png, logo_frames[0], (160, 120))
     frame_sizes["menu_logo"] = (160, 120)
-    freeplay_bg = assets / "preload" / "images" / "freeplay" / "freeplayBGweek1-bf.png"
-    temp_images["menu_freeplay_bg"] = extract_stage(ffmpeg, freeplay_bg, 128, 72)
-    frame_sizes["menu_freeplay_bg"] = (128, 72)
     freeplay_button_png = assets / "preload" / "images" / "mainmenu" / "freeplay.png"
     freeplay_button_xml = assets / "preload" / "images" / "mainmenu" / "freeplay.xml"
-    freeplay_buttons = atlas_frames(freeplay_button_xml).get("freeplay selected")
-    if not freeplay_buttons:
-        raise ValueError("missing official Freeplay selection sprite in pinned assets")
-    temp_images["menu_freeplay_button"] = extract_sparrow_frame(
-        ffmpeg, freeplay_button_png, freeplay_buttons[0], (128, 36))
-    frame_sizes["menu_freeplay_button"] = (128, 36)
-    menu_names = ["menu_logo", "menu_freeplay_bg", "menu_freeplay_button"]
+    menu_idle_art: dict[str, bytearray] = {}
+    menu_selected_art: dict[str, list[bytearray]] = {}
+    for label in ("storymode", "freeplay", "credits"):
+        png = assets / "preload" / "images" / "mainmenu" / f"{label}.png"
+        groups = atlas_frames(png.with_suffix(".xml"))
+        idle_frames = groups.get(f"{label} idle")
+        selected_frames = groups.get(f"{label} selected")
+        if not idle_frames or not selected_frames:
+            raise ValueError(f"missing official {label} idle/selected menu artwork")
+        menu_idle_art[label] = extract_sparrow_frame(ffmpeg, png, idle_frames[0], (128, 36))
+        menu_selected_art[label] = [extract_sparrow_frame(ffmpeg, png, frame, (128, 36))
+                                    for frame in selected_frames[:3]]
+        if len(menu_selected_art[label]) != 3:
+            raise ValueError(f"expected three selected {label} animation frames")
+        for frame_index, pixels in enumerate(menu_selected_art[label]):
+            name = f"menu_{label}_button_{frame_index}"
+            temp_images[name] = pixels
+            frame_sizes[name] = (128, 36)
+    options_png = pathlib.Path(args.options_art).resolve() if args.options_art else \
+        assets / "preload" / "images" / "mainmenu" / "options.png"
+    if not options_png.is_file():
+        raise ValueError(f"Options lettering image not found: {options_png}")
+    options_idle, options_selected = menu_label_states(ffmpeg, options_png)
+    temp_images["menu_options_idle"] = options_idle
+    frame_sizes["menu_options_idle"] = (128, 36)
+    menu_selected_art["options"] = options_selected
+    for frame_index, pixels in enumerate(options_selected):
+        name = f"menu_options_button_{frame_index}"
+        temp_images[name] = pixels
+        frame_sizes[name] = (128, 36)
+    # Full-screen menu art is composed offline at its source aspect ratio and
+    # reuses one existing 8bpp VRAM page, loaded only while the front-end runs.
+    menu_bg_source = assets / "preload" / "images" / "menuBG.png"
+    menu_bg = extract_menu_cover(ffmpeg, menu_bg_source, 256, 192)
+    title_screen = bytearray((8, 7, 16, 255) * (256 * 192))
+    logo_overlay = extract_sparrow_frame(ffmpeg, logo_png, logo_frames[0], (184, 138))
+    blend_at(title_screen, (256, 192), logo_overlay, (184, 138), (36, 8))
+    main_screen = bytearray(menu_bg)
+    # Four evenly spaced rows use the same 128x36 source bounds and common
+    # center. Keep a clean background patch for whichever row is selected.
+    menu_labels = ("storymode", "freeplay", "options", "credits")
+    menu_row_y = (19, 58, 96, 134)
+    for label, y in zip(menu_labels, menu_row_y):
+        art = menu_idle_art[label] if label != "options" else options_idle
+        blend_at(main_screen, (256, 192), art, (128, 36), (64, y))
+    menu_row_backgrounds_rgba = [bytearray(128 * 36 * 4) for _ in menu_labels]
+    for row, y in enumerate(menu_row_y):
+        for py in range(36):
+            src = ((y + py) * 256 + 64) * 4
+            dst = py * 128 * 4
+            menu_row_backgrounds_rgba[row][dst:dst + 128 * 4] = menu_bg[src:src + 128 * 4]
+    # Freeplay keeps the official week-one artwork, but crops to Dad so GF from
+    # the source image cannot appear behind the song list. The 4:3 crop keeps
+    # the source proportions; it does not stretch the original illustration.
+    freeplay_bg = assets / "preload" / "images" / "freeplay" / "freeplayBGweek1-bf.png"
+    # Keep the 821x516 source aspect ratio (306x192 here), then pan it right so
+    # GF stays beyond the 4:3 viewport. The prior 430x322 crop magnified the
+    # artwork and made Dad's proportions diverge from the approved composition.
+    freeplay_base = bytearray(256 * 192 * 4)
+    dad_background = run_ffmpeg(ffmpeg, freeplay_bg,
+        "scale=306:192:flags=area,format=rgba", 306, 192)
+    blend_at(freeplay_base, (256, 192), dad_background, (306, 192), (25, 0))
+    freeplay_label_frames = atlas_frames(
+        assets / "preload" / "images" / "mainmenu" / "freeplay.xml").get("freeplay selected")
+    capsule_png = assets / "preload" / "images" / "freeplay" / "freeplayCapsule" / "capsule" / "freeplayCapsule.png"
+    capsule_xml = assets / "preload" / "images" / "freeplay" / "freeplayCapsule" / "capsule" / "freeplayCapsule.xml"
+    capsule_frames = atlas_frames(capsule_xml).get("mp3 capsule w backing")
+    idle_capsule_frames = atlas_frames(capsule_xml).get("mp3 capsule w backing NOT SELECTED")
+    if not freeplay_label_frames or not capsule_frames or not idle_capsule_frames:
+        raise ValueError("missing official Freeplay label or selected song capsule")
+    freeplay_label = extract_sparrow_frame(ffmpeg,
+        assets / "preload" / "images" / "mainmenu" / "freeplay.png",
+        freeplay_label_frames[0], (72, 20))
+    temp_images["menu_freeplay_capsule_selected"] = extract_sparrow_frame(
+        ffmpeg, capsule_png, capsule_frames[0], (148, 32))
+    temp_images["menu_freeplay_capsule_idle"] = extract_sparrow_frame(
+        ffmpeg, capsule_png, idle_capsule_frames[0], (148, 32))
+    frame_sizes["menu_freeplay_capsule_selected"] = (148, 32)
+    frame_sizes["menu_freeplay_capsule_idle"] = (148, 32)
+
+    # Build the approved 4:3 Freeplay composition and extract the pinned BF DJ
+    # intro/idle Animate frames. The runtime temporarily uses three gameplay
+    # texture pages as a menu-only atlas and restores them before song loading.
+    freeplay_difficulty_names = ("easy", "normal", "hard")
+    freeplay_menu_names = [f"menu_screen_freeplay_{name}" for name in freeplay_difficulty_names]
+    dj_rig = Rig(assets / "preload" / "images" / "freeplay" / "freeplay-boyfriend", ffmpeg)
+    dj_target_w, dj_target_h = MENU_DJ_SOURCE_CANVAS_W, MENU_DJ_FRAME_H
+    dj_animation_rgba = fit_anchored_rig(
+        dj_rig, list(MENU_DJ_SOURCE_FRAMES), dj_target_w, dj_target_h)
+    menu_dj_frame_names: list[str] = []
+    for frame_index in MENU_DJ_SOURCE_FRAMES:
+        name = f"menu_freeplay_dj_frame_{frame_index:03d}"
+        frame = dj_animation_rgba[frame_index]
+        if len(frame) != dj_target_w * dj_target_h * 4:
+            raise ValueError(f"unexpected Freeplay DJ frame size at source frame {frame_index}")
+        menu_dj_frame_names.append(name)
+
+    screen = bytearray(freeplay_base)
+    # Yellow paper panel: its left edge is fixed, its right edge widens toward
+    # the bottom exactly as in the accepted mockup. No black scan lines are
+    # painted over the official decorative words.
+    panel_top, panel_h = 19, 173
+    for y in range(panel_top, 192):
+        local_y = y - panel_top
+        right = 102 + (13 * local_y // max(1, panel_h - 1))
+        for x in range(right):
+            offset = (y * 256 + x) * 4
+            shade = ((x * 7 + local_y * 3) % 13) - 6
+            screen[offset:offset + 4] = bytes((
+                max(0, min(255, 255 + shade)),
+                max(0, min(255, 218 + shade)),
+                max(0, min(255, 45 + shade // 2)), 255))
+
+    # Preserve the official glowingText shapes while recoloring separate rows
+    # with visible gold, yellow-orange and orange inks. Different intensity
+    # keeps them legible as background decoration behind the DJ figure.
+    glowing_png = assets / "preload" / "images" / "freeplay" / "glowingText.png"
+    hype_rows = (
+        (4, 0, 419, 55, 96, 13, (230, 172, 20), 188, 2, 10),
+        (4, 63, 419, 107, 96, 25, (231, 132, 24), 190, 4, 31),
+        (3, 178, 421, 68, 87, 15, (241, 187, 32), 205, 6, 72),
+        (4, 254, 440, 101, 78, 18, (224, 105, 23), 180, 22, 111),
+    )
+    for sx, sy, sw, sh, rw, rh, ink, strength, dx, dy in hype_rows:
+        row = extract_crop(ffmpeg, glowing_png, sx, sy, sw, sh, (rw, rh))
+        for i in range(0, len(row), 4):
+            alpha = row[i + 3] * strength // 255
+            row[i:i + 4] = bytes((*ink, alpha))
+        blend_at(screen, (256, 192), row, (rw, rh), (dx, panel_top + dy))
+
+    # VCR-like title strip and official Freeplay lettering; best-score text is
+    # drawn at runtime from session records, never from mockup sample values.
+    for y in range(27):
+        for x in range(256):
+            offset = (y * 256 + x) * 4
+            screen[offset:offset + 4] = bytes((9, 8, 18, 255))
+    # Leave a small top-safe margin: the user's DuckStation capture clipped
+    # the upper edge of both the title strip and its runtime score line.
+    blend_at(screen, (256, 192), freeplay_label, (72, 20), (7, 7))
+    # The approved 320x240 mockup uses this exact VCR font family. Rasterize
+    # uppercase glyphs at converter time to avoid BIOS-font substitution and
+    # tiny, distorted 5x7 reductions of the unrelated Freeplay alphabet art.
+    letter_atlas = vcr_letter_atlas(ffmpeg, assets / "fonts" / "vcr-bold.ttf")
+    temp_images["menu_freeplay_letters"] = letter_atlas
+    frame_sizes["menu_freeplay_letters"] = (48, 36)
+
+    # Tight-crop the rig's shared horizontal bounds while preserving its
+    # common floor and transparent background. The previous 82x90 rectangle
+    # contained only a 31px-wide character during idle, making BF look tiny.
+    # Drawing this 31x90 sprite at 1.75x gives the figure useful scale without
+    # stretching or repainting the yellow menu art.
+    opaque_x = []
+    for frame in dj_animation_rgba.values():
+        for y in range(dj_target_h):
+            for x in range(dj_target_w):
+                if frame[(y * dj_target_w + x) * 4 + 3] >= 96:
+                    opaque_x.append(x)
+    dj_crop_left, dj_crop_right = min(opaque_x), max(opaque_x) + 1
+    dj_frame_w = dj_crop_right - dj_crop_left
+    if not 0 < dj_frame_w <= dj_target_w:
+        raise ValueError(f"invalid shared DJ rig width {dj_frame_w}")
+    for frame_index, name in zip(MENU_DJ_SOURCE_FRAMES, menu_dj_frame_names):
+        cropped = bytearray(dj_frame_w * MENU_DJ_FRAME_H * 4)
+        for row in range(dj_target_h):
+            src = (row * dj_target_w + dj_crop_left) * 4
+            dst = row * dj_frame_w * 4
+            cropped[dst:dst + dj_frame_w * 4] = \
+                dj_animation_rgba[frame_index][src:src + dj_frame_w * 4]
+        temp_images[name] = cropped
+        frame_sizes[name] = (dj_frame_w, MENU_DJ_FRAME_H)
+    # Palette sampling uses only a few transparent rig poses, not every opaque
+    # composited frame; repeated yellow background pixels must not crowd Dad's
+    # or the gameplay stage colors out of the shared 8bpp CLUT.
+    menu_dj_palette_names = []
+    for sample_index in (0, 9, 12):
+        frame_index = MENU_DJ_SOURCE_FRAMES[sample_index]
+        name = f"menu_freeplay_dj_palette_{frame_index:03d}"
+        temp_images[name] = dj_animation_rgba[frame_index]
+        frame_sizes[name] = (dj_target_w, dj_target_h)
+        menu_dj_palette_names.append(name)
+
+    # Difficulty selector uses the official label artwork and selector arrows
+    # seen in the approved mockup. Each complete 256x192 screen is stored as a
+    # separate front-end page and loaded through the already-used full-page path.
+    selector_png = assets / "preload" / "images" / "freeplay" / "freeplaySelector.png"
+    selector_xml = assets / "preload" / "images" / "freeplay" / "freeplaySelector.xml"
+    selector_frame = atlas_frames(selector_xml).get("arrow pointer loop")
+    if not selector_frame:
+        raise ValueError("missing official Freeplay selector arrow")
+    selector_left = extract_sparrow_frame(ffmpeg, selector_png, selector_frame[0], (12, 22))
+    selector_right = mirror_rgba(selector_left, 12, 22)
+    freeplay_menu_screens: list[bytearray] = []
+    for difficulty_name in freeplay_difficulty_names:
+        difficulty_png = assets / "preload" / "images" / "freeplay" / f"freeplay{difficulty_name}.png"
+        if not difficulty_png.is_file():
+            raise ValueError(f"missing official Freeplay difficulty art: {difficulty_png}")
+        difficulty_label = run_ffmpeg(ffmpeg, difficulty_png,
+            "scale=46:15:flags=area,format=rgba", 46, 15)
+        temp_images[f"menu_freeplay_difficulty_{difficulty_name}"] = difficulty_label
+        variant = bytearray(screen)
+        # Coordinates are the approved 320x240 positions scaled to the 256x192
+        # backing texture, not independent positional retuning.
+        blend_at(variant, (256, 192), selector_left, (12, 22), (9, 25))
+        blend_at(variant, (256, 192), difficulty_label, (46, 15), (24, 28))
+        blend_at(variant, (256, 192), selector_right, (12, 22), (72, 25))
+        freeplay_menu_screens.append(variant)
+    temp_images["menu_freeplay_selector_left"] = selector_left
+    temp_images["menu_freeplay_selector_right"] = selector_right
+
+    # Tiny official pixel heads: 28px boxes are a 16.7% increase over the
+    # previous 24px icons. Runtime placement uses each icon's opaque bounds.
+    menu_icon_files = ("gfpixel", "dadpixel", "spookypixel", "picopixel",
+                       "mompixel", "monsterpixel", "parents-christmaspixel",
+                       "senpaipixel", "spiritpixel", "tankmanpixel", "darnellpixel")
+    menu_icon_images: list[str] = []
+    for icon in menu_icon_files:
+        icon_png = assets / "preload" / "images" / "freeplay" / "icons" / f"{icon}.png"
+        icon_xml = assets / "preload" / "images" / "freeplay" / "icons" / f"{icon}.xml"
+        frames = atlas_frames(icon_xml).get("idle")
+        if not frames:
+            raise ValueError(f"missing official idle portrait for {icon}")
+        image_name = f"menu_character_{icon}"
+        temp_images[image_name] = extract_sparrow_frame(ffmpeg, icon_png, frames[0], (28, 28))
+        frame_sizes[image_name] = (28, 28)
+        menu_icon_images.append(image_name)
+
+    # Song titles remain runtime UI; difficulty art is composed offline into
+    # each complete Freeplay screen page.
+    menu_screen_names = ["menu_screen_title", "menu_screen_main", *freeplay_menu_names]
+    menu_screen_pixels = [title_screen, main_screen, *freeplay_menu_screens]
+    for name, pixels in zip(menu_screen_names, menu_screen_pixels):
+        temp_images[name] = pixels
+        frame_sizes[name] = (256, 192)
+    menu_button_names = [f"menu_{label}_button_{i}"
+        for label in ("storymode", "freeplay", "options", "credits") for i in range(3)]
+    # Menu selection frames are uploaded from ROM to the reserved menu strip;
+    # packing copies into the permanent texture pages would waste a full page.
+    menu_names = ["menu_logo"]
+
+    # Game over replaces the menu page at runtime. Its animation frames are
+    # kept in main RAM, using the pinned Animate rig rather than a still pose.
+    death_ids = (0, 6, 12, 18, 24, 30, 36, 42, 48, 57,
+                 58, 64, 70, 76, 82, 91,
+                 92, 99, 106, 113, 120, 125)
+    death_rig = Rig(chars / "bf-death", ffmpeg)
+    death_source = fit_anchored_rig(death_rig, list(death_ids), 80, 96)
+    death_images = [death_source[index] for index in death_ids]
+    death_palette8 = median_palette(death_images, 255)
+    death_frames = [quantize(pixels, death_palette8) for pixels in death_images]
 
     stage_names = [name for name in temp_images if name.startswith("stage_")]
     bf_names = [name for name in temp_images if name.startswith("bf_")]
@@ -706,7 +1387,18 @@ def build(args: argparse.Namespace) -> None:
     stage_palette_old = median_palette([temp_images[n] for n in stage_names], 15)
     # One shared 8bpp palette fits alongside the BF CLUT in the 320-word
     # strip below the framebuffers, avoiding texture/CLUT overlap in VRAM.
-    palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names + menu_names], 255)
+    # The three DJ idle variants reuse the same Week 1 backdrop and capsule
+    # colors; sample one variant so repetition does not bias the shared CLUT.
+    menu_palette_names = (menu_names + menu_button_names + menu_screen_names + menu_dj_palette_names +
+                          ["menu_options_idle", "menu_freeplay_capsule_selected",
+                           "menu_freeplay_capsule_idle", "menu_freeplay_letters",
+                           "menu_freeplay_selector_left", "menu_freeplay_selector_right",
+                           "menu_freeplay_difficulty_easy", "menu_freeplay_difficulty_normal",
+                           "menu_freeplay_difficulty_hard"] +
+                          menu_icon_images)
+    palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names + menu_palette_names], 255)
+    week2_palette = median_palette([temp_images[n] for n in week2_character_palette_names], 255)
+    week3_palette = median_palette([temp_images[n] for n in week3_palette_names], 255)
     palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
     palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
                    for d in directions]
@@ -720,7 +1412,12 @@ def build(args: argparse.Namespace) -> None:
     palette_bf8 = median_palette([temp_images[n] for n in bf_core_names], 255)
     palette_popup4 = median_palette([temp_images[n] for n in popup_names], 15)
     quantized8 = {name: quantize(pixels, palette8) for name, pixels in temp_images.items()
-                  if not name.startswith(("bf_", "ui_"))}
+                  if not name.startswith(("bf_", "ui_", "week2_", "week3_"))}
+    quantized_week2 = {name: quantize(temp_images[name], week2_palette)
+                       for name in week2_character_palette_names}
+    quantized_week3 = {name: quantize(temp_images[name], week3_palette)
+                       for name in week3_palette_names}
+    menu_dj_frames = [quantized8[name] for name in menu_dj_frame_names]
     quantized4 = {name: quantize(temp_images[name], palette4) for name in bf_miss_names}
     quantized_ui4 = {
         name: quantize(temp_images[name], palette_ui4[lane])
@@ -744,9 +1441,69 @@ def build(args: argparse.Namespace) -> None:
     quantized_bf8 = {name: quantize(temp_images[name], palette_bf8) for name in bf_core_names}
     quantized_popup4 = {name: quantize(temp_images[name], palette_popup4) for name in popup_names}
     quantized_icon8 = {
-        name: quantize(temp_images[name], palette_bf8 if name != "ui_icon_dad" else palette8)
+        name: quantize(temp_images[name],
+                       palette8 if name in ("ui_icon_dad", "ui_icon_gf") else palette_bf8)
         for name in icon_names
     }
+    menu_screen_pages: list[bytearray] = []
+    menu_page_regions = [
+        ("capsule_selected", 0, 192, 148, 32),
+        ("capsule_idle", 0, 224, 148, 32),
+        ("vcr_glyph_atlas", 148, 192, 48, 36),
+        ("icon_slot_0", 196, 192, 28, 28),
+        ("icon_slot_1", 224, 192, 28, 28),
+        ("icon_slot_2", 196, 220, 28, 28),
+        ("icon_slot_3", 224, 220, 28, 28),
+    ]
+    for index, (name, x, y, width, height) in enumerate(menu_page_regions):
+        if x < 0 or y < 0 or x + width > PAGE_W or y + height > PAGE_H:
+            raise ValueError(f"Freeplay VRAM region {name} exceeds the texture page")
+        for other_name, ox, oy, ow, oh in menu_page_regions[:index]:
+            if x < ox + ow and ox < x + width and y < oy + height and oy < y + height:
+                raise ValueError(f"Freeplay VRAM regions {name} and {other_name} overlap")
+    for index in range(26):
+        x, y = 148 + (index % 8) * 6, 192 + (index // 8) * 9
+        if x + 5 > 148 + 48 or y + 8 > 192 + 36:
+            raise ValueError(f"VCR glyph {index} exceeds its 48x36 atlas")
+    for name, x, y, width, height in (
+            ("left selector", 9, 25, 12, 22),
+            ("difficulty label", 24, 28, 46, 15),
+            ("right selector", 72, 25, 12, 22)):
+        if x < 0 or y < 0 or x + width > 256 or y + height > 192:
+            raise ValueError(f"{name} exceeds the 256x192 Freeplay screen")
+    for name in menu_screen_names:
+        indices = quantize(temp_images[name], palette8)
+        page = bytearray(PAGE_W * PAGE_H)
+        page[:256 * 192] = indices
+        if name.startswith("menu_screen_freeplay_"):
+            def page_blit(source_name: str, x: int, y: int) -> None:
+                width, height = frame_sizes[source_name]
+                if x < 0 or y < 0 or x + width > PAGE_W or y + height > PAGE_H:
+                    raise ValueError(f"menu page blit {source_name} is out of bounds")
+                source = quantized8[source_name]
+                for row in range(height):
+                    dst = (y + row) * PAGE_W + x
+                    src = row * width
+                    page[dst:dst + width] = source[src:src + width]
+            page_blit("menu_freeplay_capsule_selected", 0, 192)
+            page_blit("menu_freeplay_capsule_idle", 0, 224)
+            page_blit("menu_freeplay_letters", 148, 192)
+        menu_screen_pages.append(page)
+    menu_character_icon_words: list[list[int]] = []
+    menu_character_icon_bounds: list[tuple[int, int, int, int]] = []
+    for name in menu_icon_images:
+        indices = quantized8[name]
+        menu_character_icon_words.append([
+            indices[i] | (indices[i + 1] << 8) for i in range(0, len(indices), 2)])
+        width, height = frame_sizes[name]
+        opaque = [(i % width, i // width) for i, alpha in enumerate(
+            temp_images[name][3::4]) if alpha >= 128]
+        if not opaque:
+            raise ValueError(f"menu portrait has no opaque pixels: {name}")
+        menu_character_icon_bounds.append((min(x for x, _ in opaque),
+                                           min(y for _, y in opaque),
+                                           max(x for x, _ in opaque) + 1,
+                                           max(y for _, y in opaque) + 1))
     descriptors: dict[str, dict] = {}
     pages8: list[bytearray] = []
     pages4: list[bytearray] = []
@@ -776,7 +1533,7 @@ def build(args: argparse.Namespace) -> None:
         [(name, quantized8[name], *frame_sizes[name]) for name in menu_names],
         portrait_first_page, 0, pages8, descriptors)
     for name in icon_names:
-        descriptors[name]["palette"] = 0 if name == "ui_icon_dad" else 2
+        descriptors[name]["palette"] = 0 if name in ("ui_icon_dad", "ui_icon_gf") else 2
     # Keep the less frequent miss poses 4bpp; the song-critical idle/sing poses
     # get a dedicated 8bpp CLUT and the two remaining 8bpp texture pages.
     pack_page([(n, quantized4[n], *frame_sizes[n]) for n in bf_miss_names] +
@@ -815,7 +1572,7 @@ def build(args: argparse.Namespace) -> None:
     # framebuffers, all texture pages, CLUT rows and the SDK font reservation.
     vram_regions = [("framebuffer0", 0, 0, 320, 240), ("framebuffer1", 0, 240, 320, 240),
                     ("palette8", 0, 496, 256, 1), ("palette4", 256, 496, 16, 1),
-                    ("palette_bf8", 0, 480, 256, 1), ("palette_popup4", 272, 480, 16, 1),
+                    ("palette_bf8", 0, 480, 256, 1), ("palette_popup4", 288, 480, 16, 1),
                     ("font_reservation", 960, 0, 64, 256)]
     vram_regions.extend((f"palette_ui4_{i}", (256 if i == 3 else 272 + i * 16),
                          (480 if i == 3 else 496), 16, 1) for i in range(4))
@@ -830,12 +1587,64 @@ def build(args: argparse.Namespace) -> None:
     for name in bf_miss_names + ui_names + popup_names:
         descriptors[name]["page"] += len(pages8)
 
+    # Week 2 reuses gameplay texture pages 0..2 while loaded. Its dedicated
+    # palette and full-page payloads leave the validated Week 1 CLUT untouched.
+    week2_stage_pages = [bytearray(PAGE_W * PAGE_H) for _ in range(2)]
+    for tile, name in enumerate(week2_stage_names):
+        width, height = frame_sizes[name]
+        indices = quantized_week2[name]
+        for py in range(height):
+            src = py * width
+            dst = py * PAGE_W
+            week2_stage_pages[tile][dst:dst + width] = indices[src:src + width]
+        descriptors[name] = {"page": tile, "palette": 0, "u": 0, "v": 0,
+                             "w": width, "h": height}
+
+    week2_character_pages: list[bytearray] = []
+    week2_character_local: dict[str, dict] = {}
+    pack_8bpp([(name, quantized_week2[name], *frame_sizes[name])
+               for name in week2_character_names], 0, 8,
+              week2_character_pages, week2_character_local)
+    if len(week2_character_pages) != 3:
+        raise ValueError(f"Week 2 character atlas needs {len(week2_character_pages)} pages; expected three")
+    week2_character_page_slots = (2, 3, 8)
+    for name, frame in week2_character_local.items():
+        descriptors[name] = {**frame,
+            "page": week2_character_page_slots[int(frame["page"])], "palette": 0}
+    for name in week2_stage_names:
+        descriptors[name]["palette"] = 0
+
+    week3_stage_pages = [bytearray(PAGE_W * PAGE_H) for _ in range(2)]
+    for tile, name in enumerate(week3_stage_names):
+        indices = quantized_week3[name]
+        for py in range(PAGE_H):
+            src = py * PAGE_W
+            week3_stage_pages[tile][src:src + PAGE_W] = indices[src:src + PAGE_W]
+        descriptors[name] = {"page": tile, "palette": 0, "u": 0, "v": 0,
+                             "w": PAGE_W, "h": PAGE_H}
+
+    week3_character_pages: list[bytearray] = []
+    week3_character_local: dict[str, dict] = {}
+    pack_8bpp([(name, quantized_week3[name], *frame_sizes[name])
+               for name in week3_character_names], 0, 8,
+              week3_character_pages, week3_character_local)
+    if not week3_character_pages or len(week3_character_pages) > 2:
+        raise ValueError(f"Week 3 character atlas needs {len(week3_character_pages)} pages; expected one or two")
+    week3_character_page_slots = (2, 3)
+    for name, frame in week3_character_local.items():
+        descriptors[name] = {**frame,
+            "page": week3_character_page_slots[int(frame["page"])], "palette": 0}
+    for name in week3_stage_names:
+        descriptors[name]["palette"] = 0
+
     # Check every packed frame, not only the page's outer rectangle. This
     # catches allocator overlap, invalid UV rectangles and page-depth errors.
     occupied: dict[int, list[tuple[str, int, int, int, int]]] = collections.defaultdict(list)
     for name, desc in descriptors.items():
+        if name.startswith(("week2_", "week3_")):
+            continue  # Week-specific overlay pages reuse Week 1 VRAM slots.
         page_index = int(desc["page"])
-        depth4 = name.startswith(("ui_note_", "ui_receptor_", "ui_hold_",
+        depth4 = name.startswith(("ui_note_", "ui_receptor_", "ui_hold_", "ui_icon_gf",
                                   "ui_judgement_", "ui_combo_num_", "ui_score_glyph_", "bf_miss_"))
         page_count = len(page_table)
         if not 0 <= page_index < page_count:
@@ -850,6 +1659,37 @@ def build(args: argparse.Namespace) -> None:
             if x < ox + ow and ox < x + w and y < oy + oh and oy < y + h:
                 raise ValueError(f"packed frames {name} and {other} overlap on page {page_index}")
         occupied[page_index].append((name, x, y, w, h))
+
+    # In Freeplay only, the 8bpp page immediately before the dedicated menu
+    # page becomes a complete DJ-frame atlas. Upload/restore it as a whole
+    # pages, using the full-page transfer path that was already exercised.
+    menu_page_index = int(descriptors["menu_logo"]["page"])
+    if menu_page_index != len(pages8) - 1 or menu_page_index < 1:
+        raise ValueError("the menu texture page must remain the final 8bpp page")
+    menu_dj_first_page = menu_page_index - 1
+    menu_dj_pages: list[bytearray] = []
+    menu_dj_local_frames: dict[str, dict] = {}
+    pack_8bpp([(name, quantized8[name], *frame_sizes[name])
+               for name in menu_dj_frame_names],
+              0, 0, menu_dj_pages, menu_dj_local_frames)
+    if len(menu_dj_pages) != 1:
+        raise ValueError(f"expected one packed DJ page, got {len(menu_dj_pages)}")
+    menu_dj_local_occupied: dict[int, list[tuple[str, int, int, int, int]]] = collections.defaultdict(list)
+    for name, frame in menu_dj_local_frames.items():
+        page_no = int(frame["page"])
+        x, y, width, height = (int(frame[k]) for k in ("u", "v", "w", "h"))
+        if not 0 <= page_no < len(menu_dj_pages) or x + width > PAGE_W or y + height > PAGE_H:
+            raise ValueError(f"Freeplay DJ frame {name} exceeds its complete texture pages")
+        for other, ox, oy, ow, oh in menu_dj_local_occupied[page_no]:
+            if x < ox + ow and ox < x + width and y < oy + oh and oy < y + height:
+                raise ValueError(f"Freeplay DJ frames {name} and {other} overlap")
+        menu_dj_local_occupied[page_no].append((name, x, y, width, height))
+        descriptors[name] = {**frame, "page": menu_dj_first_page + page_no, "palette": 0}
+    for name in menu_dj_frame_names:
+        frame = descriptors[name]
+        page_index = int(frame["page"])
+        if not 0 <= page_index < len(page_table) or page_table[page_index][2] != 1:
+            raise ValueError(f"Freeplay DJ frame {name} is not on a valid 8bpp page")
 
     # Keep quantization losses visible in the build log to guide art choices.
     def rmse(names, palette):
@@ -875,10 +1715,48 @@ def build(args: argparse.Namespace) -> None:
     print(f"Official judgement art/health icons: 4bpp shared CLUT RMSE {rmse(popup_names, palette_popup4):.2f} RGB levels")
     print("Official combo digits and VCR score glyphs: nearest-neighbor 4bpp in shared popup CLUT")
     print("Official health portraits at 24x24 use the 8bpp character CLUTs (Dad/main, BF/BF)")
+    print("Freeplay page checks: 6x9 VCR glyph cells, capsules, icon slots and difficulty art fit without overlap")
+    print(f"Freeplay DJ checks: 9 sampled Intro frames + 7 sampled Idle frames, anchored to one floor; crop {dj_frame_w}x{MENU_DJ_FRAME_H} has transparent margins and scales 1.75x at runtime")
+    print(f"Freeplay DJ atlas: {len(menu_dj_pages)} full-page 8bpp texture ({len(menu_dj_pages) * 65536} bytes resident); underlying menu background remains a separate layer")
+    print(f"Freeplay DJ color check: shared 8bpp CLUT RMSE {rmse(menu_dj_frame_names, palette8):.2f} RGB levels; palette sampled from 3 transparent poses only")
+    print(f"Week 2 art: {week2_bg_w}x{week2_bg_h} scene (was {round(2536 / WORLD_DIVISOR)}x{round(1837 / WORLD_DIVISOR)}), {WEEK2_CHAR_W}x{WEEK2_CHAR_H} Spooky/Monster sprites, {len(week2_character_names)} official animation/icon frames, {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, dedicated 255-color CLUT, RMSE {rmse(week2_character_palette_names, week2_palette):.2f} RGB levels")
+    week2_payload_path = pathlib.Path(args.week2_pages_output)
+    week2_payload_path.parent.mkdir(parents=True, exist_ok=True)
+    palette_words = [0] + [rgb555(c) for c in week2_palette[:255]]
+    palette_words += [0] * (256 - len(palette_words))
+    week2_payload_path.write_bytes(
+        b"".join(bytes(page) for page in week2_stage_pages + week2_character_pages) +
+        struct.pack("<256H", *palette_words))
+    print(f"Week 2 package: {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, {week2_payload_path.stat().st_size} bytes on disc")
+    week1_payload_path = pathlib.Path(args.week1_pages_output)
+    week1_payload_path.parent.mkdir(parents=True, exist_ok=True)
+    week1_payload_path.write_bytes(b"".join(bytes(page) for page in pages8 + pages4))
+    print(f"Week 1 shared gameplay package: {len(pages8)} 8bpp + {len(pages4)} 4bpp pages, {week1_payload_path.stat().st_size} bytes on disc; page arrays are no longer resident in executable data")
+    week3_payload_path = pathlib.Path(args.week3_pages_output)
+    week3_payload_path.parent.mkdir(parents=True, exist_ok=True)
+    week3_palette_words = [0] + [rgb555(c) for c in week3_palette[:255]]
+    week3_palette_words += [0] * (256 - len(week3_palette_words))
+    week3_payload_path.write_bytes(
+        b"".join(bytes(page) for page in week3_stage_pages + week3_character_pages) +
+        struct.pack("<256H", *week3_palette_words))
+    print(f"Week 3 package: {len(week3_stage_pages)} stage + {len(week3_character_pages)} Pico/GF character pages, {week3_payload_path.stat().st_size} bytes on disc")
+    menu_row_background_indices = [quantize(pixels, palette8) for pixels in menu_row_backgrounds_rgba]
     write_header(pathlib.Path(args.output), palette8, palette4, palette_bf8, palette_ui4,
                  palette_popup4, stage_layout, scene_bounds,
-                 pages8, pages4, page_table, bf_idle_sequence, descriptors)
-    print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance; BF {len(bf_names)} official Sparrow frames")
+                 pages8, pages4, page_table, bf_idle_sequence, descriptors,
+                 menu_screen_pages, menu_dj_pages, menu_dj_frame_names,
+                 menu_dj_first_page, (dj_frame_w, MENU_DJ_FRAME_H),
+                 week2_stage_pages, week2_character_pages, week2_palette,
+                 week2_stage_origin, week2_camera_zoom_q8, 2,
+                 week3_stage_pages, week3_character_pages, week3_palette,
+                 week3_stage_origin, week3_camera_zoom_q8, week3_char_layout,
+                 menu_character_icon_words,
+                 menu_character_icon_bounds, death_palette8, death_frames,
+                 [quantized8[f"menu_{label}_button_{i}"]
+                  for label in ("storymode", "freeplay", "options", "credits")
+                  for i in range(3)],
+                 menu_row_background_indices)
+    print(f"Animate frames: Dad {len(dad_names)} (idle + 4 sings), GF {len(gf_names)} dance/sing; BF {len(bf_names)} official Sparrow frames")
     print(f"VRAM map verified: {len(pages8)}x8bpp + {len(pages4)}x4bpp, framebuffers, CLUTs and font reserve are in bounds without overlap")
     print(f"VRAM textures: {len(pages8)}x8bpp + {len(pages4)}x4bpp = {len(pages8)*65536+len(pages4)*32768} bytes; generated header {pathlib.Path(args.output).stat().st_size} bytes")
 
@@ -887,7 +1765,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--assets", required=True, help="root of the pinned assets submodule")
     parser.add_argument("--ffmpeg", required=True, help="path to ffmpeg")
+    parser.add_argument("--options-art", help="approved local OPTIONS lettering PNG; falls back to pinned source art")
     parser.add_argument("--output", required=True, help="generated C header (kept in the build directory)")
+    parser.add_argument("--week2-pages-output", required=True,
+                        help="raw Week 2 stage/character pages and CLUT payload for the CD image")
+    parser.add_argument("--week1-pages-output", required=True,
+                        help="raw Week 1 gameplay pages for demand loading from the CD image")
+    parser.add_argument("--week3-pages-output", required=True,
+                        help="raw Week 3 stage/Pico pages followed by its RGB555 palette")
     args = parser.parse_args()
     build(args)
 

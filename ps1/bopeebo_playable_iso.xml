@@ -5,9 +5,55 @@
 		<directory_tree>
 			<file name="SYSTEM.CNF" type="data" source="${PROJECT_SOURCE_DIR}/system.cnf" />
 			<file name="FUNKIN.EXE" type="data" source="funkin-ps1-bopeebo-playable.exe" />
+			<!-- Boot-time assets first: the program reads W1SCENE before its first menu frame. -->
+			<file name="W1SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week1-scene.bin" />
+			<file name="W2SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week2-scene.bin" />
+			<file name="W3SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week3-scene.bin" />
 			<file name="STREAM.VAG" type="data" source="${PROJECT_BINARY_DIR}/stream-playable.vag" />
 			<file name="MENU.VAG" type="data" source="${PROJECT_BINARY_DIR}/menu.vag" />
+			<file name="FRESH.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/fresh.vag" />
+			<file name="DADBAT.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/dadbattle.vag" />
+			<file name="TUTORIAL.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/tutorial.vag" />
+			<file name="SPOOKEEZ.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/spookeez.vag" />
+			<file name="SOUTH.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/south.vag" />
+			<file name="MONSTER.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/monster.vag" />
+			<file name="PICO.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/pico.vag" />
+			<file name="PHILLY.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/philly-nice.vag" />
+			<file name="BLAMMED.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/blammed.vag" />
+			<file name="TUTE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTE.BIN" />
+			<file name="TUTN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTN.BIN" />
+			<file name="TUTH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTH.BIN" />
+			<file name="BOPE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BOPE.BIN" />
+			<file name="BOPN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BOPN.BIN" />
+			<file name="BOPH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BOPH.BIN" />
+			<file name="FREE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/FREE.BIN" />
+			<file name="FREN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/FREN.BIN" />
+			<file name="FREH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/FREH.BIN" />
+			<file name="DADE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/DADE.BIN" />
+			<file name="DADN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/DADN.BIN" />
+			<file name="DADH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/DADH.BIN" />
+			<file name="SPOE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SPOE.BIN" />
+			<file name="SPON.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SPON.BIN" />
+			<file name="SPOH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SPOH.BIN" />
+			<file name="SOUE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SOUE.BIN" />
+			<file name="SOUN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SOUN.BIN" />
+			<file name="SOUH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/SOUH.BIN" />
+			<file name="MONE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/MONE.BIN" />
+			<file name="MONN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/MONN.BIN" />
+			<file name="MONH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/MONH.BIN" />
+			<file name="PICE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PICE.BIN" />
+			<file name="PICN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PICN.BIN" />
+			<file name="PICH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PICH.BIN" />
+			<file name="PHIE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PHIE.BIN" />
+			<file name="PHIN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PHIN.BIN" />
+			<file name="PHIH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/PHIH.BIN" />
+			<file name="BLAE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAE.BIN" />
+			<file name="BLAN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAN.BIN" />
+			<file name="BLAH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAH.BIN" />
+			<file name="GOLOOP.VAG" type="data" source="${PROJECT_BINARY_DIR}/gameover-loop.vag" />
+			<file name="GOEND.VAG" type="data" source="${PROJECT_BINARY_DIR}/gameover-end.vag" />
 			<dummy sectors="128" />
 		</directory_tree>
 	</track>
 </iso_project>
+
