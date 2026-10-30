@@ -128,3 +128,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - Dry-run : compile de la sonde, liaison, création du disque; aucune conversion. Les 49 hashes de ressources restent identiques. La première compilation brute avait un avertissement de prototype implicite pour VSync; elle a été archivée séparément, puis l’en-tête SDK déclarant VSync ajouté et le build sans cet avertissement refait.
 - Commits source : `c566849e` (GP0 direct), `096a00d9` (prototype VSync). BIN v94 final : 131 942 496 octets, SHA-256 `E97EFD74EFC584AD1C2C438751B4590D9A1AFF88067FD5AA09AC86B5E39C90D4`.
 - **Compilé et vérifié statiquement; l’essai v94 attend l’utilisateur.** L’image n’est pas déclarée exécutée ni validée; aucun essai console réelle.
+
+
+### 2026-10-30 — v94 sans changement; contrôle RAM DuckStation
+
+- L’utilisateur rapporte que v94 affiche encore le logo Sony PlayStation après chargement : le remplissage GP0 direct n’est pas visible. Cela ne valide ni l’exécution du trampoline ni l’entrée dans `_start_inner`.
+- Inspection hors ligne de l’image v94 : le PVD ISO9660 est lisible; le répertoire racine contient `SYSTEM.CNF;1` au LBA 24 et `FUNKIN.EXE;1` au LBA 25 (860 160 octets). `SYSTEM.CNF` indique `BOOT=cdrom:\\FUNKIN.EXE;1`; l’en-tête PS-X EXE déclare PC `0x8001D950`, chargement `0x80010000`, taille `0xD1800`. Ces vérifications confirment la présence des fichiers, pas que le BIOS a lancé cet exemplaire.
+- Dans le Memory Scanner DuckStation ouvert sur l’écran Sony (0 IPS de jeu), lecture de mots aux adresses RAM physiques `0x0001D950` (PC attendu), `0x0001808C` (`_start_inner`) et `0x000E1770` (variable initialisée du build) : les trois valeurs observées sont `0x00000000`. Dans le fichier EXE v94, les mots correspondants valent respectivement `0x3C1C800F`, `0x8F8280F0` et `0xFFFFFFFF`.
+- Ce relevé indique que, dans l’état actuellement observé, l’image exécutable attendue n’est pas visible aux adresses de chargement déclarées — ou que l’image actuellement montée n’est pas le CUE v94 visé. Il ne permet pas encore de choisir entre ces deux cas ni d’attribuer le blocage au code du trampoline.
+- Le scanner DuckStation permet une surveillance directe d’adresses (plage RAM `0x00000000–0x00200000)); cela fournit un contrôle non graphique pour le prochain essai. Aucun nouveau BIN n’a été généré après v94 et aucune modification de code n’a été faite.
+- **État :** observation runtime limitée au contenu RAM de l’état DuckStation courant; la correspondance exacte du disque monté reste à établir. Prochaine étape : vérifier l’image réellement chargée et la présence du PS-X EXE en RAM avant de modifier le code. Pas de validation console réelle.
