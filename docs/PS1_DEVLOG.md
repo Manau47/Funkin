@@ -100,3 +100,12 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - Source publiée sur `ps1-port` : commits `d9f01add`, `48635d2` et `a12a1b4` (final). Désassemblage : `_start` à `0x8001D9DC` saute vers la sonde `_start_inner` à `0x8001808C`; `main` demeure lié à `0x80014B20`.
 - BIN v91 : 131 944 848 octets, SHA-256 `AAC0DF78054FC6CA1C48C678B8EF7B6D372609451267D4051642B175A1C29D4B`. Le dossier de livraison distinct archive le diff, le cache, les fichiers Ninja, les empreintes des ressources et le manifeste.
 - **État : compilé et vérifié statiquement; essai DuckStation à faire par l’utilisateur.** Aucun comportement v91 n’est déclaré observé et aucune console réelle n’a été testée.
+
+
+### 2026-10-30 — v91 résultat et v92 avant BSS
+
+- L’utilisateur a chargé v91 et a rapporté qu’après deux minutes l’écran Sony PlayStation était toujours affiché : le repère ambre après BSS n’a pas été observé.
+- Inspection statique : le PC du PS-X EXE saute de `0x8001D9B0` vers `_start_inner` à `0x8001808C`; le BSS lié va de `0x800E1818` à `0x800EB15C` (39 236 octets). Le code de v91 effaçait cette plage avant l’initialisation GPU, mais l’absence de l’image ne permet pas de savoir si le blocage est dans le clear BSS ou l’initialisation GPU qui suit.
+- **v92 — essai discriminant préparé** : même cible jouable et mêmes ressources; repère cyan à l’entrée de `_start_inner`, avant tout clear BSS, puis arrêt. Cela vérifie si le chemin GPU de la vraie cible est atteint avant l’étape BSS. La configuration main marker de v90 est gardée; le choix de position passe explicitement de after-BSS à before-BSS.
+- Dry-run : une compilation de la sonde, liaison de l’exécutable et empaquetage du disque; aucun convertisseur de ressource. Les 49 empreintes de ressources restent conformes à v90. Build compilé et désassemblage vérifié; BIN livré hors Git, SHA-256 `11F10A97DD1139678128F1839B109EDEBB462B95108E763B7DBA310F1E8A6D3C`.
+- Commits source v92 : `b191cdf2` et `b71ca2e7`; état documentaire ajouté après le build. **v92 attend l’essai utilisateur DuckStation; aucune exécution ou validation console n’est revendiquée.**
