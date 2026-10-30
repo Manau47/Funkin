@@ -109,3 +109,12 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v92 — essai discriminant préparé** : même cible jouable et mêmes ressources; repère cyan à l’entrée de `_start_inner`, avant tout clear BSS, puis arrêt. Cela vérifie si le chemin GPU de la vraie cible est atteint avant l’étape BSS. La configuration main marker de v90 est gardée; le choix de position passe explicitement de after-BSS à before-BSS.
 - Dry-run : une compilation de la sonde, liaison de l’exécutable et empaquetage du disque; aucun convertisseur de ressource. Les 49 empreintes de ressources restent conformes à v90. Build compilé et désassemblage vérifié; BIN livré hors Git, SHA-256 `11F10A97DD1139678128F1839B109EDEBB462B95108E763B7DBA310F1E8A6D3C`.
 - Commits source v92 : `b191cdf2` et `b71ca2e7`; état documentaire ajouté après le build. **v92 attend l’essai utilisateur DuckStation; aucune exécution ou validation console n’est revendiquée.**
+
+
+### 2026-10-30 — v92 sans repère; v93 sans ResetGraph
+
+- L’utilisateur a indiqué que v92 affichait toujours le logo Sony; aucune image cyan n’a été vue. DuckStation observé ensuite via son interface : `Jeu : 0 IPS`, `Vidéo : 60 IPS`. Le menu Outils de cette version n’expose pas de débogueur CPU; aucun fichier journal de diagnostic n’a été trouvé dans le dossier portable de DuckStation.
+- Le code SDK PSn00bSDK 0.24 confirme le trajet : son trampoline `_start` charge `$gp` puis saute à `_start_inner`; le runtime standard vide BSS avant InitHeap/constructeurs/main. Le désassemblage v92 relie réellement `_start` à la sonde, qui appelait ResetGraph avant le dessin; la plage BSS mesurée reste 39 236 octets. Sans repère, la cause ne peut pas encore être attribuée au BSS.
+- **v93 — test discriminant construit** : une seule modification au code de la sonde avant BSS : supprimer son premier appel `ResetGraph(0)`, puis conserver les mêmes opérations d’environnement/dessin GPU. Cela teste si ResetGraph bloque le premier affichage avec l’état GPU laissé par le BIOS. Le reste du jeu et toutes les ressources sont inchangés.
+- Dry-run : compilation du fichier modifié, liaison, création de disque; aucune conversion de ressource. Les 49 empreintes v90 restent inchangées. BIN v93 : 131 944 848 octets, SHA-256 `083C2F6DD4CA0F57FD06B4A6CA1E4EC96C937280C105F33CBE0395C0C8DC456D`.
+- Commit source : `6f8de876` sur `ps1-port`. **Build compilé et vérifié statiquement; v93 attend l’essai utilisateur DuckStation.** Pas de résultat console réelle revendiqué.
