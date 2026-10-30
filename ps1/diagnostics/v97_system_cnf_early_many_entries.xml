@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v97 package-only root-directory isolation test.
+  Reuses the exact v94 EXE and SYSTEM.CNF, but pads the root to 48 entries
+  with Z-prefixed files so SYSTEM.CNF remains near the start of the sorted
+  directory. This tests early-vs-late SYSTEM.CNF lookup separately from the
+  small-root v95/v96 images. No gameplay resources are included or converted.
+-->
+<iso_project image_name="funkin-ps1-v97-root-entry-test.bin" cue_sheet="funkin-ps1-v97-root-entry-test.cue">
+  <track type="data">
+    <identifiers system="PLAYSTATION" application="PLAYSTATION"
+      volume="FNF_V97_ROOT_TEST" volume_set="FNF_V97_ROOT_TEST"
+      publisher="Unofficial FNF PS1 diagnostics" data_preparer="PSn00bSDK"
+      copyright="SYSTEM.CNF;1" />
+    <directory_tree>
+      <file name="SYSTEM.CNF" type="data" source="ps1/system.cnf" />
+      <file name="FUNKIN.EXE" type="data"
+        source="outputs/FNF-PS1-v94-direct-gp0/funkin-ps1-bopeebo-playable.exe" />
+      <file name="ZPAD0000.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0001.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0002.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0003.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0004.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0005.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0006.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0007.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0008.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0009.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0010.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0011.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0012.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0013.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0014.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0015.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0016.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0017.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0018.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0019.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0020.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0021.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0022.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0023.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0024.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0025.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0026.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0027.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0028.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0029.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0030.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0031.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0032.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0033.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0034.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0035.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0036.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0037.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0038.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0039.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0040.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0041.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0042.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0043.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0044.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+      <file name="ZPAD0045.BIN" type="data" source="ps1/diagnostics/v97_pad.bin" />
+    </directory_tree>
+  </track>
+</iso_project>
