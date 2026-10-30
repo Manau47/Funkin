@@ -21,4 +21,4 @@ Does the exact v94 EXE boot through `SYSTEM.CNF` when the ISO still has 48 root 
 
 ## Runtime status
 
-Compiled and statically inspected; awaiting user DuckStation observation. If the yellow marker appears, early `SYSTEM.CNF` lookup succeeds even with 48 root files/two directory sectors, implicating late entry position in v94/v76. If it does not, the root count/extent or another BIOS search limit remains implicated. The screen marker is only the v94 diagnostic loop; this is not a playable build and not a real-console test.
+**Observed by the user in DuckStation:** the yellow GP0 marker appeared with the Sony startup logo. v97 uses the exact v94 diagnostic EXE and SYSTEM.CNF, and has 48 root files in a 4,096-byte root directory. The BIOS therefore finds a `SYSTEM.CNF` placed at file entry 2 / byte offset 156 under this layout. This makes the late position of SYSTEM.CNF in v94/v76 the leading cause; v97 does not prove that every detail of the original 48-file directory is irrelevant. The marker is the v94 diagnostic loop, not a playable build. No real-console test.
