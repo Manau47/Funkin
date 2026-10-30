@@ -197,6 +197,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	option(FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT "Build a visual-only health bar calibration disc" OFF)
 	option(FUNKIN_PS1_STARTUP_MAIN_MARKER "Stop the playable executable at main entry and display a fixed white GPU frame" OFF)
 	option(FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER "Replace the PSn00bSDK startup entry and stop after the real executable BSS clear" OFF)
+	option(FUNKIN_PS1_STARTUP_BEFORE_BSS_MARKER "Replace the PSn00bSDK startup entry and stop before clearing executable BSS" OFF)
 	get_filename_component(_psn00bsdk_lib_dir "$ENV{PSN00BSDK_LIBS}" DIRECTORY)
 	get_filename_component(_psn00bsdk_root "${_psn00bsdk_lib_dir}" DIRECTORY)
 	set(_psn00bsdk_cdstream_dir
@@ -446,7 +447,11 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		VERBATIM
 	)
 	set(_playable_sources spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c")
-	if(FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER)
+	if(FUNKIN_PS1_STARTUP_BEFORE_BSS_MARKER AND FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER)
+		message(FATAL_ERROR "Select only one startup marker position")
+	elseif(FUNKIN_PS1_STARTUP_BEFORE_BSS_MARKER)
+		list(APPEND _playable_sources startup_before_bss_marker.c)
+	elseif(FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER)
 		list(APPEND _playable_sources startup_after_bss_marker.c)
 	endif()
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
