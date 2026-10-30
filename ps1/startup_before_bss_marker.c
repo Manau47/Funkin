@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include <psxapi.h>
+#include <psxgpu.h> /* VSync declaration; the probe still writes GP0 directly. */
 
 #define STARTUP_MARKER_W 320
 #define STARTUP_MARKER_H 240
