@@ -23,4 +23,6 @@ This separates BIOS fallback-name boot from the v95 path that used `SYSTEM.CNF` 
 
 ## Runtime status
 
-Awaiting the user's DuckStation run. The yellow direct-GP0 marker would show that BIOS fallback-name boot reached the reused v94 executable. This is a diagnostic boot disc, not a playable build. No real-console result is claimed.
+- **Observed by the user in DuckStation:** the same yellow GP0 rectangle appeared over the Sony PlayStation startup logo, matching v95. This is evidence that the BIOS found the default `PSX.EXE` filename and that the reused v94 diagnostic code reached its GP0 drawing loop.
+- This does not mean the full game continued past the diagnostic marker; the screen remains at the startup logo with the marker over it.
+- This is a diagnostic boot disc, not a playable build. No real-console test.
