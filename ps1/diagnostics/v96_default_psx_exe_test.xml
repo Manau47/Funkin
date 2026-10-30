@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v96 package-only BIOS fallback test.
+  Reuses the byte-identical v94 PS-X EXE. The sole root file is PSX.EXE;
+  SYSTEM.CNF is intentionally absent so the BIOS must use its default name.
+  No code compilation, linking, or asset conversion is involved.
+-->
+<iso_project image_name="funkin-ps1-v96-default-psx-exe.bin" cue_sheet="funkin-ps1-v96-default-psx-exe.cue">
+  <track type="data">
+    <identifiers system="PLAYSTATION" application="PLAYSTATION"
+      volume="FNF_V96_DEFAULT_EXE" volume_set="FNF_V96_DEFAULT_EXE"
+      publisher="Unofficial FNF PS1 diagnostics" data_preparer="PSn00bSDK"
+      copyright="PSX.EXE" />
+    <directory_tree>
+      <file name="PSX.EXE" type="data"
+        source="../../outputs/FNF-PS1-v94-direct-gp0/funkin-ps1-bopeebo-playable.exe" />
+    </directory_tree>
+  </track>
+</iso_project>
