@@ -5,7 +5,6 @@
 
 #include <stdint.h>
 #include <psxapi.h>
-#include <psxgpu.h>
 
 #define STARTUP_MARKER_W 320
 #define STARTUP_MARKER_H 240
@@ -20,23 +19,15 @@ void _start_inner(int argc, const char **argv)
 	(void)argc;
 	(void)argv;
 
-	DISPENV display;
-	DRAWENV draw;
-	FILL fill;
-	/* Keep the BIOS GPU state in this probe; isolate ResetGraph separately. */
-	SetDefDrawEnv(&draw, 0, 0, STARTUP_MARKER_W, STARTUP_MARKER_H);
-	SetDefDispEnv(&display, 0, 0, STARTUP_MARKER_W, STARTUP_MARKER_H);
-	PutDrawEnv(&draw);
-	PutDispEnv(&display);
-	setFill(&fill);
-	setRGB0(&fill, 0, 255, 255);
-	setXY0(&fill, 0, 0);
-	setWH(&fill, STARTUP_MARKER_W, STARTUP_MARKER_H);
-	DrawPrim((uint32_t *)&fill);
-	DrawSync(0);
-	SetDispMask(1);
+	volatile uint32_t *gp0 = (volatile uint32_t *)0x1F801810;
 	if (startup_release_code == 0u)
 		(void)main();
 	for (;;)
+	{
+		/* GP0 fill-rectangle command: cyan, at (0,0), 320x240. */
+		gp0[0] = 0x0200FFFFu;
+		gp0[0] = 0u;
+		gp0[0] = (STARTUP_MARKER_H << 16) | STARTUP_MARKER_W;
 		VSync(0);
+	}
 }
