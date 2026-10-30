@@ -23,7 +23,7 @@ void _start_inner(int argc, const char **argv)
 	DISPENV display;
 	DRAWENV draw;
 	FILL fill;
-	ResetGraph(0);
+	/* Keep the BIOS GPU state in this probe; isolate ResetGraph separately. */
 	SetDefDrawEnv(&draw, 0, 0, STARTUP_MARKER_W, STARTUP_MARKER_H);
 	SetDefDispEnv(&display, 0, 0, STARTUP_MARKER_W, STARTUP_MARKER_H);
 	PutDrawEnv(&draw);
