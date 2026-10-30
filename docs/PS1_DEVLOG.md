@@ -118,3 +118,13 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - **v93 — test discriminant construit** : une seule modification au code de la sonde avant BSS : supprimer son premier appel `ResetGraph(0)`, puis conserver les mêmes opérations d’environnement/dessin GPU. Cela teste si ResetGraph bloque le premier affichage avec l’état GPU laissé par le BIOS. Le reste du jeu et toutes les ressources sont inchangés.
 - Dry-run : compilation du fichier modifié, liaison, création de disque; aucune conversion de ressource. Les 49 empreintes v90 restent inchangées. BIN v93 : 131 944 848 octets, SHA-256 `083C2F6DD4CA0F57FD06B4A6CA1E4EC96C937280C105F33CBE0395C0C8DC456D`.
 - Commit source : `6f8de876` sur `ps1-port`. **Build compilé et vérifié statiquement; v93 attend l’essai utilisateur DuckStation.** Pas de résultat console réelle revendiqué.
+
+
+### 2026-10-30 — v93 sans changement; v94 trace GP0 directe
+
+- L’utilisateur a indiqué que v93 n’avait toujours aucun changement d’écran. v93 avait supprimé ResetGraph mais gardé les helpers d’environnement et de primitives : cela ne suffit pas à identifier si le trampoline ou ces helpers bloquent.
+- Capture GPU DuckStation déclenchée depuis le menu Outils; le toast a annoncé un fichier `.psxgpu`, mais aucun fichier de trace n’a été retrouvé dans les dossiers du profil, de l’application portable ni des Documents accessibles. Cette build DuckStation ne montre pas d’outil de débogage CPU dans son menu Outils.
+- **v94 — essai construit** : remplace les helpers GPU par des écritures directes répétées vers GP0 `0x1F801810` (commande de remplissage cyan, coordonnées (0,0), 320×240), avant BSS, avec VSync. Aucun ResetGraph ni primitive SDK. Le code du jeu reste lié mais n’est pas appelé.
+- Dry-run : compile de la sonde, liaison, création du disque; aucune conversion. Les 49 hashes de ressources restent identiques. La première compilation brute avait un avertissement de prototype implicite pour VSync; elle a été archivée séparément, puis l’en-tête SDK déclarant VSync ajouté et le build sans cet avertissement refait.
+- Commits source : `c566849e` (GP0 direct), `096a00d9` (prototype VSync). BIN v94 final : 131 942 496 octets, SHA-256 `E97EFD74EFC584AD1C2C438751B4590D9A1AFF88067FD5AA09AC86B5E39C90D4`.
+- **Compilé et vérifié statiquement; l’essai v94 attend l’utilisateur.** L’image n’est pas déclarée exécutée ni validée; aucun essai console réelle.
