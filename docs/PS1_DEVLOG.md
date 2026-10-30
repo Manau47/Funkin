@@ -177,3 +177,11 @@ Les numéros de version désignent les builds de travail communiqués pendant l�
 - L’outil `ps1/diagnostics/v98_reorder_system_cnf.py` vérifie le hash d’entrée v76, l’EDC/ECC d’origine, ne modifie que les deux secteurs du répertoire racine, recalcule leur EDC/ECC Mode 2 Form 1 et refuse l’écrasement. Les deux secteurs du résultat ont des contrôles valides; tous les fichiers extraits conservent leurs hash. Source publiée en commit `0b7739a5`; manifeste build publié en `f4bc1ac2`.
 - BIN v98: 131 942 496 octets, SHA-256 `243B80B8D21F61ED5D497A6A65FF64297FDFF481D7BC1BD89163623F56175755`; CUE: 92 octets, SHA-256 `6458E9445E417BF7665389B610E05AF643CDB9E72B8D7C4F9C365FF544852316`.
 - **Validé par l’utilisateur dans DuckStation : v98 fonctionne.** Le seul changement par rapport au disque v76 d’origine est l’ordre de l’entrée SYSTEM.CNF; cela confirme cette entrée tardive comme cause pratique du blocage BIOS. Le retour utilisateur ne précise pas une durée de test ni une vérification détaillée de tous les morceaux/audio. Aucune console réelle testée.
+
+
+### Base de référence sauvegardée — v98 fonctionnelle
+
+- La v98 est désormais la base PS1 fonctionnelle confirmée par l’utilisateur dans DuckStation.
+- Le commit complet de la branche au moment de cette validation, `97135cc5727585bae271124dbb2c19f784462d1a`, est conservé sur la branche distante `archive/ps1-v98-known-good`. La branche de travail `ps1-port` reste ouverte pour la suite.
+- La livraison v98 originale reste préservée dans `outputs/FNF-PS1-v98-root-order-v76/` (BIN/CUE, configuration et manifeste); aucune sortie antérieure n’a été supprimée.
+- Cette sauvegarde préserve l’état GitHub et l’outil de réordonnancement documenté. Les sources historiques exactes ayant produit l’EXE v76 ne sont pas récupérables à partir du snapshot disponible; le BIN v76/v98 et leurs hashes restent donc la référence binaire, pas une prétendue reconstruction de ces sources.
