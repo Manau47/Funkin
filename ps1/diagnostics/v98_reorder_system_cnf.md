@@ -21,4 +21,4 @@ Does the original v76 executable boot when the exact same disc and root contents
 
 ## Runtime status
 
-Awaiting the user loading this CUE in DuckStation. If v76 now passes the Sony boot and continues, the late SYSTEM.CNF position is confirmed as the practical regression; if it still hangs, inspect the BIOS load and execution path next. No console-real test.
+**Validated by the user in DuckStation:** v98 is functional. This is the original v76 image and executable with only the ISO root directory order changed, so the late SYSTEM.CNF entry is confirmed as the practical boot regression. No duration, detailed gameplay/audio recheck, or real-console test was reported.
