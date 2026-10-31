@@ -83,12 +83,10 @@
 #define BOPEEBO_BPM 100u
 #define MENU_BPM_CENTI 10200u /* freakyMenu-metadata.json, 102 BPM */
 #define WEEK2_CAMERA_ZOOM_Q8_4_3 BOPEEBO_STAGE_CAMERA_ZOOM_Q8 /* match Week 1 camera zoom */
-#define WEEK2_CHART_DELAY_MS 1000u /* user-observed arrows reach receptors ~1 s before the audio beat */
-/* At the Week 2 camera crop, the source window/background falls above and
-   left of the 4:3 viewport. Shift only the stage art and lightning together;
-   singer positions and note lanes continue using the Week 1 camera mapping. */
-#define WEEK2_STAGE_LAYOUT_X_OFFSET 70
-#define WEEK2_STAGE_LAYOUT_Y_OFFSET 70
+/* The Week 2 set prop is a wide background; at the singer camera zoom (2.5x)
+   only a dark floor slice fits on screen. Keep the singer camera targets, but
+   render the set and its lightning at 1.25x so the room/window remain framed. */
+#define WEEK2_BACKGROUND_ZOOM_Q8 320u
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
 #ifndef GAME_DAD_LANES_DEFAULT
@@ -2755,22 +2753,22 @@ static void draw_scene(uint32_t samples)
 	camera_focus_display = (uint8_t)target_focus;
 	camera_transitioning = event_index && elapsed < transition;
 
-	/* One world transform covers official stage props and characters; the
-	   extended stage composition safely overfills all camera crop edges. */
+	/* Stage props stay anchored in world coordinates. Week 2 uses a wider
+	   background transform than the singer camera crop; characters and notes
+	   below retain the shared gameplay camera mapping. */
 	if (week2) {
-		int stage_x = BOPEEBO_WEEK2_STAGE_X + WEEK2_STAGE_LAYOUT_X_OFFSET;
-		int stage_y = BOPEEBO_WEEK2_STAGE_Y + WEEK2_STAGE_LAYOUT_Y_OFFSET;
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, stage_x,
-			stage_y, camera_x, camera_y, zoom_q8, 256);
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, stage_x + 256,
-			stage_y, camera_x, camera_y, zoom_q8, 256);
+		unsigned background_zoom_q8 = WEEK2_BACKGROUND_ZOOM_Q8 + pulse_q8;
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, BOPEEBO_WEEK2_STAGE_X,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, background_zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, BOPEEBO_WEEK2_STAGE_X + 256,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, background_zoom_q8, 256);
 		unsigned lightning_frame;
 		if (week2_lightning_frame_at(samples, &lightning_frame))
-			draw_visual_frame_scaled(lightning_frame,
-				BOPEEBO_WEEK2_LIGHTNING_X + WEEK2_STAGE_LAYOUT_X_OFFSET,
-				BOPEEBO_WEEK2_LIGHTNING_Y + WEEK2_STAGE_LAYOUT_Y_OFFSET,
+			draw_visual_frame_scaled(lightning_frame, BOPEEBO_WEEK2_LIGHTNING_X,
+				BOPEEBO_WEEK2_LIGHTNING_Y,
 				BOPEEBO_WEEK2_LIGHTNING_WORLD_W,
-				BOPEEBO_WEEK2_LIGHTNING_WORLD_H, camera_x, camera_y, zoom_q8, 256);
+				BOPEEBO_WEEK2_LIGHTNING_WORLD_H, camera_x, camera_y,
+				background_zoom_q8, 256);
 	} else if (week3) {
 		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_0, BOPEEBO_WEEK3_STAGE_X,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
@@ -4105,33 +4103,6 @@ static bool load_song_chart(const char *path)
 	    sizeof(Ps1CameraEvent) != 8u) {
 		free(blob);
 		return false;
-	}
-	/* Week 2's user-led playback check found the chart actions about one second
-	   ahead of the matching music. Keep the audio/tempo origin unchanged and
-	   delay only chart-driven notes and camera focus events. The last notes in
-	   all three charts retain more than one second of tail before song end. */
-	if (active_song->stage_id == 2u) {
-		uint32_t delay = (uint32_t)((uint64_t)BOPEEBO_CHART_RATE *
-			WEEK2_CHART_DELAY_MS / 1000u);
-		Ps1Note *notes = (Ps1Note *)(blob + 16u);
-		for (unsigned i = 0; i < note_count; i++) {
-			if (notes[i].head > UINT32_MAX - delay ||
-				notes[i].tail > UINT32_MAX - delay) {
-				free(blob);
-				return false;
-			}
-			notes[i].head += delay;
-			notes[i].tail += delay;
-		}
-		Ps1CameraEvent *camera = (Ps1CameraEvent *)(blob + 16u +
-			(size_t)note_count * 12u + (size_t)tempo_count * 12u);
-		for (unsigned i = 0; i < camera_count; i++) {
-			if (camera[i].sample > UINT32_MAX - delay) {
-				free(blob);
-				return false;
-			}
-			camera[i].sample += delay;
-		}
 	}
 	loaded_chart_storage.notes = (const Ps1Note *)(blob + 16u);
 	loaded_chart_storage.note_count = note_count;
