@@ -251,6 +251,18 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"Root of the pinned Funkin.assets submodule")
 	set(FUNKIN_PS1_OPTIONS_ART "${CMAKE_CURRENT_SOURCE_DIR}/../outputs/menu-options-concept-v2.png" CACHE FILEPATH
 		"Approved local OPTIONS menu lettering PNG (kept outside Git)")
+	set(FUNKIN_PS1_PRECONVERTED_BASE_DIR "" CACHE PATH
+		"Optional directory with reusable converted Week 1-3/menu packages")
+	set(FUNKIN_PS1_PRECONVERTED_WEEK4_DIR "" CACHE PATH
+		"Optional directory with a reusable converted Week 4 package")
+	set(FUNKIN_PS1_PRECONVERTED_WEEK5_DIR "" CACHE PATH
+		"Optional directory with a reusable converted Week 5 package")
+	set(FUNKIN_PS1_PRECONVERTED_WEEK6_DIR "" CACHE PATH
+		"Optional directory with a reusable converted Week 6 package")
+	set(FUNKIN_PS1_PRECONVERTED_WEEK7_DIR "" CACHE PATH
+		"Optional directory with a reusable converted Week 7 package")
+	set(FUNKIN_PS1_PRECONVERTED_WEEKEND1_DIR "" CACHE PATH
+		"Optional directory with a reusable converted WeekEnd 1 package")
 	if(NOT EXISTS "${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml")
 		message(FATAL_ERROR "FUNKIN_PS1_ASSETS_DIR does not contain the pinned official asset checkout")
 	endif()
@@ -264,6 +276,8 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	set(_week2_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene.bin")
 	set(_week1_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene.bin")
 	set(_week3_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week3-scene.bin")
+	set(_week4_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week4_visual_data.h")
+	set(_week4_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week4-scene.bin")
 	set(_visual_asset_dependencies
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/mainStage.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/stageback.png"
@@ -350,19 +364,24 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote1.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote2.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/sounds/missnote3.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/week2/sounds/thunder_1.ogg"
+		"${FUNKIN_PS1_ASSETS_DIR}/week2/sounds/thunder_2.ogg"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/sick.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/good.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/bad.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/ui/popup/funkin/shit.png")
 	list(APPEND _visual_asset_dependencies
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/spookyMansion.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/characters/spooky.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/week2/images/halloween_bg/spritemap1.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/week2/images/halloween_bg/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week2/images/halloween_bg/Animation.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/SpookyKids.xml"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/SpookyKids.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/Animation.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/characters/monster.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-spooky.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-monster.png")
 	list(APPEND _visual_asset_dependencies
@@ -383,19 +402,30 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		message(STATUS "Approved OPTIONS PNG unavailable; using pinned official options.png for fallback build")
 		set(_options_art_args)
 	endif()
-	add_custom_command(
-		OUTPUT "${_playable_visual_header}" "${_week2_visual_payload}" "${_week1_visual_payload}" "${_week3_visual_payload}"
-		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
-			--assets "${FUNKIN_PS1_ASSETS_DIR}"
-			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
-			${_options_art_args}
-			--week2-pages-output "${_week2_visual_payload}"
-			--week1-pages-output "${_week1_visual_payload}"
-			--week3-pages-output "${_week3_visual_payload}"
-			--output "${_playable_visual_header}"
-		DEPENDS convert_bopeebo_visuals.py animate_preview.py ${_visual_asset_dependencies}
-		VERBATIM
-	)
+	if(FUNKIN_PS1_PRECONVERTED_BASE_DIR)
+		foreach(_base_package_file
+			bopeebo_visual_data.h week1-scene.bin week2-scene.bin week3-scene.bin)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+				message(FATAL_ERROR "Missing reusable base package file: ${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+			endif()
+			configure_file("${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}" COPYONLY)
+		endforeach()
+	else()
+		add_custom_command(
+			OUTPUT "${_playable_visual_header}" "${_week2_visual_payload}" "${_week1_visual_payload}" "${_week3_visual_payload}"
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}"
+				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				${_options_art_args}
+				--week2-pages-output "${_week2_visual_payload}"
+				--week1-pages-output "${_week1_visual_payload}"
+				--week3-pages-output "${_week3_visual_payload}"
+				--output "${_playable_visual_header}"
+			DEPENDS convert_bopeebo_visuals.py animate_preview.py ${_visual_asset_dependencies}
+			VERBATIM
+		)
+	endif()
 	set(_song_catalog_dependencies
 		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
 		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py")
@@ -417,35 +447,490 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			list(APPEND _song_catalog_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-dad.ogg")
 		endif()
 	endforeach()
-	add_custom_command(
-		OUTPUT "${_playable_chart_header}" ${_song_audio_outputs} ${_song_chart_outputs}
-		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
-			--assets "${FUNKIN_PS1_ASSETS_DIR}"
-			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
-			--output-dir "${_song_audio_dir}"
-			--header "${_playable_chart_header}" --chart-dir "${_song_chart_dir}" --rate 43008
-		DEPENDS ${_song_catalog_dependencies}
-		VERBATIM
-	)
+	if(FUNKIN_PS1_PRECONVERTED_BASE_DIR)
+		set(_base_song_files week1_catalog.h)
+		foreach(_song_audio fresh dadbattle tutorial spookeez south monster pico philly-nice blammed)
+			list(APPEND _base_song_files "catalog-audio/${_song_audio}.vag")
+		endforeach()
+		list(APPEND _base_song_files
+			catalog-audio/charts/TUTE.BIN catalog-audio/charts/TUTN.BIN catalog-audio/charts/TUTH.BIN
+			catalog-audio/charts/BOPE.BIN catalog-audio/charts/BOPN.BIN catalog-audio/charts/BOPH.BIN
+			catalog-audio/charts/FREE.BIN catalog-audio/charts/FREN.BIN catalog-audio/charts/FREH.BIN
+			catalog-audio/charts/DADE.BIN catalog-audio/charts/DADN.BIN catalog-audio/charts/DADH.BIN
+			catalog-audio/charts/SPOE.BIN catalog-audio/charts/SPON.BIN catalog-audio/charts/SPOH.BIN
+			catalog-audio/charts/SOUE.BIN catalog-audio/charts/SOUN.BIN catalog-audio/charts/SOUH.BIN
+			catalog-audio/charts/MONE.BIN catalog-audio/charts/MONN.BIN catalog-audio/charts/MONH.BIN
+			catalog-audio/charts/PICE.BIN catalog-audio/charts/PICN.BIN catalog-audio/charts/PICH.BIN
+			catalog-audio/charts/PHIE.BIN catalog-audio/charts/PHIN.BIN catalog-audio/charts/PHIH.BIN
+			catalog-audio/charts/BLAE.BIN catalog-audio/charts/BLAN.BIN catalog-audio/charts/BLAH.BIN)
+		foreach(_base_package_file IN LISTS _base_song_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+				message(FATAL_ERROR "Missing reusable base package file: ${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+			endif()
+			get_filename_component(_base_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_base_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}" COPYONLY)
+		endforeach()
+	else()
+		add_custom_command(
+			OUTPUT "${_playable_chart_header}" ${_song_audio_outputs} ${_song_chart_outputs}
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}"
+				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_song_audio_dir}"
+				--header "${_playable_chart_header}" --chart-dir "${_song_chart_dir}" --rate 43008
+			DEPENDS ${_song_catalog_dependencies}
+			VERBATIM
+		)
+	endif()
+	# Week 4 gets a separate incremental generator. It reuses the generated
+	# Week 1-3 catalog and does not decode or rewrite those existing assets.
+	set(_week4_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/week4-audio")
+	set(_week4_chart_dir "${_week4_audio_dir}/charts")
+	set(_week4_header "${CMAKE_CURRENT_BINARY_DIR}/week4_catalog.h")
+	set(_week4_audio_outputs
+		"${_week4_audio_dir}/satin.vag"
+		"${_week4_audio_dir}/high.vag"
+		"${_week4_audio_dir}/milf.vag")
+	set(_week4_chart_outputs)
+	foreach(_song satin-panties high milf)
+		if(_song STREQUAL "satin-panties")
+			set(_week4_chart_prefix SAT)
+		elseif(_song STREQUAL "high")
+			set(_week4_chart_prefix HIG)
+		else()
+			set(_week4_chart_prefix MIL)
+		endif()
+		foreach(_difficulty E N H)
+			list(APPEND _week4_chart_outputs "${_week4_chart_dir}/${_week4_chart_prefix}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
+	set(_week4_dependencies
+		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week4_assets.py"
+		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py"
+		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+		"${CMAKE_CURRENT_SOURCE_DIR}/animate_preview.py"
+		"${_playable_chart_header}")
+	foreach(_song satin-panties high milf)
+		list(APPEND _week4_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-bf.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-mom.ogg")
+	endforeach()
+	list(APPEND _week4_dependencies
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/limoRide.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/week4/images/limo/limoSunset.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week4/images/limo/bgLimo.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week4/images/limo/bgLimo.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/week4/images/limo/limoDrive.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week4/images/limo/limoDrive.xml"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/momCar/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/momCar/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/momCar/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfCar/Animation.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfCar/spritemap1.json"
+		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfCar/spritemap1.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-mom.png")
+	if(FUNKIN_PS1_PRECONVERTED_WEEK4_DIR)
+		set(_week4_package_files
+			week4_catalog.h week4_visual_data.h week4-scene.bin
+			week4-audio/satin.vag week4-audio/high.vag week4-audio/milf.vag
+			week4-audio/charts/SATE.BIN week4-audio/charts/SATN.BIN week4-audio/charts/SATH.BIN
+			week4-audio/charts/HIGE.BIN week4-audio/charts/HIGN.BIN week4-audio/charts/HIGH.BIN
+			week4-audio/charts/MILE.BIN week4-audio/charts/MILN.BIN week4-audio/charts/MILH.BIN)
+		foreach(_week4_package_file IN LISTS _week4_package_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_WEEK4_DIR}/${_week4_package_file}")
+				message(FATAL_ERROR "Missing reusable Week 4 package file: ${FUNKIN_PS1_PRECONVERTED_WEEK4_DIR}/${_week4_package_file}")
+			endif()
+			get_filename_component(_week4_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_week4_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_week4_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_WEEK4_DIR}/${_week4_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_week4_package_file}" COPYONLY)
+		endforeach()
+	else()
+		add_custom_command(
+			OUTPUT "${_week4_header}" ${_week4_audio_outputs} ${_week4_chart_outputs}
+				"${_week4_visual_header}" "${_week4_visual_payload}"
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week4_assets.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}"
+				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_week4_audio_dir}"
+				--header "${_week4_header}"
+				--chart-dir "${_week4_chart_dir}"
+				--scene "${_week4_visual_payload}"
+				--visual-header "${_week4_visual_header}"
+			DEPENDS ${_week4_dependencies}
+			VERBATIM
+		)
+	endif()
+	# Week 5 classic content is generated/loaded independently from Weeks 1-4.
+	set(_week5_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/week5-audio")
+	set(_week5_chart_dir "${_week5_audio_dir}/charts")
+	set(_week5_header "${CMAKE_CURRENT_BINARY_DIR}/week5_catalog.h")
+	set(_week5_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week5_visual_data.h")
+	set(_week5_scene "${CMAKE_CURRENT_BINARY_DIR}/week5-scene.bin")
+	set(_week5_audio_outputs
+		"${_week5_audio_dir}/cocoa.vag"
+		"${_week5_audio_dir}/eggnog.vag"
+		"${_week5_audio_dir}/winter.vag")
+	set(_week5_chart_outputs)
+	foreach(_song_code COC EGG WIN)
+		foreach(_difficulty E N H)
+			list(APPEND _week5_chart_outputs "${_week5_chart_dir}/${_song_code}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
+	if(FUNKIN_PS1_PRECONVERTED_WEEK5_DIR)
+		set(_week5_package_files
+			week5_catalog.h week5_visual_data.h week5-scene.bin
+			week5-audio/cocoa.vag week5-audio/eggnog.vag week5-audio/winter.vag
+			week5-audio/charts/COCE.BIN week5-audio/charts/COCN.BIN week5-audio/charts/COCH.BIN
+			week5-audio/charts/EGGE.BIN week5-audio/charts/EGGN.BIN week5-audio/charts/EGGH.BIN
+			week5-audio/charts/WINE.BIN week5-audio/charts/WINN.BIN week5-audio/charts/WINH.BIN)
+		foreach(_week5_package_file IN LISTS _week5_package_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_WEEK5_DIR}/${_week5_package_file}")
+				message(FATAL_ERROR "Missing reusable Week 5 package file: ${FUNKIN_PS1_PRECONVERTED_WEEK5_DIR}/${_week5_package_file}")
+			endif()
+			get_filename_component(_week5_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_week5_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_week5_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_WEEK5_DIR}/${_week5_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_week5_package_file}" COPYONLY)
+		endforeach()
+	else()
+		set(_week5_dependencies
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week5_assets.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/animate_preview.py")
+		foreach(_song cocoa eggnog winter-horrorland)
+			list(APPEND _week5_dependencies
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json")
+		endforeach()
+		foreach(_song cocoa eggnog)
+			list(APPEND _week5_dependencies
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-bf.ogg"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-parents-christmas.ogg")
+		endforeach()
+	list(APPEND _week5_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/winter-horrorland/Inst.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/winter-horrorland/Voices-bf.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/winter-horrorland/Voices-monster.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/bgWalls.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/bgEscalator.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/christmasTree.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/fgSnow.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/santa.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/santa.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilBG.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilTree.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilSnow.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/monster/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf-christmas/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf-christmas/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf-christmas/spritemap1.png")
+		add_custom_command(
+			OUTPUT "${_week5_header}" "${_week5_visual_header}" "${_week5_scene}"
+				${_week5_audio_outputs} ${_week5_chart_outputs}
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week5_assets.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}" --ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_week5_audio_dir}" --header "${_week5_header}"
+				--chart-dir "${_week5_chart_dir}" --scene "${_week5_scene}"
+				--visual-header "${_week5_visual_header}"
+			DEPENDS ${_week5_dependencies}
+			VERBATIM)
+	endif()
+	# Week 6 classic songs use their own four-channel VAGi, chart bank, pixel stage,
+	# characters, pixel arrows and CLUT. Existing week packages are copied as-is.
+	set(_week6_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/week6-audio")
+	set(_week6_chart_dir "${_week6_audio_dir}/charts")
+	set(_week6_header "${CMAKE_CURRENT_BINARY_DIR}/week6_catalog.h")
+	set(_week6_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week6_visual_data.h")
+	set(_week6_scene "${CMAKE_CURRENT_BINARY_DIR}/week6-scene.bin")
+	set(_week6_audio_outputs
+		"${_week6_audio_dir}/senpai.vag"
+		"${_week6_audio_dir}/roses.vag"
+		"${_week6_audio_dir}/thorns.vag")
+	set(_week6_chart_outputs)
+	foreach(_song_code SEN ROS THO)
+		foreach(_difficulty E N H)
+			list(APPEND _week6_chart_outputs "${_week6_chart_dir}/${_song_code}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
+	if(FUNKIN_PS1_PRECONVERTED_WEEK6_DIR)
+		set(_week6_package_files
+			week6_catalog.h week6_visual_data.h week6-scene.bin
+			week6-audio/senpai.vag week6-audio/roses.vag week6-audio/thorns.vag
+			week6-audio/charts/SENE.BIN week6-audio/charts/SENN.BIN week6-audio/charts/SENH.BIN
+			week6-audio/charts/ROSE.BIN week6-audio/charts/ROSN.BIN week6-audio/charts/ROSH.BIN
+			week6-audio/charts/THOE.BIN week6-audio/charts/THON.BIN week6-audio/charts/THOH.BIN)
+		foreach(_week6_package_file IN LISTS _week6_package_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_WEEK6_DIR}/${_week6_package_file}")
+				message(FATAL_ERROR "Missing reusable Week 6 package file: ${FUNKIN_PS1_PRECONVERTED_WEEK6_DIR}/${_week6_package_file}")
+			endif()
+			get_filename_component(_week6_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_week6_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_week6_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_WEEK6_DIR}/${_week6_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_week6_package_file}" COPYONLY)
+		endforeach()
+	else()
+		set(_week6_dependencies
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week6_assets.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py")
+		foreach(_song senpai roses thorns)
+			list(APPEND _week6_dependencies
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-bf.ogg")
+		endforeach()
+	list(APPEND _week6_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/senpai/Voices-senpai.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/roses/Voices-senpai.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/songs/thorns/Voices-spirit.ogg"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/weebSky.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/weebBackTrees.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/weebSchool.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/weebStreet.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/weebTreesBack.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/bgFreaks.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/bgFreaks.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/evil/weebBackTrees.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/evil/weebSchool.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/evil/weebStreet.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/evil/weebTrees.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/pixelUI/arrows-pixels.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week6/images/weeb/pixelUI/arrows-pixels.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/school.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/data/stages/schoolEvil.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/senpai.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/senpai.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bfPixel.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bfPixel.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfPixel.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfPixel.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/spirit.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/spirit.txt"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-senpai.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-senpai-angry.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-spirit.png")
+		add_custom_command(
+			OUTPUT "${_week6_header}" "${_week6_visual_header}" "${_week6_scene}"
+				${_week6_audio_outputs} ${_week6_chart_outputs}
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week6_assets.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}" --ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_week6_audio_dir}" --header "${_week6_header}"
+				--chart-dir "${_week6_chart_dir}" --scene "${_week6_scene}"
+				--visual-header "${_week6_visual_header}"
+			DEPENDS ${_week6_dependencies}
+			VERBATIM)
+	endif()
+	# Week 7 classic songs use their own four-channel VAGi and chart files.
+	# The compact 3-page battlefield/actor package is loaded on demand.
+	set(_week7_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/week7-audio")
+	set(_week7_chart_dir "${_week7_audio_dir}/charts")
+	set(_week7_header "${CMAKE_CURRENT_BINARY_DIR}/week7_catalog.h")
+	set(_week7_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week7_visual_data.h")
+	set(_week7_scene "${CMAKE_CURRENT_BINARY_DIR}/week7-scene.bin")
+	set(_week7_audio_outputs
+		"${_week7_audio_dir}/ugh.vag"
+		"${_week7_audio_dir}/guns.vag"
+		"${_week7_audio_dir}/stress.vag")
+	set(_week7_chart_outputs)
+	foreach(_song_code UGH GUN STR)
+		foreach(_difficulty E N H)
+			list(APPEND _week7_chart_outputs "${_week7_chart_dir}/${_song_code}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
+	if(FUNKIN_PS1_PRECONVERTED_WEEK7_DIR)
+		set(_week7_package_files
+			week7_catalog.h week7_visual_data.h week7-scene.bin
+			week7-audio/ugh.vag week7-audio/guns.vag week7-audio/stress.vag
+			week7-audio/charts/UGHE.BIN week7-audio/charts/UGHN.BIN week7-audio/charts/UGHH.BIN
+			week7-audio/charts/GUNE.BIN week7-audio/charts/GUNN.BIN week7-audio/charts/GUNH.BIN
+			week7-audio/charts/STRE.BIN week7-audio/charts/STRN.BIN week7-audio/charts/STRH.BIN)
+		foreach(_week7_package_file IN LISTS _week7_package_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_WEEK7_DIR}/${_week7_package_file}")
+				message(FATAL_ERROR "Missing reusable Week 7 package file: ${FUNKIN_PS1_PRECONVERTED_WEEK7_DIR}/${_week7_package_file}")
+			endif()
+			get_filename_component(_week7_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_week7_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_week7_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_WEEK7_DIR}/${_week7_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_week7_package_file}" COPYONLY)
+		endforeach()
+	else()
+		set(_week7_dependencies
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week7_assets.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/animate_preview.py")
+		foreach(_song ugh guns stress)
+			list(APPEND _week7_dependencies
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-bf.ogg"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Voices-tankman.ogg")
+		endforeach()
+	list(APPEND _week7_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/tankSky.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/mountains2.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/tankBuildings.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/cityruins2.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/tankGround.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week7/images/bricksGround.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/tankman/basic/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/tankman/basic/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/tankman/basic/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/bf/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfTankmen.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gfTankmen.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-tankman.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-bf.png")
+		add_custom_command(
+			OUTPUT "${_week7_header}" "${_week7_visual_header}" "${_week7_scene}"
+				${_week7_audio_outputs} ${_week7_chart_outputs}
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_week7_assets.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}" --ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_week7_audio_dir}" --header "${_week7_header}"
+				--chart-dir "${_week7_chart_dir}" --scene "${_week7_scene}"
+				--visual-header "${_week7_visual_header}"
+			DEPENDS ${_week7_dependencies}
+			VERBATIM)
+	endif()
+	# WeekEnd 1 classic songs are generated independently. Erect and Spaghetti
+	# are intentionally not part of this catalog/build.
+	set(_weekend1_audio_dir "${CMAKE_CURRENT_BINARY_DIR}/weekend1-audio")
+	set(_weekend1_chart_dir "${_weekend1_audio_dir}/charts")
+	set(_weekend1_header "${CMAKE_CURRENT_BINARY_DIR}/weekend1_catalog.h")
+	set(_weekend1_visual_header "${CMAKE_CURRENT_BINARY_DIR}/weekend1_visual_data.h")
+	set(_weekend1_scene "${CMAKE_CURRENT_BINARY_DIR}/weekend1-scene.bin")
+	set(_weekend1_audio_outputs
+		"${_weekend1_audio_dir}/darnell.vag" "${_weekend1_audio_dir}/litup.vag"
+		"${_weekend1_audio_dir}/2hot.vag" "${_weekend1_audio_dir}/blazin.vag")
+	set(_weekend1_chart_outputs)
+	foreach(_song_code DNL LIT 2HT BLZ)
+		foreach(_difficulty E N H)
+			list(APPEND _weekend1_chart_outputs "${_weekend1_chart_dir}/${_song_code}${_difficulty}.BIN")
+		endforeach()
+	endforeach()
+	if(FUNKIN_PS1_PRECONVERTED_WEEKEND1_DIR)
+		set(_weekend1_package_files
+			weekend1_catalog.h weekend1_visual_data.h weekend1-scene.bin
+			weekend1-audio/darnell.vag weekend1-audio/litup.vag
+			weekend1-audio/2hot.vag weekend1-audio/blazin.vag
+			weekend1-audio/charts/DNLE.BIN weekend1-audio/charts/DNLN.BIN weekend1-audio/charts/DNLH.BIN
+			weekend1-audio/charts/LITE.BIN weekend1-audio/charts/LITN.BIN weekend1-audio/charts/LITH.BIN
+			weekend1-audio/charts/2HTE.BIN weekend1-audio/charts/2HTN.BIN weekend1-audio/charts/2HTH.BIN
+			weekend1-audio/charts/BLZE.BIN weekend1-audio/charts/BLZN.BIN weekend1-audio/charts/BLZH.BIN)
+		foreach(_weekend1_package_file IN LISTS _weekend1_package_files)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_WEEKEND1_DIR}/${_weekend1_package_file}")
+				message(FATAL_ERROR "Missing reusable WeekEnd 1 package file: ${FUNKIN_PS1_PRECONVERTED_WEEKEND1_DIR}/${_weekend1_package_file}")
+			endif()
+			get_filename_component(_weekend1_destination_dir "${CMAKE_CURRENT_BINARY_DIR}/${_weekend1_package_file}" DIRECTORY)
+			file(MAKE_DIRECTORY "${_weekend1_destination_dir}")
+			configure_file("${FUNKIN_PS1_PRECONVERTED_WEEKEND1_DIR}/${_weekend1_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_weekend1_package_file}" COPYONLY)
+		endforeach()
+	else()
+		set(_weekend1_dependencies
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_weekend1_assets.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
+			"${CMAKE_CURRENT_SOURCE_DIR}/animate_preview.py")
+		foreach(_song darnell lit-up 2hot blazin)
+			list(APPEND _weekend1_dependencies
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-chart.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/preload/data/songs/${_song}/${_song}-metadata.json"
+				"${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/Inst.ogg")
+		endforeach()
+		foreach(_stem Voices-pico.ogg Voices-darnell.ogg)
+			foreach(_song darnell lit-up 2hot)
+				list(APPEND _weekend1_dependencies "${FUNKIN_PS1_ASSETS_DIR}/songs/${_song}/${_stem}")
+			endforeach()
+		endforeach()
+		list(APPEND _weekend1_dependencies
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillySkybox.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillySkyline.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillyHighway.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillyForegroundCity.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillyConstruction.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyStreets/phillyForeground.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyBlazin/skyBlur.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/weekend1/images/phillyBlazin/streetBlur.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnell/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnell/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnell/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/nene/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/nene/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/nene/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/picoBlazin/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/picoBlazin/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/picoBlazin/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnellBlazin/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnellBlazin/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/darnellBlazin/spritemap1.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-pico.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/preload/images/icons/icon-darnell.png")
+		add_custom_command(
+			OUTPUT "${_weekend1_header}" "${_weekend1_visual_header}" "${_weekend1_scene}"
+				${_weekend1_audio_outputs} ${_weekend1_chart_outputs}
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_weekend1_assets.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}" --ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--output-dir "${_weekend1_audio_dir}" --header "${_weekend1_header}"
+				--chart-dir "${_weekend1_chart_dir}" --scene "${_weekend1_scene}"
+				--visual-header "${_weekend1_visual_header}"
+			DEPENDS ${_weekend1_dependencies}
+			VERBATIM)
+	endif()
 	configure_file("${FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH}"
 		"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag" COPYONLY)
 	set(_menu_audio_header "${CMAKE_CURRENT_BINARY_DIR}/menu_audio_data.h")
 	set(_menu_audio_vagi "${CMAKE_CURRENT_BINARY_DIR}/menu.vag")
 	set(_gameover_loop_vagi "${CMAKE_CURRENT_BINARY_DIR}/gameover-loop.vag")
 	set(_gameover_end_vagi "${CMAKE_CURRENT_BINARY_DIR}/gameover-end.vag")
-	add_custom_command(
-		OUTPUT "${_menu_audio_header}" "${_menu_audio_vagi}"
-			"${_gameover_loop_vagi}" "${_gameover_end_vagi}"
-		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_menu_audio.py"
-			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
-			--assets "${FUNKIN_PS1_ASSETS_DIR}"
-			--music "${_menu_audio_vagi}"
-			--gameover-loop "${_gameover_loop_vagi}"
-			--gameover-end "${_gameover_end_vagi}"
-			--header "${_menu_audio_header}"
-		DEPENDS generate_ps1_menu_audio.py convert_bopeebo_to_vagi.py ${_visual_asset_dependencies}
-		VERBATIM
-	)
+	if(FUNKIN_PS1_PRECONVERTED_BASE_DIR)
+		foreach(_base_package_file menu_audio_data.h menu.vag gameover-loop.vag gameover-end.vag)
+			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+				message(FATAL_ERROR "Missing reusable base package file: ${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
+			endif()
+			configure_file("${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}"
+				"${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}" COPYONLY)
+		endforeach()
+	else()
+		add_custom_command(
+			OUTPUT "${_menu_audio_header}" "${_menu_audio_vagi}"
+				"${_gameover_loop_vagi}" "${_gameover_end_vagi}"
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_menu_audio.py"
+				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}"
+				--music "${_menu_audio_vagi}"
+				--gameover-loop "${_gameover_loop_vagi}"
+				--gameover-end "${_gameover_end_vagi}"
+				--header "${_menu_audio_header}"
+			DEPENDS generate_ps1_menu_audio.py convert_bopeebo_to_vagi.py ${_visual_asset_dependencies}
+			VERBATIM
+		)
+	endif()
 	set(_playable_sources spu_probe.c "${_psn00bsdk_cdstream_dir}/stream.c")
 	if(FUNKIN_PS1_STARTUP_BEFORE_BSS_MARKER AND FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER)
 		message(FATAL_ERROR "Select only one startup marker position")
@@ -457,10 +942,27 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		${_playable_sources}
 		"${_playable_chart_header}" "${_playable_visual_header}"
-		"${_menu_audio_header}")
+		"${_menu_audio_header}" "${_week4_header}" "${_week4_visual_header}"
+		"${_week5_header}" "${_week5_visual_header}"
+		"${_week6_header}" "${_week6_visual_header}"
+		"${_week7_header}" "${_week7_visual_header}"
+		"${_weekend1_header}" "${_weekend1_visual_header}")
 	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}"
 		"${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
+	add_custom_target(funkin-ps1-week5-assets DEPENDS "${_week5_header}"
+		"${_week5_visual_header}" "${_week5_scene}" ${_week5_audio_outputs} ${_week5_chart_outputs})
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-week5-assets)
+	add_custom_target(funkin-ps1-week6-assets DEPENDS "${_week6_header}"
+		"${_week6_visual_header}" "${_week6_scene}" ${_week6_audio_outputs} ${_week6_chart_outputs})
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-week6-assets)
+	add_custom_target(funkin-ps1-week7-assets DEPENDS "${_week7_header}"
+		"${_week7_visual_header}" "${_week7_scene}" ${_week7_audio_outputs} ${_week7_chart_outputs})
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-week7-assets)
+	add_custom_target(funkin-ps1-weekend1-assets DEPENDS "${_weekend1_header}"
+		"${_weekend1_visual_header}" "${_weekend1_scene}"
+		${_weekend1_audio_outputs} ${_weekend1_chart_outputs})
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-weekend1-assets)
 	target_compile_definitions(funkin-ps1-bopeebo-playable PRIVATE
 		TEST_CHANNELS=4 TEST_BOPEEBO_4CH=1 TEST_PLAYABLE_BOPEEBO=1
 		GAME_DAD_LANES_DEFAULT=$<BOOL:${FUNKIN_PS1_DAD_LANES_DEFAULT}>
@@ -488,8 +990,23 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			"${_week2_visual_payload}"
 			"${_week1_visual_payload}"
 			"${_week3_visual_payload}"
+			"${_week4_visual_payload}"
+			"${_week5_scene}"
+			"${_week6_scene}"
+			"${_week7_scene}"
+			"${_weekend1_scene}"
 			${_song_audio_outputs}
 			${_song_chart_outputs}
+			${_week4_audio_outputs}
+			${_week4_chart_outputs}
+			${_week5_audio_outputs}
+			${_week5_chart_outputs}
+			${_week6_audio_outputs}
+			${_week6_chart_outputs}
+			${_week7_audio_outputs}
+			${_week7_chart_outputs}
+			${_weekend1_audio_outputs}
+			${_weekend1_chart_outputs}
 			"${_menu_audio_vagi}" "${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 elseif(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON OR DEFINED FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH)
 	message(FATAL_ERROR "Playable Bopeebo requires both FUNKIN_PS1_BOPEEBO_CHART_JSON and FUNKIN_PS1_AUDIO_VAGI_BOPEEBO_4CH to name existing files")
@@ -519,4 +1036,3 @@ if(DEFINED _week1_visual_payload)
 			"${_week1_visual_payload}" "${_playable_visual_header}"
 	)
 endif()
-

@@ -29,7 +29,12 @@ MENU_DJ_FRAME_H = 90
 MENU_DJ_SOURCE_FRAMES = tuple(range(0, 17, 2)) + tuple(range(17, 31, 2))
 WEEK2_CHAR_W = 72
 WEEK2_CHAR_H = 84
+WEEK2_MONSTER_FRAME_W = WEEK2_CHAR_W
+WEEK2_MONSTER_FRAME_H = WEEK2_CHAR_H
 WEEK2_STAGE_DIVISOR = 7
+WEEK2_LIGHTNING_CROP = (92, 81, 255, 211)
+WEEK2_LIGHTNING_TEX_W = 104
+WEEK2_LIGHTNING_TEX_H = 83
 
 BF_ANIMS = [
     ("idle", "BF idle dance"),
@@ -112,9 +117,10 @@ def png_size(source: pathlib.Path) -> tuple[int, int]:
     return struct.unpack(">II", data[16:24])
 
 
-def fit_anchored_rig(rig: Rig, frame_ids: list[int], out_w: int, out_h: int) -> dict[int, bytearray]:
+def fit_anchored_rig(rig: Rig, frame_ids: list[int], out_w: int, out_h: int,
+                     canvas: int = 1200) -> dict[int, bytearray]:
     """Fit a rig's poses together, keeping their source-space origin and floor."""
-    rendered = {frame: rig.render_positioned(frame) for frame in frame_ids}
+    rendered = {frame: rig.render_positioned(frame, canvas) for frame in frame_ids}
     min_x = min(item[0] for item in rendered.values())
     max_x = max(item[0] + item[2] for item in rendered.values())
     min_y = min(item[1] for item in rendered.values())
@@ -553,6 +559,8 @@ def write_header(output: pathlib.Path,
                  week2_palette: list[tuple[int, int, int]],
                  week2_stage_origin: tuple[int, int],
                  week2_camera_zoom_q8: int,
+                 week2_lightning_origin: tuple[int, int],
+                 week2_lightning_world_size: tuple[int, int],
                  week2_character_first_page: int,
                  week3_stage_pages: list[bytearray],
                  week3_character_pages: list[bytearray],
@@ -583,6 +591,14 @@ def write_header(output: pathlib.Path,
              f"#define BOPEEBO_WEEK2_STAGE_X ({week2_stage_origin[0]})",
              f"#define BOPEEBO_WEEK2_STAGE_Y ({week2_stage_origin[1]})",
              f"#define BOPEEBO_WEEK2_CAMERA_ZOOM_Q8 {week2_camera_zoom_q8}u",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_X ({week2_lightning_origin[0]})",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_Y ({week2_lightning_origin[1]})",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_WORLD_W {week2_lightning_world_size[0]}u",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_WORLD_H {week2_lightning_world_size[1]}u",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_TEX_W {WEEK2_LIGHTNING_TEX_W}u",
+             f"#define BOPEEBO_WEEK2_LIGHTNING_TEX_H {WEEK2_LIGHTNING_TEX_H}u",
+             f"#define BOPEEBO_WEEK2_MONSTER_FRAME_W {WEEK2_MONSTER_FRAME_W}u",
+             f"#define BOPEEBO_WEEK2_MONSTER_FRAME_H {WEEK2_MONSTER_FRAME_H}u",
              f"#define BOPEEBO_WEEK2_CHARACTER_FIRST_PAGE {week2_character_first_page}u",
              f"#define BOPEEBO_WEEK2_STAGE_PAGE_COUNT {len(week2_stage_pages)}u",
              f"#define BOPEEBO_WEEK2_CHARACTER_PAGE_COUNT {len(week2_character_pages)}u",
@@ -624,7 +640,10 @@ def write_header(output: pathlib.Path,
     for x, y, depth in page_table:
         lines.append(f"\t{{{x}, {y}, {depth}}},")
     lines.append("};")
-    w2_page_slots = [0, 1] + [2, 3, 8][:len(week2_character_pages)]
+    # Week 2 temporarily replaces seven existing 8bpp slots, then restores
+    # their Week 1 contents on exit. This keeps the global VRAM map unchanged
+    # while allowing the complete GF dance cycle its own Week 2 CLUT/page data.
+    w2_page_slots = [0, 1] + [2, 3, 4, 5, 6][:len(week2_character_pages)]
     lines.append("static const uint8_t bopeebo_week2_page_slots[BOPEEBO_WEEK2_PAGE_COUNT] = {" +
                  ",".join(str(slot) for slot in w2_page_slots) + "};")
     w3_page_slots = [0, 1] + [2, 3][:len(week3_character_pages)]
@@ -777,10 +796,53 @@ def build(args: argparse.Namespace) -> None:
         f"crop={week2_bg_sprite['w']}:{week2_bg_sprite['h']}:{week2_bg_sprite['x']}:{week2_bg_sprite['y']},"
         f"scale={week2_bg_w}:{week2_bg_raw_h}:flags=area,crop={week2_bg_w}:{week2_bg_h}:0:{week2_crop_y},"
         f"format=rgba", week2_bg_w, week2_bg_h)
+    week2_stage_rig = Rig(assets / "week2" / "images" / "halloween_bg", ffmpeg)
+    # The Animate root instance matrix applies to both the exported base atlas
+    # artwork and the timeline layers. Keep both in the same local coordinate
+    # space before baking the static scene; shifting only the timeline layers
+    # made the permanent room/window drift away from the background prop.
+    week2_scale = 1.0 / WEEK2_STAGE_DIVISOR
+    week2_root = week2_stage_rig.animation["AN"].get("STI", {}).get("SI", {})
+    week2_root_matrix = tuple(week2_root.get("MX", (1, 0, 0, 1, 0, 0)))
+    week2_root_dx = math.floor(week2_root_matrix[4] * week2_scale + 0.5)
+    week2_root_dy = math.floor(week2_root_matrix[5] * week2_scale + 0.5)
     week2_bg_base = bytearray(week2_bg_w * week2_bg_h * 4)
     for i in range(0, len(week2_bg_base), 4):
         week2_bg_base[i:i + 4] = bytes((36, 35, 54, 255))
-    alpha_over(week2_bg_base, week2_bg)
+    week2_bg_shifted = bytearray(week2_bg_w * week2_bg_h * 4)
+    for sy in range(week2_bg_h):
+        dy = sy + week2_root_dy
+        if dy < 0 or dy >= week2_bg_h:
+            continue
+        for sx in range(week2_bg_w):
+            dx = sx + week2_root_dx
+            if dx < 0 or dx >= week2_bg_w:
+                continue
+            src = (sy * week2_bg_w + sx) * 4
+            dst = (dy * week2_bg_w + dx) * 4
+            week2_bg_shifted[dst:dst + 4] = week2_bg[src:src + 4]
+    alpha_over(week2_bg_base, week2_bg_shifted)
+    # Bake the permanent room/window state once. Lightning samples remain
+    # separate transient overlays and still use this same root transform.
+    week2_render_scale = (week2_scale, 0, 0, week2_scale,
+                          week2_root_matrix[4] * week2_scale,
+                          week2_root_matrix[5] * week2_scale - week2_crop_y)
+    week2_static_decor = bytearray(week2_bg_w * week2_bg_h * 4)
+    # Frame 29 still contains the rig's transient `flash` layer. Exclude only
+    # that layer from the baked base so the room/window stay decorated but do
+    # not remain brightly lit between scheduled thunder strikes.
+    week2_lightning_symbol = week2_stage_rig.symbols["halloweem bg lightning strike"]
+    week2_layers = week2_lightning_symbol["TL"]["L"]
+    week2_static_layers = [layer for layer in week2_layers if layer.get("LN") != "flash"]
+    week2_lightning_symbol["TL"]["L"] = week2_static_layers
+    week2_stage_rig.walk(week2_stage_rig.animation["AN"]["N"], 30,
+                         week2_render_scale,
+                         (week2_bg_w, week2_bg_h, week2_static_decor))
+    week2_lightning_symbol["TL"]["L"] = week2_layers
+    # alpha_over returns a new buffer; assigning the return is essential. The
+    # old discarded return was why the converted disk kept the flat Sprite 0
+    # background and showed the room/window only in the transient flash patch.
+    week2_bg_base = alpha_over(week2_bg_base, week2_static_decor)
     week2_stage_names = []
     for tile, x0 in enumerate((0, STAGE_TILE_W)):
         width = min(STAGE_TILE_W, week2_bg_w - x0)
@@ -793,12 +855,42 @@ def build(args: argparse.Namespace) -> None:
         frame_sizes[name] = (width, week2_bg_h)
         week2_stage_names.append(name)
 
+    # Bake three samples from the pinned halloween_bg Animate rig. The original
+    # prop animation is a full-scene composite; only its changing window area
+    # is needed at runtime. These small patches fit in the unused right strip
+    # of Week 2 stage page 1, avoiding extra VRAM pages or CD reads.
+    week2_lightning_names: list[str] = []
+    week2_lightning_crop = (92, 81, 255, 211)  # measured on the 362x262 PS1 scene
+    week2_lightning_x0, week2_lightning_y0, week2_lightning_x1, week2_lightning_y1 = week2_lightning_crop
+    week2_lightning_world_w = week2_lightning_x1 - week2_lightning_x0
+    week2_lightning_world_h = week2_lightning_y1 - week2_lightning_y0
+    week2_lightning_origin = (
+        week2_stage_origin[0] + week2_lightning_x0,
+        week2_stage_origin[1] + week2_lightning_y0 - week2_crop_y)
+    for i, source_frame in enumerate((0, 1, 2)):
+        full = bytearray(week2_bg_w * week2_bg_h * 4)
+        # Use the same root instance transform as the permanent décor so the
+        # flash patches land over that window rather than an atlas-scaled copy.
+        week2_stage_rig.walk(week2_stage_rig.animation["AN"]["N"], source_frame,
+                             week2_render_scale, (week2_bg_w, week2_bg_h, full))
+        crop = bytearray(week2_lightning_world_w * week2_lightning_world_h * 4)
+        for y in range(week2_lightning_world_h):
+            src = ((week2_lightning_y0 + y) * week2_bg_w + week2_lightning_x0) * 4
+            dst = y * week2_lightning_world_w * 4
+            crop[dst:dst + week2_lightning_world_w * 4] = full[src:src + week2_lightning_world_w * 4]
+        name = f"week2_lightning_{i}"
+        temp_images[name] = fit_nearest(crop, week2_lightning_world_w,
+                                        week2_lightning_world_h,
+                                        WEEK2_LIGHTNING_TEX_W, WEEK2_LIGHTNING_TEX_H)
+        frame_sizes[name] = (WEEK2_LIGHTNING_TEX_W, WEEK2_LIGHTNING_TEX_H)
+        week2_lightning_names.append(name)
+
     week2_character_names: list[str] = []
     spooky_groups = atlas_frames(chars / "SpookyKids.xml")
     spooky_png = chars / "SpookyKids.png"
     spooky_selection = [
         (f"week2_spooky_idle_{pose}", "spooky dance idle", frame_index)
-        for pose, frame_index in enumerate((0, 4, 8, 12))
+        for pose, frame_index in enumerate((0, 2, 4, 6, 8, 10, 12, 14))
     ]
     spooky_selection += [
         (f"week2_spooky_sing_left_{pose}", "note sing left", frame_index)
@@ -826,24 +918,31 @@ def build(args: argparse.Namespace) -> None:
         week2_character_names.append(name)
 
     monster_rig = Rig(chars / "monster", ffmpeg)
-    monster_source_ids = (0, 12, 16, 26, 36, 48)
-    monster_poses = fit_anchored_rig(monster_rig, list(monster_source_ids),
-                                     WEEK2_CHAR_W, WEEK2_CHAR_H)
-    monster_selection = (
-        ("week2_monster_idle", 0), ("week2_monster_idle_hold", 12),
-        ("week2_monster_sing_right", 16), ("week2_monster_sing_left", 26),
-        ("week2_monster_sing_up", 36), ("week2_monster_sing_down", 48),
+    # Render the official character symbols directly. The top-level Christmas
+    # stage export positions Monster partly outside its composition viewport;
+    # using it as a character sprite cuts the face/body at a vertical edge.
+    monster_selections = (
+        ("week2_monster_idle", "monster idle", 0),
+        ("week2_monster_idle_hold", "monster idle", 6),
+        ("week2_monster_sing_left", "Monster left note", 2),
+        ("week2_monster_sing_right", "Monster Right note", 2),
+        ("week2_monster_sing_up", "monster up note", 2),
+        ("week2_monster_sing_down", "monster down", 2),
     )
-    for name, source_id in monster_selection:
-        temp_images[name] = monster_poses[source_id]
-        frame_sizes[name] = (WEEK2_CHAR_W, WEEK2_CHAR_H)
+    for name, symbol, source_frame in monster_selections:
+        _, _, width, height, pixels = monster_rig.render_symbol_positioned(symbol, source_frame)
+        if not pixels:
+            raise ValueError(f"empty Week 2 Monster symbol frame {symbol}[{source_frame}]")
+        temp_images[name] = fit_nearest(pixels, width, height,
+            WEEK2_MONSTER_FRAME_W, WEEK2_MONSTER_FRAME_H, anchor_bottom=True)
+        frame_sizes[name] = (WEEK2_MONSTER_FRAME_W, WEEK2_MONSTER_FRAME_H)
         week2_character_names.append(name)
     for name, png in (("week2_spooky_icon", assets / "preload" / "images" / "icons" / "icon-spooky.png"),
                       ("week2_monster_icon", assets / "preload" / "images" / "icons" / "icon-monster.png")):
         temp_images[name] = extract_crop(ffmpeg, png, 0, 0, 150, 150, (24, 24))
         frame_sizes[name] = (24, 24)
         week2_character_names.append(name)
-    week2_character_palette_names = week2_stage_names + week2_character_names
+    week2_character_palette_names = week2_stage_names + week2_character_names + week2_lightning_names
 
     bf_groups = atlas_frames(chars / "BOYFRIEND.xml")
     bf_png = chars / "BOYFRIEND.png"
@@ -896,11 +995,11 @@ def build(args: argparse.Namespace) -> None:
     for i, source_frame in enumerate(gf_source_ids):
         temp_images[f"gf_dance_{i}"] = gf_anchored[source_frame]
         frame_sizes[f"gf_dance_{i}"] = (87, 79)
-    # Week 2 uses its own CLUT for the additional character atlas. Include
-    # two official GF dance poses in that atlas so replacing the Week 1 palette
-    # during Week 2 cannot recolor GF incorrectly.
+    # Week 2 uses its own CLUT for the additional character atlas. Keep the
+    # complete five-pose left/right dance cycle so changing to the Week 2
+    # palette cannot recolor GF or collapse her dance to two repeated poses.
     week2_gf_names = []
-    for pose, source_index in enumerate((0, 5)):
+    for pose, source_index in enumerate(range(10)):
         name = f"week2_gf_dance_{pose}"
         temp_images[name] = bytearray(temp_images[f"gf_dance_{source_index}"])
         frame_sizes[name] = frame_sizes[f"gf_dance_{source_index}"]
@@ -1170,8 +1269,11 @@ def build(args: argparse.Namespace) -> None:
     menu_labels = ("storymode", "freeplay", "options", "credits")
     menu_row_y = (19, 58, 96, 134)
     for label, y in zip(menu_labels, menu_row_y):
-        art = menu_idle_art[label] if label != "options" else options_idle
-        blend_at(main_screen, (256, 192), art, (128, 36), (64, y))
+        if label == "options":
+            # Draw this label at runtime from its own texture frame. Keeping it
+            # out of the baked screen avoids stale/fallback icon pixels behind it.
+            continue
+        blend_at(main_screen, (256, 192), menu_idle_art[label], (128, 36), (64, y))
     menu_row_backgrounds_rgba = [bytearray(128 * 36 * 4) for _ in menu_labels]
     for row, y in enumerate(menu_row_y):
         for py in range(36):
@@ -1488,6 +1590,17 @@ def build(args: argparse.Namespace) -> None:
             page_blit("menu_freeplay_capsule_selected", 0, 192)
             page_blit("menu_freeplay_capsule_idle", 0, 224)
             page_blit("menu_freeplay_letters", 148, 192)
+        elif name == "menu_screen_main":
+            # Reserve the right half of the main-menu texture's unused lower
+            # strip for the approved custom label. The selected-label upload
+            # occupies x=0..127 on the same row, so both states can coexist.
+            width, height = frame_sizes["menu_options_idle"]
+            if width != 128 or height != 36:
+                raise ValueError("OPTIONS label must fit its 128x36 reserved strip")
+            for row in range(height):
+                dst = (192 + row) * PAGE_W + 128
+                src = row * width
+                page[dst:dst + width] = quantized8["menu_options_idle"][src:src + width]
         menu_screen_pages.append(page)
     menu_character_icon_words: list[list[int]] = []
     menu_character_icon_bounds: list[tuple[int, int, int, int]] = []
@@ -1600,14 +1713,28 @@ def build(args: argparse.Namespace) -> None:
         descriptors[name] = {"page": tile, "palette": 0, "u": 0, "v": 0,
                              "w": width, "h": height}
 
+    # Page 1's background tile is only 106 pixels wide. Pack the three small
+    # lightning frames into its otherwise-unused right-hand strip.
+    for i, name in enumerate(week2_lightning_names):
+        indices = quantized_week2[name]
+        x, y = 112, i * (WEEK2_LIGHTNING_TEX_H + 1)
+        if x + WEEK2_LIGHTNING_TEX_W > PAGE_W or y + WEEK2_LIGHTNING_TEX_H > PAGE_H:
+            raise ValueError("Week 2 lightning patch exceeds reserved stage-page space")
+        for py in range(WEEK2_LIGHTNING_TEX_H):
+            src = py * WEEK2_LIGHTNING_TEX_W
+            dst = (y + py) * PAGE_W + x
+            week2_stage_pages[1][dst:dst + WEEK2_LIGHTNING_TEX_W] = indices[src:src + WEEK2_LIGHTNING_TEX_W]
+        descriptors[name] = {"page": 1, "palette": 0, "u": x, "v": y,
+                             "w": WEEK2_LIGHTNING_TEX_W, "h": WEEK2_LIGHTNING_TEX_H}
+
     week2_character_pages: list[bytearray] = []
     week2_character_local: dict[str, dict] = {}
     pack_8bpp([(name, quantized_week2[name], *frame_sizes[name])
                for name in week2_character_names], 0, 8,
               week2_character_pages, week2_character_local)
-    if len(week2_character_pages) != 3:
-        raise ValueError(f"Week 2 character atlas needs {len(week2_character_pages)} pages; expected three")
-    week2_character_page_slots = (2, 3, 8)
+    if len(week2_character_pages) != 5:
+        raise ValueError(f"Week 2 character atlas needs {len(week2_character_pages)} pages; expected five")
+    week2_character_page_slots = (2, 3, 4, 5, 6)
     for name, frame in week2_character_local.items():
         descriptors[name] = {**frame,
             "page": week2_character_page_slots[int(frame["page"])], "palette": 0}
@@ -1719,7 +1846,7 @@ def build(args: argparse.Namespace) -> None:
     print(f"Freeplay DJ checks: 9 sampled Intro frames + 7 sampled Idle frames, anchored to one floor; crop {dj_frame_w}x{MENU_DJ_FRAME_H} has transparent margins and scales 1.75x at runtime")
     print(f"Freeplay DJ atlas: {len(menu_dj_pages)} full-page 8bpp texture ({len(menu_dj_pages) * 65536} bytes resident); underlying menu background remains a separate layer")
     print(f"Freeplay DJ color check: shared 8bpp CLUT RMSE {rmse(menu_dj_frame_names, palette8):.2f} RGB levels; palette sampled from 3 transparent poses only")
-    print(f"Week 2 art: {week2_bg_w}x{week2_bg_h} scene (was {round(2536 / WORLD_DIVISOR)}x{round(1837 / WORLD_DIVISOR)}), {WEEK2_CHAR_W}x{WEEK2_CHAR_H} Spooky/Monster sprites, {len(week2_character_names)} official animation/icon frames, {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, dedicated 255-color CLUT, RMSE {rmse(week2_character_palette_names, week2_palette):.2f} RGB levels")
+    print(f"Week 2 art: {week2_bg_w}x{week2_bg_h} stage, aligned root background/decor, 8 Spooky idle poses, 10 GF dance poses, per-pose {WEEK2_MONSTER_FRAME_W}x{WEEK2_MONSTER_FRAME_H} Monster, {len(week2_lightning_names)} official lightning frames, {len(week2_character_names)} character/icon frames, {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, dedicated 255-color CLUT, RMSE {rmse(week2_character_palette_names, week2_palette):.2f} RGB levels")
     week2_payload_path = pathlib.Path(args.week2_pages_output)
     week2_payload_path.parent.mkdir(parents=True, exist_ok=True)
     palette_words = [0] + [rgb555(c) for c in week2_palette[:255]]
@@ -1747,7 +1874,8 @@ def build(args: argparse.Namespace) -> None:
                  menu_screen_pages, menu_dj_pages, menu_dj_frame_names,
                  menu_dj_first_page, (dj_frame_w, MENU_DJ_FRAME_H),
                  week2_stage_pages, week2_character_pages, week2_palette,
-                 week2_stage_origin, week2_camera_zoom_q8, 2,
+                 week2_stage_origin, week2_camera_zoom_q8, week2_lightning_origin,
+                 (week2_lightning_world_w, week2_lightning_world_h), 2,
                  week3_stage_pages, week3_character_pages, week3_palette,
                  week3_stage_origin, week3_camera_zoom_q8, week3_char_layout,
                  menu_character_icon_words,
@@ -1779,4 +1907,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

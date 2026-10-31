@@ -22,7 +22,7 @@ extern int main(void);
 extern uint8_t __bss_start[];
 extern uint8_t _end[];
 
-/* Keep the playable game\x27s main section linked, but never take this path. */
+/* Keep the playable game's main section linked, but never take this path. */
 static volatile uint32_t startup_release_code = 0xFFFFFFFFu;
 
 void _start_inner(int argc, const char **argv)

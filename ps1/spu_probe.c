@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 35021)
-Total output lines: 3764
-
 /* CD-to-SPU VAGi streaming probe; audio data is supplied locally at build time. */
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,9 +56,18 @@ Total output lines: 3764
 #include "bopeebo_sfx_data.h"
 #endif
 #if TEST_PLAYABLE_BOPEEBO
-#include "week1_catalog.h"
+#include "week4_catalog.h"
 #include "bopeebo_visual_data.h"
+#include "week4_visual_data.h"
 #include "menu_audio_data.h"
+#include "week5_catalog.h"
+#include "week5_visual_data.h"
+#include "week6_catalog.h"
+#include "week6_visual_data.h"
+#include "week7_catalog.h"
+#include "week7_visual_data.h"
+#include "weekend1_catalog.h"
+#include "weekend1_visual_data.h"
 #define BOPEEBO_CHART_RATE PS1_CHART_RATE
 #define GAME_WINDOW_SAMPLES ((uint32_t)(BOPEEBO_CHART_RATE * 160u / 1000u))
 #define GAME_MAX_PRIMS 220u
@@ -75,6 +81,8 @@ Total output lines: 3764
 #define VISUAL_HUD_RESERVED_PRIMS 32u
 #define VISUAL_WORLD_PRIM_LIMIT (VISUAL_MAX_PRIMS - VISUAL_HUD_RESERVED_PRIMS)
 #define BOPEEBO_BPM 100u
+#define MENU_BPM_CENTI 10200u /* freakyMenu-metadata.json, 102 BPM */
+#define WEEK2_CAMERA_ZOOM_Q8_4_3 BOPEEBO_STAGE_CAMERA_ZOOM_Q8 /* match Week 1 camera zoom */
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
 #ifndef GAME_DAD_LANES_DEFAULT
@@ -146,6 +154,11 @@ static bool menu_dj_vram_loaded;
 static bool menu_visuals_loaded;
 static bool week2_visuals_loaded;
 static bool week3_visuals_loaded;
+static bool week4_visuals_loaded;
+static bool week5_visuals_loaded;
+static bool week6_visuals_loaded;
+static bool week7_visuals_loaded;
+static bool weekend1_visuals_loaded;
 static int menu_art_loaded = -1;
 static bool menu_capsule_loaded;
 static int menu_selection = 1; /* Freeplay is the only functional destination. */
@@ -153,6 +166,7 @@ static int menu_selection_background_loaded = -1;
 static int menu_font_id = -1;
 static int menu_header_font_id = -1;
 static int menu_detail_font_id = -1;
+static int menu_hint_font_id = -1;
 static int menu_song_font_id = -1;
 static int menu_button_anim_loaded = -1;
 typedef enum { DEATH_INTRO, DEATH_LOOP, DEATH_CONFIRM } DeathPhase;
@@ -172,7 +186,7 @@ enum {
 typedef struct { const char *label; uint8_t icon; } FreeplayCatalogEntry;
 static const FreeplayCatalogEntry freeplay_catalog[FREEPLAY_CATALOG_COUNT] = {
 	{"TUTORIAL", MENU_ICON_GF}, {"BOPEEBO", MENU_ICON_DAD},
-	{"FRESH", MENU_ICON_SPOOKY}, {"DADBATTLE", MENU_ICON_DAD},
+	{"FRESH", MENU_ICON_DAD}, {"DADBATTLE", MENU_ICON_DAD},
 	{"SPOOKEEZ", MENU_ICON_SPOOKY}, {"SOUTH", MENU_ICON_SPOOKY},
 	{"MONSTER", MENU_ICON_MONSTER}, {"PICO", MENU_ICON_PICO},
 	{"PHILLY N", MENU_ICON_PICO}, {"BLAMMED", MENU_ICON_PICO},
@@ -189,8 +203,25 @@ static int freeplay_icon_rows_loaded = -1;
 static uint32_t freeplay_best_score[PS1_SONG_COUNT][PS1_DIFFICULTY_COUNT];
 static uint8_t freeplay_best_percent[PS1_SONG_COUNT][PS1_DIFFICULTY_COUNT];
 static const Ps1Song *active_song = &ps1_song_catalog[0];
+static unsigned active_song_index;
+static uint32_t week2_last_thunder_strike_beat = UINT32_MAX;
 static Ps1Chart loaded_chart_storage;
 static const Ps1Chart *active_chart;
+
+static const Ps1Song *ps1_song_at(unsigned index)
+{
+	if (index < PS1_BASE_SONG_COUNT) return &ps1_song_catalog[index];
+	index -= PS1_BASE_SONG_COUNT;
+	if (index < PS1_WEEK4_SONG_COUNT) return &ps1_week4_song_catalog[index];
+	index -= PS1_WEEK4_SONG_COUNT;
+	if (index < PS1_WEEK5_SONG_COUNT) return &ps1_week5_song_catalog[index];
+	index -= PS1_WEEK5_SONG_COUNT;
+	if (index < PS1_WEEK6_SONG_COUNT) return &ps1_week6_song_catalog[index];
+	index -= PS1_WEEK6_SONG_COUNT;
+	if (index < PS1_WEEK7_SONG_COUNT) return &ps1_week7_song_catalog[index];
+	index -= PS1_WEEK7_SONG_COUNT;
+	return index < PS1_WEEKEND1_SONG_COUNT ? &ps1_weekend1_song_catalog[index] : 0;
+}
 static uint8_t *active_chart_blob;
 
 /* Separate geometry/state groups preserve the future two-player split. */
@@ -396,7 +427,8 @@ enum {
 	SFX_KIND_PROBE_AUTO = 0,
 	SFX_KIND_PROBE_MANUAL,
 	SFX_KIND_MISS,
-	SFX_KIND_GHOST_MISS
+	SFX_KIND_GHOST_MISS,
+	SFX_KIND_THUNDER
 };
 
 enum {
@@ -493,6 +525,7 @@ static void init_video(void)
 	menu_font_id = FntOpen(8, 191, 304, 45, 0, 96);
 	menu_header_font_id = FntOpen(164, 15, 152, 10, 0, 24);
 	menu_detail_font_id = FntOpen(24, 177, 272, 34, 0, 64);
+	menu_hint_font_id = FntOpen(56, 222, 208, 10, 0, 24);
 	menu_song_font_id = -1; /* capsule titles use the official pixel-letter atlas */
 #endif
 }
@@ -690,6 +723,276 @@ static void load_week3_visuals(bool enable)
 		DrawSync(0);
 	}
 	week3_visuals_loaded = enable;
+}
+
+static void load_week4_visuals(bool enable)
+{
+	if (enable != week4_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		for (unsigned i = 0; i < BOPEEBO_WEEK4_PAGE_COUNT; i++) {
+			unsigned page_index = i; /* Week 4 leases the first three gameplay pages. */
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\W4SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(page_index, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\W4SCENE.BIN", BOPEEBO_WEEK4_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week4_visuals_loaded = enable;
+}
+
+static void load_week5_visuals(bool enable)
+{
+	if (enable != week5_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		for (unsigned i = 0; i < BOPEEBO_WEEK5_PAGE_COUNT; i++) {
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\W5SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(i, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\W5SCENE.BIN", BOPEEBO_WEEK5_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week5_visuals_loaded = enable;
+}
+
+static void load_week6_visuals(bool enable)
+{
+	if (enable != week6_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		/* Week 6 leases the first five 8bpp pages; restore every leased page on exit. */
+		for (unsigned i = 0; i < BOPEEBO_WEEK6_PAGE_COUNT; i++) {
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\W6SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(i, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\W6SCENE.BIN", BOPEEBO_WEEK6_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week6_visuals_loaded = enable;
+}
+
+static void load_week7_visuals(bool enable)
+{
+	if (enable != week7_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		/* Week 7 leases only the first three 8bpp pages; restore them on exit. */
+		for (unsigned i = 0; i < BOPEEBO_WEEK7_PAGE_COUNT; i++) {
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\W7SCENE.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(i, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\W7SCENE.BIN", BOPEEBO_WEEK7_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	week7_visuals_loaded = enable;
+}
+
+static void load_weekend1_visuals(bool enable)
+{
+	if (enable != weekend1_visuals_loaded) {
+		DrawSync(0);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
+	for (unsigned i = 0; i < BOPEEBO_WEEKEND1_PAGE_COUNT; i++) {
+			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (enable) {
+				if (!read_cd_file_range("\\WEND1.BIN", i * 32u, 32u, page_data)) {
+					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+				}
+				LoadImage(&rect, page_data);
+			} else if (!load_visual_page_from_disc(i, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+	if (enable) {
+		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
+		if (!read_cd_file_range("\\WEND1.BIN", BOPEEBO_WEEKEND1_PAGE_COUNT * 32u,
+			1u, palette_data)) {
+			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
+		}
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+		free(palette_data);
+	} else {
+		RECT palette = { 0, 496, 256, 1 };
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+	}
+	weekend1_visuals_loaded = enable;
+}
+
+static void load_song_stage_visuals(void)
+{
+	if (active_song->stage_id == 8u || active_song->stage_id == 9u) {
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week5_visuals(false);
+		load_week6_visuals(false);
+		load_week7_visuals(false);
+		load_weekend1_visuals(true);
+	} else if (active_song->stage_id == 7u) {
+		load_weekend1_visuals(false);
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week5_visuals(false);
+		load_week6_visuals(false);
+		load_week7_visuals(true);
+	} else if (active_song->stage_id == 6u) {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week5_visuals(false);
+		load_week6_visuals(true);
+	} else if (active_song->stage_id == 2u) {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week6_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week2_visuals(true);
+	} else if (active_song->stage_id == 3u) {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week6_visuals(false);
+		load_week2_visuals(false);
+		load_week4_visuals(false);
+		load_week3_visuals(true);
+	} else if (active_song->stage_id == 4u) {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week6_visuals(false);
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week5_visuals(false);
+		load_week4_visuals(true);
+	} else if (active_song->stage_id == 5u) {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week6_visuals(false);
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week5_visuals(true);
+	} else {
+		load_weekend1_visuals(false);
+		load_week7_visuals(false);
+		load_week6_visuals(false);
+		load_week2_visuals(false);
+		load_week3_visuals(false);
+		load_week4_visuals(false);
+		load_week5_visuals(false);
+	}
 }
 
 static void load_freeplay_dj_pages(bool restore_gameplay)
@@ -1165,6 +1468,12 @@ static void play_resident_sfx(bool manual, unsigned kind)
 	static const uint32_t miss_frames[3] = {
 		MISS_SFX_MISSNOTE1_FRAMES, MISS_SFX_MISSNOTE2_FRAMES, MISS_SFX_MISSNOTE3_FRAMES
 	};
+	static const uint32_t thunder_offsets[2] = {
+		THUNDER_SFX_THUNDER_1_OFFSET, THUNDER_SFX_THUNDER_2_OFFSET
+	};
+	static const uint32_t thunder_frames[2] = {
+		THUNDER_SFX_THUNDER_1_FRAMES, THUNDER_SFX_THUNDER_2_FRAMES
+	};
 	if (kind == SFX_KIND_MISS || kind == SFX_KIND_GHOST_MISS) {
 		unsigned variant = next_sfx_random() % 3u;
 		sample_offset = miss_offsets[variant];
@@ -1173,6 +1482,13 @@ static void play_resident_sfx(bool manual, unsigned kind)
 		unsigned percent = (kind == SFX_KIND_GHOST_MISS ? 10u : 50u) +
 			next_sfx_random() % (kind == SFX_KIND_GHOST_MISS ? 11u : 11u);
 		requested_volume = (uint16_t)(0x3fffu * percent / 100u);
+	} else if (kind == SFX_KIND_THUNDER) {
+		unsigned variant = next_sfx_random() & 1u;
+		sample_offset = thunder_offsets[variant];
+		duration_frames = thunder_frames[variant] + 2u;
+		sample_rate = MENU_SFX_RATE;
+		/* Leave headroom for notes/misses in the shared four-voice pool. */
+		requested_volume = 0x2800u;
 	}
 #else
 	(void)kind;
@@ -1706,7 +2022,935 @@ static bool draw_textured_frame_tinted_clut(unsigned frame, int x, int y, int wi
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	setPolyFT4(p);
-	setRGB0(p, r, g, b…5021 tokens truncated…rt on every existing miss event; use the two official miss poses
+	setRGB0(p, r, g, b);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	if (override_clut) setClut(p, override_clut_x, override_clut_y);
+	else set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
+	return true;
+}
+
+static bool draw_textured_frame_tinted(unsigned frame, int x, int y, int width, int height,
+	uint8_t r, uint8_t g, uint8_t b)
+{
+	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
+		r, g, b, false, 0u, 0u);
+}
+
+static bool draw_textured_frame(unsigned frame, int x, int y, int width, int height)
+{
+	return draw_textured_frame_tinted(frame, x, y, width, height, 128, 128, 128);
+}
+
+static bool draw_textured_frame_with_clut(unsigned frame, int x, int y, int width, int height,
+	unsigned clut_x, unsigned clut_y)
+{
+	return draw_textured_frame_tinted_clut(frame, x, y, width, height,
+		128, 128, 128, true, clut_x, clut_y);
+}
+
+/* Sustain-only UV flip: rotate body and end-cap 180 degrees, leaving arrows
+   and receptors on the existing texture path. */
+static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
+	int width, int height)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return false;
+	}
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || width <= 0 || height <= 0) return false;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	uint8_t u0 = visual->u, v0 = visual->v;
+	uint8_t u1 = (uint8_t)(visual->u + visual->w - 1u);
+	uint8_t v1 = (uint8_t)(visual->v + visual->h - 1u);
+	setUV4(p, u1, v1, u0, v1, u1, v0, u0, v0);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
+	return true;
+}
+
+static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
+	unsigned world_w, unsigned world_h, int camera_x, int camera_y,
+	unsigned zoom_q8, unsigned scale_q8)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
+	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
+	int w = ((int)world_w * (int)combined_scale) / 256;
+	int h = ((int)world_h * (int)combined_scale) / 256;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	draw_visual_frame_scaled(frame, world_x, world_y, visual->w, visual->h,
+		camera_x, camera_y, zoom_q8, scale_q8);
+}
+
+static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= WEEK4_VISUAL_FRAME_COUNT) return;
+	const Week4VisualFrame *visual = &week4_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
+	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
+	int w = ((int)visual->w * (int)combined_scale) / 256;
+	int h = ((int)visual->h * (int)combined_scale) / 256;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u),
+		(uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= WEEK5_VISUAL_FRAME_COUNT) return;
+	const Week5VisualFrame *visual = &week5_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
+	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
+	int w = ((int)visual->w * (int)combined_scale) / 256;
+	int h = ((int)visual->h * (int)combined_scale) / 256;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_week6_visual_frame(unsigned frame, int x, int y, int width, int height)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= WEEK6_VISUAL_FRAME_COUNT || width <= 0 || height <= 0) return;
+	const Week6VisualFrame *visual = &week6_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_week7_visual_frame(unsigned frame, int x, int y, int width, int height)
+{
+	if (frame >= WEEK7_VISUAL_FRAME_COUNT || width <= 0 || height <= 0 ||
+		visual_prim_count >= visual_prim_limit) return;
+	const Week7VisualFrame *visual = &week7_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_weekend1_visual_frame(unsigned frame, int x, int y, int width, int height)
+{
+	if (frame >= WEEKEND1_VISUAL_FRAME_COUNT || width <= 0 || height <= 0 ||
+		visual_prim_count >= visual_prim_limit) return;
+	const WeekEnd1VisualFrame *visual = &weekend1_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x, y, x + width, y, x, y + height, x + width, y + height);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static int note_screen_y(uint32_t target, uint32_t samples, const NoteGroupLayout *layout,
+	uint32_t rate)
+{
+	int64_t delta = (int64_t)target - (int64_t)samples;
+	uint32_t speed = layout->lane_group ? GAME_SCROLL_PIXELS_PER_SECOND : 124u;
+	return layout->receptor_y - (int)((delta * speed) / rate);
+}
+
+static void draw_hold_body(int center_x, int y0, int y1, unsigned size, unsigned direction,
+	int top_clip, int bottom_clip)
+{
+	int top = y0 < y1 ? y0 : y1;
+	int bottom = y0 > y1 ? y0 : y1;
+	if (top < top_clip) top = top_clip;
+	if (bottom > bottom_clip) bottom = bottom_clip;
+	if (bottom <= top) return;
+	int width = (int)size / 3;
+	if (width < 8) width = 8;
+	/* The frame IDs are direction-indexed and retain the official VAG hold art. */
+	static const uint8_t hold_body[4] = {
+		VIS_UI_HOLD_BODY_LEFT, VIS_UI_HOLD_BODY_DOWN, VIS_UI_HOLD_BODY_UP, VIS_UI_HOLD_BODY_RIGHT
+	};
+	static const uint8_t hold_tail[4] = {
+		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN, VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
+	};
+	/* The cap belongs at the upper end of a hold. Draw it first, then let
+	   the body overlap it so the seam is hidden behind the sustain column. */
+	draw_textured_frame_rotated_180(hold_tail[direction & 3u], center_x - width / 2, top,
+		width, 12);
+	if (bottom - top > 12)
+		draw_textured_frame_rotated_180(hold_body[direction & 3u], center_x - width / 2, top + 8,
+			width, bottom - top - 8);
+}
+
+static void draw_week6_hold_body(int center_x, int y0, int y1, unsigned size,
+	unsigned direction, int top_clip, int bottom_clip)
+{
+	int top = y0 < y1 ? y0 : y1;
+	int bottom = y0 > y1 ? y0 : y1;
+	if (top < top_clip) top = top_clip;
+	if (bottom > bottom_clip) bottom = bottom_clip;
+	if (bottom <= top) return;
+	static const uint8_t lane_rgb[4][3] = {
+		{ 194, 75, 153 }, { 0, 226, 246 }, { 34, 220, 35 }, { 238, 56, 63 }
+	};
+	int width = (int)size / 3;
+	if (width < 8) width = 8;
+	draw_rect(center_x - width / 2 - 1, top, width + 2, bottom - top, 0, 0, 0);
+	draw_rect(center_x - width / 2, top + 1, width, bottom - top - 2,
+		lane_rgb[direction & 3u][0], lane_rgb[direction & 3u][1], lane_rgb[direction & 3u][2]);
+}
+
+static void draw_note_group(uint32_t samples, unsigned group_index)
+{
+	const NoteGroupLayout *layout = &note_groups[group_index];
+	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	if (group_index == 0u && !dad_lanes_visible) return;
+	bool pixel_style = active_song->stage_id == 6u;
+	int bottom_clip = layout->receptor_y + (int)layout->arrow_size / 2 + 4;
+	static const uint8_t note_frame[4] = {
+		VIS_UI_NOTE_LEFT, VIS_UI_NOTE_DOWN, VIS_UI_NOTE_UP, VIS_UI_NOTE_RIGHT
+	};
+	static const uint8_t idle_frame[4] = {
+		VIS_UI_RECEPTOR_LEFT_IDLE, VIS_UI_RECEPTOR_DOWN_IDLE,
+		VIS_UI_RECEPTOR_UP_IDLE, VIS_UI_RECEPTOR_RIGHT_IDLE
+	};
+	static const uint8_t press_frame[4] = {
+		VIS_UI_RECEPTOR_LEFT_PRESS, VIS_UI_RECEPTOR_DOWN_PRESS,
+		VIS_UI_RECEPTOR_UP_PRESS, VIS_UI_RECEPTOR_RIGHT_PRESS
+	};
+	static const uint8_t confirm_frame[4][4] = {
+		{ VIS_UI_RECEPTOR_LEFT_CONFIRM_0, VIS_UI_RECEPTOR_LEFT_CONFIRM_1,
+		  VIS_UI_RECEPTOR_LEFT_CONFIRM_2, VIS_UI_RECEPTOR_LEFT_CONFIRM_3 },
+		{ VIS_UI_RECEPTOR_DOWN_CONFIRM_0, VIS_UI_RECEPTOR_DOWN_CONFIRM_1,
+		  VIS_UI_RECEPTOR_DOWN_CONFIRM_2, VIS_UI_RECEPTOR_DOWN_CONFIRM_3 },
+		{ VIS_UI_RECEPTOR_UP_CONFIRM_0, VIS_UI_RECEPTOR_UP_CONFIRM_1,
+		  VIS_UI_RECEPTOR_UP_CONFIRM_2, VIS_UI_RECEPTOR_UP_CONFIRM_3 },
+		{ VIS_UI_RECEPTOR_RIGHT_CONFIRM_0, VIS_UI_RECEPTOR_RIGHT_CONFIRM_1,
+		  VIS_UI_RECEPTOR_RIGHT_CONFIRM_2, VIS_UI_RECEPTOR_RIGHT_CONFIRM_3 }
+	};
+	static const uint8_t pixel_note_frame[4] = {
+		WEEK6_FRAME_PIXEL_NOTE_LEFT, WEEK6_FRAME_PIXEL_NOTE_DOWN,
+		WEEK6_FRAME_PIXEL_NOTE_UP, WEEK6_FRAME_PIXEL_NOTE_RIGHT
+	};
+	static const uint8_t pixel_idle_frame[4] = {
+		WEEK6_FRAME_PIXEL_RECEIVER_LEFT, WEEK6_FRAME_PIXEL_RECEIVER_DOWN,
+		WEEK6_FRAME_PIXEL_RECEIVER_UP, WEEK6_FRAME_PIXEL_RECEIVER_RIGHT
+	};
+	static const uint8_t pixel_press_frame[4] = {
+		WEEK6_FRAME_PIXEL_PRESS_LEFT, WEEK6_FRAME_PIXEL_PRESS_DOWN,
+		WEEK6_FRAME_PIXEL_PRESS_UP, WEEK6_FRAME_PIXEL_PRESS_RIGHT
+	};
+	static const uint8_t pixel_confirm_frame[4][2] = {
+		{ WEEK6_FRAME_PIXEL_CONFIRM_LEFT_0, WEEK6_FRAME_PIXEL_CONFIRM_LEFT_1 },
+		{ WEEK6_FRAME_PIXEL_CONFIRM_DOWN_0, WEEK6_FRAME_PIXEL_CONFIRM_DOWN_1 },
+		{ WEEK6_FRAME_PIXEL_CONFIRM_UP_0, WEEK6_FRAME_PIXEL_CONFIRM_UP_1 },
+		{ WEEK6_FRAME_PIXEL_CONFIRM_RIGHT_0, WEEK6_FRAME_PIXEL_CONFIRM_RIGHT_1 }
+	};
+	for (unsigned lane = 0; lane < 4u; lane++) {
+		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
+		uint16_t mask = (uint16_t[]){ PAD_LEFT, PAD_DOWN, PAD_UP, PAD_RIGHT }[lane];
+		bool pressed = group_index == 1u && !(game_buttons & mask);
+		uint32_t until = receiver_flash_until[group_index][lane];
+		uint32_t confirm_duration = rate * 140u / 1000u;
+		bool confirmed = samples < until;
+		unsigned frame = pixel_style ?
+			(pressed ? pixel_press_frame[lane] : pixel_idle_frame[lane]) :
+			(pressed ? press_frame[lane] : idle_frame[lane]);
+		if (confirmed && confirm_duration) {
+			uint32_t remaining = until - samples;
+			uint32_t elapsed = remaining < confirm_duration ? confirm_duration - remaining : 0u;
+			unsigned phase = (unsigned)((uint64_t)elapsed * 4u / confirm_duration);
+			if (phase > 3u) phase = 3u;
+			frame = pixel_style ? pixel_confirm_frame[lane][phase >> 1] : confirm_frame[lane][phase];
+		}
+		if (pixel_style)
+			draw_week6_visual_frame(frame, center_x - layout->arrow_size / 2,
+				layout->receptor_y - layout->arrow_size / 2, layout->arrow_size, layout->arrow_size);
+		else
+			draw_textured_frame(frame, center_x - layout->arrow_size / 2,
+				layout->receptor_y - layout->arrow_size / 2,
+				layout->arrow_size, layout->arrow_size);
+	}
+
+	for (unsigned i = 0; i < active_chart->note_count; i++) {
+		const Ps1Note *note = &active_chart->notes[i];
+		bool dad_note = note->lane >= 4u;
+		if ((group_index == 0u) != dad_note) continue;
+		unsigned lane = note->lane & 3u;
+		unsigned color_lane = lane;
+		int center_x = layout->first_center_x + (int)lane * layout->lane_step;
+		uint32_t state = game_note_state[i];
+		bool holding = !dad_note && active_hold[lane] == (int16_t)i;
+		if (state == 2u || (state == 1u && !holding) || (dad_note && state == 3u && samples >= note->tail))
+			continue;
+
+		if (note->tail > note->head && (state == 0u || holding || (dad_note && state == 3u))) {
+			uint32_t visible_start = samples > note->head && (holding || (dad_note && state == 3u)) ?
+				samples : note->head;
+			int y0 = note_screen_y(visible_start, samples, layout, rate);
+			int y1 = note_screen_y(note->tail, samples, layout, rate);
+			if (pixel_style)
+				draw_week6_hold_body(center_x, y0, y1, layout->arrow_size, color_lane,
+					layout->top_clip, bottom_clip);
+			else
+				draw_hold_body(center_x, y0, y1, layout->arrow_size, color_lane,
+					layout->top_clip, bottom_clip);
+		}
+
+		if (state != 0u) continue;
+		int y = note_screen_y(note->head, samples, layout, rate);
+		int top = y - layout->arrow_size / 2;
+		if (top + layout->arrow_size <= layout->top_clip || top >= bottom_clip) continue;
+		if (pixel_style)
+			draw_week6_visual_frame(pixel_note_frame[lane], center_x - layout->arrow_size / 2,
+				top, layout->arrow_size, layout->arrow_size);
+		else
+			draw_textured_frame(note_frame[lane], center_x - layout->arrow_size / 2, top,
+				layout->arrow_size, layout->arrow_size);
+	}
+}
+
+#if GAME_ARROW_DIAGNOSTIC_DEFAULT
+/* The arrow sheet is a separate QA build mode. Select in the playable build
+   is reserved for the compact judgement trace and never draws this overlay. */
+static void draw_arrow_diagnostic_sheet(void)
+{
+	static const uint8_t note[4] = {
+		VIS_UI_NOTE_LEFT, VIS_UI_NOTE_DOWN, VIS_UI_NOTE_UP, VIS_UI_NOTE_RIGHT
+	};
+	static const uint8_t idle[4] = {
+		VIS_UI_RECEPTOR_LEFT_IDLE, VIS_UI_RECEPTOR_DOWN_IDLE,
+		VIS_UI_RECEPTOR_UP_IDLE, VIS_UI_RECEPTOR_RIGHT_IDLE
+	};
+	static const uint8_t press[4] = {
+		VIS_UI_RECEPTOR_LEFT_PRESS, VIS_UI_RECEPTOR_DOWN_PRESS,
+		VIS_UI_RECEPTOR_UP_PRESS, VIS_UI_RECEPTOR_RIGHT_PRESS
+	};
+	static const uint8_t confirm[4] = {
+		VIS_UI_RECEPTOR_LEFT_CONFIRM_0, VIS_UI_RECEPTOR_DOWN_CONFIRM_0,
+		VIS_UI_RECEPTOR_UP_CONFIRM_0, VIS_UI_RECEPTOR_RIGHT_CONFIRM_0
+	};
+	static const uint8_t body[4] = {
+		VIS_UI_HOLD_BODY_LEFT, VIS_UI_HOLD_BODY_DOWN,
+		VIS_UI_HOLD_BODY_UP, VIS_UI_HOLD_BODY_RIGHT
+	};
+	static const uint8_t tail[4] = {
+		VIS_UI_HOLD_TAIL_LEFT, VIS_UI_HOLD_TAIL_DOWN,
+		VIS_UI_HOLD_TAIL_UP, VIS_UI_HOLD_TAIL_RIGHT
+	};
+	static const int column_x[4] = { 48, 120, 192, 264 };
+	draw_rect(8, 82, 304, 136, 8, 8, 18);
+	for (unsigned lane = 0; lane < 4u; lane++) {
+		int x = column_x[lane] - 10;
+		draw_textured_frame(note[lane], x, 91, 20, 20);
+		draw_textured_frame(idle[lane], x, 116, 20, 20);
+		draw_textured_frame(press[lane], x, 141, 20, 20);
+		draw_textured_frame(confirm[lane], x, 166, 20, 20);
+		draw_textured_frame(body[lane], column_x[lane] - 6, 193, 6, 16);
+		draw_textured_frame(tail[lane], column_x[lane] + 1, 193, 12, 16);
+	}
+}
+#endif
+
+static void camera_target_for_focus(int focus, int *x, int *y)
+{
+	if (active_song->stage_id == 5u) {
+		switch (focus) {
+		case 1: *x = BOPEEBO_WEEK5_OPP_X; *y = BOPEEBO_WEEK5_OPP_Y - 28; break;
+		case 0: *x = BOPEEBO_WEEK5_BF_X; *y = BOPEEBO_WEEK5_BF_Y - 28; break;
+		case 2: *x = BOPEEBO_WEEK5_GF_X; *y = BOPEEBO_WEEK5_GF_Y - 28; break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
+	if (active_song->stage_id == 4u) {
+		switch (focus) {
+		case 1:
+			*x = BOPEEBO_WEEK4_MOM_X + BOPEEBO_WEEK4_MOM_CAMERA_X;
+			*y = BOPEEBO_WEEK4_MOM_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u) +
+				BOPEEBO_WEEK4_MOM_CAMERA_Y; break;
+		case 0:
+			*x = BOPEEBO_WEEK4_BF_X + BOPEEBO_WEEK4_BF_CAMERA_X;
+			*y = BOPEEBO_WEEK4_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
+				BOPEEBO_WEEK4_BF_CAMERA_Y; break;
+		case 2:
+			*x = BOPEEBO_WEEK4_GF_X;
+			*y = BOPEEBO_WEEK4_GF_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u); break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
+	if (active_song->stage_id == 3u) {
+		switch (focus) {
+		case 1:
+			*x = BOPEEBO_WEEK3_PICO_X + BOPEEBO_WEEK3_PICO_CAMERA_X;
+			*y = BOPEEBO_WEEK3_PICO_Y - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_PICO_CAMERA_Y; break;
+		case 0:
+			*x = BOPEEBO_WEEK3_BF_X + BOPEEBO_WEEK3_BF_CAMERA_X;
+			*y = BOPEEBO_WEEK3_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_BF_CAMERA_Y; break;
+		case 2:
+			*x = BOPEEBO_WEEK3_GF_X + BOPEEBO_WEEK3_GF_CAMERA_X;
+			*y = BOPEEBO_WEEK3_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) +
+				BOPEEBO_WEEK3_GF_CAMERA_Y; break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
+	if (active_song->stage_id == 2u) {
+		switch (focus) {
+		case 1: *x = 48 + 19; *y = 108 - 40 - 13; break;
+		case 0: *x = 124 - 13; *y = 111 - (int)(BOPEEBO_BF_FRAME_H / 2u) - 13; break;
+		case 2: *x = 94; *y = 98 - 40; break;
+		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		return;
+	}
+	switch (focus) {
+	case 1: /* mainStage.json: Dad origin and camera offset */
+		*x = BOPEEBO_DAD_X + BOPEEBO_DAD_CAMERA_X;
+		*y = BOPEEBO_DAD_Y - (int)(BOPEEBO_DAD_FRAME_H / 2u) + BOPEEBO_DAD_CAMERA_Y;
+		break;
+	case 0: /* mainStage.json: BF origin and camera offset */
+		*x = BOPEEBO_BF_X + BOPEEBO_BF_CAMERA_X;
+		*y = BOPEEBO_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) + BOPEEBO_BF_CAMERA_Y;
+		break;
+	case 2: /* Girlfriend */
+		*x = BOPEEBO_GF_X + BOPEEBO_GF_CAMERA_X;
+		*y = BOPEEBO_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) + BOPEEBO_GF_CAMERA_Y;
+		break;
+	default: /* Static chart focus */
+		*x = SCREEN_W / 2;
+		*y = SCREEN_H / 2;
+		break;
+	}
+}
+
+static uint32_t music_beat_q16(uint32_t samples)
+{
+	uint32_t rate = BOPEEBO_CHART_RATE;
+	unsigned tempo_index = 0;
+	while (tempo_index + 1u < active_chart->tempo_count &&
+	       active_chart->tempos[tempo_index + 1u].sample <= samples) tempo_index++;
+	const Ps1Tempo *tempo = &active_chart->tempos[tempo_index];
+	uint64_t beat = tempo->beat_q16 +
+		(uint64_t)(samples - tempo->sample) * tempo->bpm_centi * 65536u /
+		((uint64_t)rate * 6000u);
+	return beat > 0xffffffffu ? 0xffffffffu : (uint32_t)beat;
+}
+
+static uint32_t music_sample_for_beat(uint32_t beat)
+{
+	uint32_t target_q16 = beat << 16;
+	unsigned tempo_index = 0;
+	while (tempo_index + 1u < active_chart->tempo_count &&
+	       active_chart->tempos[tempo_index + 1u].beat_q16 <= target_q16)
+		tempo_index++;
+	const Ps1Tempo *tempo = &active_chart->tempos[tempo_index];
+	uint32_t rate = BOPEEBO_CHART_RATE;
+	uint64_t delta = (uint64_t)(target_q16 - tempo->beat_q16) * rate * 6000u /
+		((uint64_t)tempo->bpm_centi * 65536u);
+	uint64_t sample = (uint64_t)tempo->sample + delta;
+	return sample > 0xffffffffu ? 0xffffffffu : (uint32_t)sample;
+}
+
+static bool week2_lightning_frame_at(uint32_t samples, unsigned *frame)
+{
+	uint32_t beat = music_beat_q16(samples) >> 16;
+	int last_strike = -1;
+	unsigned next_strike = (active_song_index == 4u) ? 4u : 12u;
+	while (next_strike <= beat) {
+		last_strike = (int)next_strike;
+		/* Reproducible visual strikes use the official 8-24 beat interval
+		   range; gameplay and audio do not depend on this approximation. */
+		next_strike += 8u + ((next_strike * 13u + active_song_index * 7u) % 17u);
+	}
+	if (last_strike < 0) return false;
+	uint32_t start = music_sample_for_beat((unsigned)last_strike);
+	if (samples < start) return false;
+	if (week2_last_thunder_strike_beat != (uint32_t)last_strike) {
+		week2_last_thunder_strike_beat = (uint32_t)last_strike;
+		/* The pinned Spookeez stage script deliberately makes its first beat-4
+		   strike silent; subsequent strikes use the official random thunder SFX. */
+		if (!(active_song_index == 4u && last_strike == 4))
+			play_resident_sfx(false, SFX_KIND_THUNDER);
+	}
+	uint32_t elapsed = samples - start;
+	uint32_t rate = stream.config.sample_rate ? (uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	uint32_t source_tick = (uint32_t)((uint64_t)elapsed * 24u / rate);
+	if (source_tick < 1u) *frame = VIS_WEEK2_LIGHTNING_0;
+	else if (source_tick < 2u) *frame = VIS_WEEK2_LIGHTNING_1;
+	else if (source_tick < 18u) *frame = VIS_WEEK2_LIGHTNING_2;
+	else return false;
+	return true;
+}
+
+/* Menu animation follows the playing Freaky Menu stream (audio samples), not
+   the render loop. This uses its official pinned 102 BPM metadata. */
+static uint32_t menu_beat_q16(uint32_t samples, unsigned sample_rate)
+{
+	if (!sample_rate) return 0;
+	uint64_t beat = (uint64_t)samples * MENU_BPM_CENTI * 65536u /
+		((uint64_t)sample_rate * 6000u);
+	return beat > 0xffffffffu ? 0xffffffffu : (uint32_t)beat;
+}
+
+static void draw_week6_scene(uint32_t samples)
+{
+	uint32_t beat_q16 = music_beat_q16(samples);
+	uint32_t beat = beat_q16 >> 16;
+	uint32_t beat_phase = beat_q16 & 0xffffu;
+	unsigned stage = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ?
+		WEEK6_FRAME_STAGE_EVIL : WEEK6_FRAME_STAGE_SCHOOL;
+	draw_week6_visual_frame(stage, 0, 0, SCREEN_W, SCREEN_H);
+
+	unsigned gf_frame = (beat & 1u) ? WEEK6_FRAME_GF_DANCE_0 : WEEK6_FRAME_GF_DANCE_1;
+	draw_week6_visual_frame(gf_frame, 138, 87, 48, 48);
+
+	unsigned opponent_frame;
+	if (samples < dad_visual_until) {
+		static const uint8_t senpai_sing[4] = {
+			WEEK6_FRAME_SENPAI_LEFT, WEEK6_FRAME_SENPAI_DOWN,
+			WEEK6_FRAME_SENPAI_UP, WEEK6_FRAME_SENPAI_RIGHT
+		};
+		static const uint8_t angry_sing[4] = {
+			WEEK6_FRAME_ANGRY_LEFT, WEEK6_FRAME_ANGRY_DOWN,
+			WEEK6_FRAME_ANGRY_UP, WEEK6_FRAME_ANGRY_RIGHT
+		};
+		static const uint8_t spirit_sing[4] = {
+			WEEK6_FRAME_SPIRIT_LEFT, WEEK6_FRAME_SPIRIT_DOWN,
+			WEEK6_FRAME_SPIRIT_UP, WEEK6_FRAME_SPIRIT_RIGHT
+		};
+		unsigned lane = dad_visual_lane & 3u;
+		opponent_frame = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? spirit_sing[lane] :
+			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ? angry_sing[lane] : senpai_sing[lane];
+	} else {
+		opponent_frame = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? WEEK6_FRAME_SPIRIT_IDLE :
+			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ? WEEK6_FRAME_ANGRY_IDLE :
+			WEEK6_FRAME_SENPAI_IDLE;
+		(void)beat_phase;
+	}
+	int opponent_x = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? 25 : 42;
+	draw_week6_visual_frame(opponent_frame, opponent_x, 65, 84, 92);
+
+	unsigned bf_frame;
+	if (bf_visual_state == 2u) {
+		static const uint8_t miss[4] = { WEEK6_FRAME_BF_MISS_LEFT, WEEK6_FRAME_BF_MISS_DOWN,
+			WEEK6_FRAME_BF_MISS_UP, WEEK6_FRAME_BF_MISS_RIGHT };
+		bf_frame = miss[bf_visual_lane & 3u];
+	} else if (bf_visual_state == 1u) {
+		static const uint8_t sing[4] = { WEEK6_FRAME_BF_LEFT, WEEK6_FRAME_BF_DOWN,
+			WEEK6_FRAME_BF_UP, WEEK6_FRAME_BF_RIGHT };
+		bf_frame = sing[bf_visual_lane & 3u];
+	} else bf_frame = WEEK6_FRAME_BF_IDLE;
+	draw_week6_visual_frame(bf_frame, 220, 135, 76, 76);
+}
+
+static void draw_week7_scene(uint32_t samples)
+{
+	uint32_t beat_q16 = music_beat_q16(samples);
+	uint32_t beat = beat_q16 >> 16;
+	/* The paired pages are a 512px wide precomposed 4:3 battlefield. */
+	draw_week7_visual_frame(WEEK7_FRAME_STAGE_LEFT, -96, 0, 256, SCREEN_H);
+	draw_week7_visual_frame(WEEK7_FRAME_STAGE_RIGHT, 160, 0, 256, SCREEN_H);
+	unsigned gf = (beat & 1u) ? WEEK7_FRAME_GF_DANCE_0 : WEEK7_FRAME_GF_DANCE_1;
+	draw_week7_visual_frame(gf, 135, 88, 48, 64);
+	static const uint8_t tank_sing[4] = {
+		WEEK7_FRAME_TANK_LEFT, WEEK7_FRAME_TANK_DOWN,
+		WEEK7_FRAME_TANK_UP, WEEK7_FRAME_TANK_RIGHT
+	};
+	unsigned tank = samples < dad_visual_until ? tank_sing[dad_visual_lane & 3u] : WEEK7_FRAME_TANK_IDLE;
+	draw_week7_visual_frame(tank, 46, 82, 82, 96);
+	static const uint8_t bf_sing[4] = {
+		WEEK7_FRAME_BF_LEFT, WEEK7_FRAME_BF_DOWN,
+		WEEK7_FRAME_BF_UP, WEEK7_FRAME_BF_RIGHT
+	};
+	unsigned bf = samples < bf_visual_until ? bf_sing[bf_visual_lane & 3u] : WEEK7_FRAME_BF_IDLE;
+	draw_week7_visual_frame(bf, 214, 128, 76, 84);
+}
+
+static void draw_weekend1_scene(uint32_t samples)
+{
+	bool blazin = active_song->stage_id == 9u;
+	draw_weekend1_visual_frame(blazin ? WEND_FRAME_STAGE_BLAZIN_0 : WEND_FRAME_STAGE_STREET_0,
+		-96, 0, 256, SCREEN_H);
+	draw_weekend1_visual_frame(blazin ? WEND_FRAME_STAGE_BLAZIN_1 : WEND_FRAME_STAGE_STREET_1,
+		160, 0, 256, SCREEN_H);
+	if (!blazin) {
+		static const unsigned pico_sing[4] = { WEND_FRAME_PICO_LEFT, WEND_FRAME_PICO_DOWN,
+			WEND_FRAME_PICO_UP, WEND_FRAME_PICO_RIGHT };
+		static const unsigned darnell_sing[4] = { WEND_FRAME_DARNELL_LEFT, WEND_FRAME_DARNELL_DOWN,
+			WEND_FRAME_DARNELL_UP, WEND_FRAME_DARNELL_RIGHT };
+		unsigned pico = samples < bf_visual_until ? pico_sing[bf_visual_lane & 3u] : WEND_FRAME_PICO_IDLE;
+		unsigned darnell = samples < dad_visual_until ? darnell_sing[dad_visual_lane & 3u] : WEND_FRAME_DARNELL_IDLE;
+		draw_weekend1_visual_frame(darnell, 43, 92, 79, 99);
+		draw_weekend1_visual_frame(pico, 217, 129, 72, 90);
+	} else {
+		/* Blazin's official combat note semantics are retained in source charts;
+		   this first port maps those beats to a small selected set of rig poses. */
+		unsigned pico = samples < bf_visual_until ?
+			((bf_visual_lane & 1u) ? WEND_FRAME_PICO_BLAZIN_PUNCH_LOW : WEND_FRAME_PICO_BLAZIN_PUNCH_HIGH) :
+			WEND_FRAME_PICO_BLAZIN_IDLE;
+		unsigned darnell = samples < dad_visual_until ?
+			((dad_visual_lane & 1u) ? WEND_FRAME_DARNELL_BLAZIN_PUNCH_LOW : WEND_FRAME_DARNELL_BLAZIN_PUNCH_HIGH) :
+			WEND_FRAME_DARNELL_BLAZIN_IDLE;
+		draw_weekend1_visual_frame(darnell, 44, 69, 86, 111);
+		draw_weekend1_visual_frame(pico, 207, 101, 83, 116);
+	}
+}
+
+static void draw_scene(uint32_t samples)
+{
+	if (active_song->stage_id == 8u || active_song->stage_id == 9u) {
+		draw_weekend1_scene(samples);
+		return;
+	}
+	if (active_song->stage_id == 7u) {
+		draw_week7_scene(samples);
+		return;
+	}
+	if (active_song->stage_id == 6u) {
+		draw_week6_scene(samples);
+		return;
+	}
+	uint32_t rate = stream.config.sample_rate ?
+		(uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+	uint32_t beat_q16 = music_beat_q16(samples);
+	uint32_t beat = beat_q16 >> 16;
+	uint32_t beat_phase = beat_q16 & 0xffffu;
+	const uint32_t pulse_window_q16 = 22937u; /* first 35% of each tempo-mapped beat */
+	unsigned pulse_q8 = beat_phase < pulse_window_q16 ?
+		(unsigned)(((uint64_t)(pulse_window_q16 - beat_phase) * 7u) / pulse_window_q16) : 0u;
+	bool week2 = active_song->stage_id == 2u;
+	bool week3 = active_song->stage_id == 3u;
+	bool week4 = active_song->stage_id == 4u;
+	bool week5 = active_song->stage_id == 5u;
+	/* The authored 1.0 camera zoom was mapped to 2.27x by the early
+	   world calibration. On the 4:3 PS1 viewport this cropped both singers;
+	   retain the authored stage positions but use a 1.5x composition. */
+	unsigned base_zoom_q8 = week2 ? WEEK2_CAMERA_ZOOM_Q8_4_3 :
+		week3 ? BOPEEBO_WEEK3_CAMERA_ZOOM_Q8 :
+		week4 ? BOPEEBO_WEEK4_CAMERA_ZOOM_Q8 :
+		week5 ? BOPEEBO_WEEK5_CAMERA_ZOOM_Q8 : BOPEEBO_STAGE_CAMERA_ZOOM_Q8;
+	unsigned zoom_q8 = base_zoom_q8 + pulse_q8;
+	/* Focus targets and stage transforms are generated from the official stage
+	   data; smooth transitions follow chart events, never individual note hits. */
+	unsigned event_index = 0;
+	while (event_index + 1u < active_chart->camera_count &&
+	       active_chart->camera[event_index + 1u].sample <= samples) event_index++;
+	int target_focus = active_chart->camera_count ? active_chart->camera[event_index].focus : 1;
+	int previous_focus = event_index ? active_chart->camera[event_index - 1u].focus : target_focus;
+	int from_x, from_y, to_x, to_y;
+	camera_target_for_focus(previous_focus, &from_x, &from_y);
+	camera_target_for_focus(target_focus, &to_x, &to_y);
+	uint32_t transition = rate * CAMERA_FOCUS_TIME_MS / 1000u;
+	uint32_t elapsed = samples >= active_chart->camera[event_index].sample ?
+		samples - active_chart->camera[event_index].sample : transition;
+	if (elapsed > transition) elapsed = transition;
+	uint32_t t = transition ? (uint32_t)(((uint64_t)elapsed * 256u) / transition) : 256u;
+	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
+	int camera_x = from_x + (to_x - from_x) * (int)smooth / 256;
+	int camera_y = from_y + (to_y - from_y) * (int)smooth / 256;
+	camera_focus_display = (uint8_t)target_focus;
+	camera_transitioning = event_index && elapsed < transition;
+
+	/* One world transform covers official stage props and characters; the
+	   extended stage composition safely overfills all camera crop edges. */
+	if (week2) {
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, BOPEEBO_WEEK2_STAGE_X,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, BOPEEBO_WEEK2_STAGE_X + 256,
+			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		unsigned lightning_frame;
+		if (week2_lightning_frame_at(samples, &lightning_frame))
+			draw_visual_frame_scaled(lightning_frame, BOPEEBO_WEEK2_LIGHTNING_X,
+				BOPEEBO_WEEK2_LIGHTNING_Y, BOPEEBO_WEEK2_LIGHTNING_WORLD_W,
+				BOPEEBO_WEEK2_LIGHTNING_WORLD_H, camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_0, BOPEEBO_WEEK3_STAGE_X,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_1, BOPEEBO_WEEK3_STAGE_X + 256,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+	} else if (week4) {
+		draw_week4_visual_frame(WEEK4_FRAME_STAGE_0, BOPEEBO_WEEK4_STAGE_X,
+			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_week4_visual_frame(WEEK4_FRAME_STAGE_1, BOPEEBO_WEEK4_STAGE_X + 256,
+			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+	} else if (week5) {
+		unsigned stage_frame = active_song->opponent_kind == PS1_OPPONENT_MONSTER ?
+			WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
+		/* Keep the compact 4:3 mall backdrop full-frame while the song camera
+		   follows the singer; characters and notes retain their own transforms. */
+		draw_week5_visual_frame(stage_frame, camera_x - 160, camera_y - 120,
+			camera_x, camera_y, 256u, 320u);
+	} else {
+		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
+			camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_STAGE_SCENE_1, BOPEEBO_STAGE_SCENE_X + 256,
+			BOPEEBO_STAGE_SCENE_Y, camera_x, camera_y, zoom_q8, 256);
+	}
+
+	unsigned dad_frame;
+	if (samples < dad_visual_until) {
+		static const uint8_t sing_frames[4][2] = {
+			{ VIS_DAD_LEFT_0, VIS_DAD_LEFT_1 }, { VIS_DAD_DOWN_0, VIS_DAD_DOWN_1 },
+			{ VIS_DAD_UP_0, VIS_DAD_UP_1 }, { VIS_DAD_RIGHT_0, VIS_DAD_RIGHT_1 }
+		};
+		dad_frame = sing_frames[dad_visual_lane & 3u][(beat_phase >> 15) & 1u];
+	} else {
+		unsigned idle_pose = (unsigned)((uint64_t)beat_phase * 6u >> 16);
+		if (idle_pose > 5u) idle_pose = 5u;
+		dad_frame = VIS_DAD_IDLE_0 + idle_pose;
+	}
+	/* GF's pinned character config alternates two 15-frame dances each beat.
+	   Nine source poses per side are sampled across that beat, including the
+	   original speaker rig's embedded pulse. */
+	unsigned gf_side = (beat & 1u) ? 0u : BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
+	unsigned gf_pose = (unsigned)((uint64_t)beat_phase * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT >> 16);
+	if (gf_pose >= BOPEEBO_GF_DANCE_FRAMES_PER_BEAT)
+		gf_pose = BOPEEBO_GF_DANCE_FRAMES_PER_BEAT - 1u;
+	unsigned gf_frame = VIS_GF_DANCE_0 + gf_side + gf_pose;
+	if (active_song->opponent_kind == PS1_OPPONENT_GF && samples < dad_visual_until) {
+		static const uint8_t gf_sing_frames[4] = {
+			VIS_GF_SING_LEFT, VIS_GF_SING_DOWN, VIS_GF_SING_UP, VIS_GF_SING_RIGHT
+		};
+		gf_frame = gf_sing_frames[dad_visual_lane & 3u];
+	}
+	if (week2) {
+		static const uint8_t week2_gf_dance[10] = {
+			VIS_WEEK2_GF_DANCE_0, VIS_WEEK2_GF_DANCE_1,
+			VIS_WEEK2_GF_DANCE_2, VIS_WEEK2_GF_DANCE_3,
+			VIS_WEEK2_GF_DANCE_4, VIS_WEEK2_GF_DANCE_5,
+			VIS_WEEK2_GF_DANCE_6, VIS_WEEK2_GF_DANCE_7,
+			VIS_WEEK2_GF_DANCE_8, VIS_WEEK2_GF_DANCE_9
+		};
+		/* Five source poses per direction, with the left/right cycle changing
+		   each beat exactly as the pinned Week 1 GF rig does. */
+		unsigned gf_side = (beat & 1u) ? 0u : 5u;
+		unsigned gf_pose = (unsigned)((uint64_t)beat_phase * 5u >> 16);
+		if (gf_pose > 4u) gf_pose = 4u;
+		gf_frame = week2_gf_dance[gf_side + gf_pose];
+		draw_visual_frame(gf_frame,
+			94 - (int)(BOPEEBO_GF_FRAME_W / 2u), 98 - (int)BOPEEBO_GF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		static const uint8_t week3_gf_dance[2] = {
+			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1
+		};
+		draw_visual_frame(week3_gf_dance[beat & 1u],
+			BOPEEBO_WEEK3_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
+			BOPEEBO_WEEK3_GF_Y - (int)BOPEEBO_GF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week5) {
+		draw_week5_visual_frame((beat & 1u) ? WEEK5_FRAME_GF_DANCE_1 : WEEK5_FRAME_GF_DANCE_0,
+			BOPEEBO_WEEK5_GF_X - 32, BOPEEBO_WEEK5_GF_Y - 64,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week4) {
+		draw_week4_visual_frame((beat & 1u) ? WEEK4_FRAME_GF_DANCE_1 : WEEK4_FRAME_GF_DANCE_0,
+			BOPEEBO_WEEK4_GF_X - 43, BOPEEBO_WEEK4_GF_Y - 79,
+			camera_x, camera_y, zoom_q8, 256);
+	}
+	else draw_visual_frame(gf_frame,
+		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
+		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256);
+	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
+	if (week2) {
+		unsigned opponent_frame;
+		unsigned lane = dad_visual_lane & 3u;
+		if (samples < dad_visual_until) {
+			if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
+				static const uint8_t sing[4][2] = {
+					{ VIS_WEEK2_SPOOKY_SING_LEFT_0, VIS_WEEK2_SPOOKY_SING_LEFT_1 },
+					{ VIS_WEEK2_SPOOKY_SING_DOWN_0, VIS_WEEK2_SPOOKY_SING_DOWN_1 },
+					{ VIS_WEEK2_SPOOKY_SING_UP_0, VIS_WEEK2_SPOOKY_SING_UP_1 },
+					{ VIS_WEEK2_SPOOKY_SING_RIGHT_0, VIS_WEEK2_SPOOKY_SING_RIGHT_1 }
+				};
+				opponent_frame = sing[lane][(beat_phase >> 15) & 1u];
+			} else {
+				static const uint8_t sing[4] = { VIS_WEEK2_MONSTER_SING_LEFT,
+					VIS_WEEK2_MONSTER_SING_DOWN, VIS_WEEK2_MONSTER_SING_UP,
+					VIS_WEEK2_MONSTER_SING_RIGHT };
+				opponent_frame = sing[lane];
+			}
+		} else if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
+			static const uint8_t idle[8] = { VIS_WEEK2_SPOOKY_IDLE_0,
+				VIS_WEEK2_SPOOKY_IDLE_1, VIS_WEEK2_SPOOKY_IDLE_2,
+				VIS_WEEK2_SPOOKY_IDLE_3, VIS_WEEK2_SPOOKY_IDLE_4,
+				VIS_WEEK2_SPOOKY_IDLE_5, VIS_WEEK2_SPOOKY_IDLE_6,
+				VIS_WEEK2_SPOOKY_IDLE_7 };
+			/* The eight distinct source poses are four poses per direction.
+			   Advance through each side at quarter-beat intervals, then alternate
+			   sides on the next beat. music_beat_q16 follows chart BPM changes. */
+			unsigned idle_step = ((beat_q16 >> 14) & 7u);
+			opponent_frame = idle[idle_step];
+		} else {
+			opponent_frame = (beat_phase < 32768u) ? VIS_WEEK2_MONSTER_IDLE : VIS_WEEK2_MONSTER_IDLE_HOLD;
+		}
+		if (active_song->opponent_kind == PS1_OPPONENT_MONSTER)
+			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_MONSTER_FRAME_W / 2u),
+				108 - (int)BOPEEBO_WEEK2_MONSTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
+		else
+			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
+				108 - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
+	} else if (week3) {
+		static const uint8_t pico_sing[4][2] = {
+			{ VIS_WEEK3_PICO_SING_LEFT_0, VIS_WEEK3_PICO_SING_LEFT_1 },
+			{ VIS_WEEK3_PICO_SING_DOWN_0, VIS_WEEK3_PICO_SING_DOWN_1 },
+			{ VIS_WEEK3_PICO_SING_UP_0, VIS_WEEK3_PICO_SING_UP_1 },
+			{ VIS_WEEK3_PICO_SING_RIGHT_0, VIS_WEEK3_PICO_SING_RIGHT_1 }
+		};
+		unsigned pico_frame = samples < dad_visual_until ?
+			pico_sing[dad_visual_lane & 3u][(beat_phase >> 15) & 1u] :
+			((beat_phase < 32768u) ? VIS_WEEK3_PICO_IDLE_0 : VIS_WEEK3_PICO_IDLE_1);
+		draw_visual_frame(pico_frame,
+			BOPEEBO_WEEK3_PICO_X - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_W / 2u),
+			BOPEEBO_WEEK3_PICO_Y - (int)BOPEEBO_WEEK3_CHARACTER_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week5) {
+		unsigned opponent_frame = WEEK5_FRAME_PARENTS_IDLE;
+		if (samples < dad_visual_until) {
+			static const uint8_t parents_mom[4] = {
+				WEEK5_FRAME_PARENTS_MOM_LEFT, WEEK5_FRAME_PARENTS_MOM_DOWN,
+				WEEK5_FRAME_PARENTS_MOM_UP, WEEK5_FRAME_PARENTS_MOM_RIGHT
+			};
+			static const uint8_t parents_dad[4] = {
+				WEEK5_FRAME_PARENTS_DAD_LEFT, WEEK5_FRAME_PARENTS_DAD_DOWN,
+				WEEK5_FRAME_PARENTS_DAD_UP, WEEK5_FRAME_PARENTS_DAD_RIGHT
+			};
+			static const uint8_t monster_sing[4] = {
+				WEEK5_FRAME_MONSTER_LEFT, WEEK5_FRAME_MONSTER_DOWN,
+				WEEK5_FRAME_MONSTER_UP, WEEK5_FRAME_MONSTER_RIGHT
+			};
+			if (active_song->opponent_kind == PS1_OPPONENT_MONSTER)
+				opponent_frame = monster_sing[dad_visual_lane & 3u];
+			else
+				opponent_frame = (active_song_index == 14u ? parents_dad : parents_mom)[dad_visual_lane & 3u];
+		} else if (active_song->opponent_kind == PS1_OPPONENT_MONSTER) {
+			opponent_frame = WEEK5_FRAME_MONSTER_IDLE;
+		}
+		draw_week5_visual_frame(opponent_frame,
+			BOPEEBO_WEEK5_OPP_X - 32, BOPEEBO_WEEK5_OPP_Y - 64,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (week4) {
+		unsigned mom_frame = WEEK4_FRAME_MOM_IDLE;
+		if (samples < dad_visual_until) {
+			static const uint8_t sing[4] = {
+				WEEK4_FRAME_MOM_LEFT, WEEK4_FRAME_MOM_DOWN,
+				WEEK4_FRAME_MOM_UP, WEEK4_FRAME_MOM_RIGHT
+			};
+			mom_frame = sing[dad_visual_lane & 3u];
+		}
+		draw_week4_visual_frame(mom_frame,
+			BOPEEBO_WEEK4_MOM_X - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_W / 2u),
+			BOPEEBO_WEEK4_MOM_Y - (int)BOPEEBO_WEEK4_CHARACTER_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+	} else if (active_song->opponent_kind == PS1_OPPONENT_DAD)
+		draw_visual_frame(dad_frame,
+			BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
+			BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
+
+	unsigned bf_frame;
+	if (bf_visual_state == 2u) {
+		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+		uint32_t miss_duration = BOPEEBO_CHART_RATE * 350u / 1000u;
+		/* Restart on every existing miss event; use the two official miss poses
 		   on a local timeline so same-lane misses inside one beat are visible. */
 		unsigned miss_pose = elapsed >= miss_duration / 3u ? 1u : 0u;
 		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + miss_pose;
@@ -1720,8 +2964,10 @@ static bool draw_textured_frame_tinted_clut(unsigned frame, int x, int y, int wi
 				idle_step = BOPEEBO_BF_IDLE_SEQUENCE_LENGTH - 1u;
 			bf_frame = VIS_BF_IDLE_0 + bopeebo_bf_idle_sequence[idle_step];
 		}
-	int bf_world_x = week3 ? BOPEEBO_WEEK3_BF_X : BOPEEBO_BF_X;
-	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : BOPEEBO_BF_Y;
+	int bf_world_x = week3 ? BOPEEBO_WEEK3_BF_X : week4 ? BOPEEBO_WEEK4_BF_X :
+		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
+	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
+		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
 	draw_visual_frame(bf_frame,
 		bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
 		bf_world_y - (int)BOPEEBO_BF_FRAME_H,
@@ -1790,9 +3036,22 @@ static void draw_gameplay(uint32_t samples)
 	unsigned opponent_icon = active_song->opponent_kind == PS1_OPPONENT_GF ? VIS_UI_ICON_GF :
 		active_song->opponent_kind == PS1_OPPONENT_SPOOKY ? VIS_WEEK2_SPOOKY_ICON :
 		active_song->opponent_kind == PS1_OPPONENT_MONSTER ? VIS_WEEK2_MONSTER_ICON :
-		active_song->opponent_kind == PS1_OPPONENT_PICO ? VIS_WEEK3_PICO_ICON : VIS_UI_ICON_DAD;
-	draw_textured_frame(opponent_icon,
-		dad_x, 13, icon_w, icon_w);
+		active_song->opponent_kind == PS1_OPPONENT_PICO ? VIS_WEEK3_PICO_ICON :
+		active_song->opponent_kind == PS1_OPPONENT_MOM ? WEEK4_FRAME_MOM_ICON : VIS_UI_ICON_DAD;
+	if (active_song->stage_id == 8u || active_song->stage_id == 9u) {
+		draw_weekend1_visual_frame(WEND_FRAME_ICON_DARNELL, dad_x, 13, icon_w, icon_w);
+		draw_weekend1_visual_frame(WEND_FRAME_ICON_PICO, bf_x, 13, icon_w, icon_w);
+	} else if (active_song->stage_id == 7u) {
+		draw_week7_visual_frame(WEEK7_FRAME_ICON_TANKMAN, dad_x, 13, icon_w, icon_w);
+	} else if (active_song->stage_id == 6u) {
+		unsigned icon_frame = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? WEEK6_FRAME_ICON_SPIRIT :
+			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ? WEEK6_FRAME_ICON_SENPAI_ANGRY :
+			WEEK6_FRAME_ICON_SENPAI;
+		draw_week6_visual_frame(icon_frame, dad_x, 13, icon_w, icon_w);
+	} else if (active_song->opponent_kind == PS1_OPPONENT_MOM)
+		draw_week4_visual_frame(opponent_icon, dad_x - 160, 13 - 120, 0, 0, 256, 256);
+	else
+		draw_textured_frame(opponent_icon, dad_x, 13, icon_w, icon_w);
 	/* The legacy two-frame BF sheet is idle/default + losing, not win + loss.
 	   Match HealthIcon's original 20% loss threshold; its 80% winning state has
 	   no distinct source frame in this sheet, so it uses the idle/default art. */
@@ -2041,7 +3300,7 @@ static void draw_combo_popup(uint32_t samples, uint32_t rate)
 	}
 }
 
-static void draw_menu_screen(void)
+static void draw_menu_screen(uint32_t audio_samples, unsigned sample_rate)
 {
 	game_prim_count = 0;
 	visual_prim_count = 0;
@@ -2108,6 +3367,8 @@ static void draw_menu_screen(void)
 	if (game_screen == SCREEN_FREEPLAY) draw_freeplay_catalog();
 	if (game_screen == SCREEN_MAIN_MENU) {
 		static const short item_y[4] = { 24, 72, 120, 168 };
+		if (menu_selection != 2)
+			draw_menu_texture_sprite(128, 192, 128, 36, 80, item_y[2], 160, 45);
 		load_menu_selection_background((unsigned)menu_selection);
 		/* Every selected row uses the same 3-pose cadence. OPTIONS keeps its
 		   white fill still and moves only the black contour by a single pixel. */
@@ -2124,16 +3385,21 @@ static void draw_menu_screen(void)
 		load_menu_button_frame((unsigned)menu_selection, frame);
 		draw_menu_strip_sprite(0, 80, item_y[menu_selection], 160, 45);
 	}
-	unsigned beat = (menu_ticks / 36u) & 1u;
-	unsigned pose = (menu_ticks / 4u) % BOPEEBO_GF_DANCE_FRAMES_PER_BEAT;
 	if (game_screen == SCREEN_TITLE) {
-		/* The official logo is composited over a dark title field; GF's
-		   official dance frames supply the visible beat animation. */
-		draw_textured_frame(VIS_GF_DANCE_0 + beat * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
+		/* The official logo is composited over a dark title field. Advance the
+		   same sampled GF dance poses from the menu song clock, at 102 BPM. */
+		uint32_t beat_q16 = menu_beat_q16(audio_samples, sample_rate);
+		unsigned beat_side = (beat_q16 >> 16) & 1u;
+		unsigned pose = (unsigned)(((uint64_t)(beat_q16 & 0xffffu) *
+			BOPEEBO_GF_DANCE_FRAMES_PER_BEAT) >> 16);
+		if (pose >= BOPEEBO_GF_DANCE_FRAMES_PER_BEAT)
+			pose = BOPEEBO_GF_DANCE_FRAMES_PER_BEAT - 1u;
+		draw_textured_frame(VIS_GF_DANCE_0 + beat_side * BOPEEBO_GF_DANCE_FRAMES_PER_BEAT + pose,
 			177, 130, 74, 68);
 		FntPrint(menu_font_id, "PRESS START TO BEGIN");
 	} else if (game_screen == SCREEN_MAIN_MENU) {
-		FntPrint(menu_font_id, "UP/DOWN NAVIGATE  CROSS SELECT");
+		FntPrint(menu_hint_font_id, "UP/DOWN MOVE  CROSS OK");
+		FntFlush(menu_hint_font_id);
 	} else {
 		unsigned song_index = freeplay_song_selection;
 		unsigned difficulty = freeplay_difficulty_selection;
@@ -2152,6 +3418,7 @@ static void draw_menu_screen(void)
 
 static void reset_game_state(void)
 {
+	week2_last_thunder_strike_beat = UINT32_MAX;
 	memset(game_note_state, 0, sizeof(game_note_state));
 	memset(receiver_flash_until, 0, sizeof(receiver_flash_until));
 	for (unsigned lane = 0; lane < 4; lane++) active_hold[lane] = -1;
@@ -2345,16 +3612,12 @@ static void begin_retry_countdown(void)
 	   restore the selected song package before presenting the countdown. */
 	if (active_song->stage_id == 2u) week2_visuals_loaded = false;
 	if (active_song->stage_id == 3u) week3_visuals_loaded = false;
-	if (active_song->stage_id == 2u) {
-		load_week3_visuals(false);
-		load_week2_visuals(true);
-	} else if (active_song->stage_id == 3u) {
-		load_week2_visuals(false);
-		load_week3_visuals(true);
-	} else {
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-	}
+	if (active_song->stage_id == 4u) week4_visuals_loaded = false;
+	if (active_song->stage_id == 5u) week5_visuals_loaded = false;
+	if (active_song->stage_id == 6u) week6_visuals_loaded = false;
+	if (active_song->stage_id == 7u) week7_visuals_loaded = false;
+	if (active_song->stage_id == 8u || active_song->stage_id == 9u) weekend1_visuals_loaded = false;
+	load_song_stage_visuals();
 	reset_game_state();
 	countdown_start_frame = gameplay_frame_counter;
 	game_screen = SCREEN_COUNTDOWN;
@@ -2364,7 +3627,9 @@ static bool enter_bopeebo(void)
 {
 	if (freeplay_song_selection >= FREEPLAY_PLAYABLE_COUNT) return false;
 	failure_code = 0;
-	active_song = &ps1_song_catalog[freeplay_song_selection];
+	active_song_index = freeplay_song_selection;
+	active_song = ps1_song_at(active_song_index);
+	if (!active_song) return false;
 	release_song_resources();
 	show_loading_screen(active_song->name);
 	if (!load_song_chart(active_song->chart_paths[freeplay_difficulty_selection])) {
@@ -2373,16 +3638,7 @@ static bool enter_bopeebo(void)
 	}
 	load_freeplay_dj_pages(true);
 	release_menu_visuals();
-	if (active_song->stage_id == 2u) {
-		load_week3_visuals(false);
-		load_week2_visuals(true);
-	} else if (active_song->stage_id == 3u) {
-		load_week2_visuals(false);
-		load_week3_visuals(true);
-	} else {
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-	}
+	load_song_stage_visuals();
 	if (failure_code == FAIL_ASSET_LOAD) return false;
 	reset_game_state();
 	song_finished = false;
@@ -2394,7 +3650,7 @@ static bool enter_bopeebo(void)
 static void return_to_freeplay(void)
 {
 	if (game_screen == SCREEN_GAMEPLAY && song_finished && active_chart) {
-		unsigned song_index = (unsigned)(active_song - ps1_song_catalog);
+		unsigned song_index = active_song_index;
 		unsigned difficulty = freeplay_difficulty_selection;
 		unsigned total_player_notes = 0;
 		for (unsigned i = 0; i < active_chart->note_count; i++)
@@ -2419,6 +3675,11 @@ static void return_to_freeplay(void)
 	release_song_chart();
 	load_week2_visuals(false);
 	load_week3_visuals(false);
+	load_week4_visuals(false);
+	load_week5_visuals(false);
+	load_week6_visuals(false);
+	load_week7_visuals(false);
+	load_weekend1_visuals(false);
 	load_freeplay_dj_pages(false);
 	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 	song_finished = true;
@@ -2438,7 +3699,8 @@ static void run_playable_frontend(void)
 	menu_selection = 1;
 	freeplay_song_selection = 0u;
 	freeplay_difficulty_selection = 1u;
-	active_song = &ps1_song_catalog[freeplay_song_selection];
+	active_song_index = freeplay_song_selection;
+	active_song = ps1_song_at(active_song_index);
 	if (!upload_menu_sfx() ||
 		!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true))
 		show_error(failure_code ? failure_code : FAIL_CD_READ);
@@ -2557,16 +3819,20 @@ static void run_playable_frontend(void)
 				game_screen = SCREEN_MAIN_MENU;
 			} else if ((game_pressed & PAD_UP) && freeplay_song_selection > 0u) {
 				freeplay_song_selection--;
-				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT)
-					active_song = &ps1_song_catalog[freeplay_song_selection];
+				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT) {
+					active_song_index = freeplay_song_selection;
+					active_song = ps1_song_at(active_song_index);
+				}
 				freeplay_icon_rows_loaded = -1;
 				load_freeplay_icon_rows();
 				play_menu_sfx(0u);
 			} else if ((game_pressed & PAD_DOWN) &&
 				freeplay_song_selection + 1u < FREEPLAY_CATALOG_COUNT) {
 				freeplay_song_selection++;
-				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT)
-					active_song = &ps1_song_catalog[freeplay_song_selection];
+				if (freeplay_song_selection < FREEPLAY_PLAYABLE_COUNT) {
+					active_song_index = freeplay_song_selection;
+					active_song = ps1_song_at(active_song_index);
+				}
 				freeplay_icon_rows_loaded = -1;
 				load_freeplay_icon_rows();
 				play_menu_sfx(0u);
@@ -2592,7 +3858,7 @@ static void run_playable_frontend(void)
 			uint32_t milliseconds = rate ? (uint32_t)(((uint64_t)samples * 1000u) / rate) : 0;
 			draw_gameplay(game_screen == SCREEN_COUNTDOWN ? 0u : samples);
 			if (game_screen == SCREEN_PAUSE) {
-				draw_menu_screen();
+				draw_menu_screen(samples, rate);
 			} else if (game_screen == SCREEN_COUNTDOWN) {
 				uint32_t beats = (gameplay_frame_counter - countdown_start_frame) / 36u;
 				FntPrint(menu_detail_font_id, "RETRY  %u", (unsigned)(3u - (beats < 3u ? beats : 2u)));
@@ -2616,7 +3882,7 @@ static void run_playable_frontend(void)
 #endif
 			}
 		} else {
-			draw_menu_screen();
+			draw_menu_screen(samples, rate);
 		}
 		display_frame();
 		gameplay_frame_counter++;
@@ -3129,7 +4395,8 @@ int main(void)
 	if (!load_bopeebo_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 #if GAME_JUDGEMENT_VISUAL_TEST_DEFAULT
-	active_song = &ps1_song_catalog[0];
+		active_song_index = 0u;
+		active_song = ps1_song_at(active_song_index);
 	if (!load_song_chart(active_song->chart_paths[1])) show_error(FAIL_ASSET_LOAD);
 	if (active_song->stage_id == 2u) load_week2_visuals(true);
 	run_judgement_visual_test();
@@ -3259,10 +4526,15 @@ int main(void)
 #endif
 		}
 #else
-		FntPrint(-1, "BOPEEBO 4CH  INST / DAD-L / BF-R\n");
+		if (active_song->stage_id == 8u || active_song->stage_id == 9u)
+			FntPrint(-1, "WEEKEND 1  INST / DARNELL-L / PICO-R\n");
+		else
+			FntPrint(-1, "4CH  INST / OPPONENT-L / PLAYER-R\n");
 		FntPrint(-1, "PAD %s  CIRCLE %s\n", pad_connected ? "CONNECTED" : "OFFLINE",
 			circle_down ? "DOWN" : "UP");
-		FntPrint(-1, "BF VOICE: %s (CIRCLE TOGGLES)\n", voices_muted ? "MUTED" : "AUDIBLE");
+		FntPrint(-1, "%s VOICE: %s (CIRCLE TOGGLES)\n",
+			(active_song->stage_id == 8u || active_song->stage_id == 9u) ? "PICO" : "PLAYER",
+			voices_muted ? "MUTED" : "AUDIBLE");
 		FntPrint(-1, "PAN WIDTH %u/7 (DEFAULT 5)\n", (unsigned)pan_width);
 		FntPrint(-1, "SQUARE %s  PRESSES %u\n", sfx_square_down ? "DOWN" : "UP",
 			(unsigned)sfx_square_press_count);
@@ -3304,4 +4576,3 @@ int main(void)
 #endif
 	}
 }
-

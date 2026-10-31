@@ -30,4 +30,3 @@ Le contenu des deux images reste comparable : `SYSTEM.CNF` identique, `FUNKIN.EX
 - Pour chaque nouveau disque : commit source dédié sur `ps1-port`, configuration et références d’assets consignées, manifeste contenant version, commande de build, SHA-256 du BIN/CUE et résultat d’exécution. Si la publication GitHub échoue, garder le commit local et signaler explicitement l’échec. SDK, assets officiels et intermédiaires restent hors Git.
 
 Ne pas commencer le test différentiel v75→v76 tant qu’une source exacte n’a pas été trouvée ou que l’utilisateur n’a pas choisi explicitement une reconstruction approximative à partir de l’état récupérable.
-

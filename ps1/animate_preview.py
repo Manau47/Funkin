@@ -181,28 +181,36 @@ class Rig:
                         out[2][di + channel] = (source * alpha * 255 + target * olda * inv + opacity // 2) // opacity
                     out[2][di + 3] = (opacity + 127) // 255
 
-    def render_positioned(self, frame_index, canvas=1200):
+    def render_symbol_positioned(self, symbol_name, frame_index, canvas=1200):
         pixels = bytearray(canvas * canvas * 4)
         center = canvas // 2
-        # The source Animate stage is 1920x1080; its exported character rigs
-        # are positioned in that coordinate system. Crop bounds come from the
-        # actual transformed atlas fragments and are normalized below.
-        self.walk(self.animation["AN"]["N"], frame_index, (1, 0, 0, 1, center, center), (canvas, canvas, pixels))
-        occupied = [i for i in range(3, len(pixels), 4) if pixels[i]]
-        if not occupied:
+        self.walk(symbol_name, frame_index, (1, 0, 0, 1, center, center), (canvas, canvas, pixels))
+        # Find alpha bounds in one linear pass instead of building a large
+        # list and scanning the same canvas again by row and column. Large
+        # official rigs made the old scan needlessly slow during conversion.
+        x0, y0, x1, y1 = canvas, canvas, -1, -1
+        pixel_index = 0
+        for alpha_index in range(3, len(pixels), 4):
+            if pixels[alpha_index]:
+                x = pixel_index % canvas
+                y = pixel_index // canvas
+                if x < x0: x0 = x
+                if x + 1 > x1: x1 = x + 1
+                if y < y0: y0 = y
+                if y + 1 > y1: y1 = y + 1
+            pixel_index += 1
+        if x1 < 0:
             return 0, 0, bytearray()
-        xs, ys = [], []
-        for y in range(canvas):
-            for x in range(canvas):
-                if pixels[(y * canvas + x) * 4 + 3]:
-                    xs.append(x); ys.append(y)
-        x0, x1, y0, y1 = min(xs), max(xs) + 1, min(ys), max(ys) + 1
         width, height = x1 - x0, y1 - y0
         crop = bytearray(width * height * 4)
         for y in range(height):
             a = ((y + y0) * canvas + x0) * 4
             crop[y * width * 4:(y + 1) * width * 4] = pixels[a:a + width * 4]
         return x0 - center, y0 - center, width, height, crop
+
+    def render_positioned(self, frame_index, canvas=1200):
+        """Render the top-level Animate composition, retaining the legacy API."""
+        return self.render_symbol_positioned(self.animation["AN"]["N"], frame_index, canvas)
 
     def render(self, frame_index, canvas=1200):
         """Render one rig frame, retaining the legacy tightly-cropped result."""
@@ -227,4 +235,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

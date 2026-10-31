@@ -9,6 +9,11 @@
 			<file name="W1SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week1-scene.bin" />
 			<file name="W2SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week2-scene.bin" />
 			<file name="W3SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week3-scene.bin" />
+			<file name="W4SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-scene.bin" />
+			<file name="W5SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-scene.bin" />
+			<file name="W6SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-scene.bin" />
+			<file name="W7SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-scene.bin" />
+			<file name="WEND1.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-scene.bin" />
 			<file name="STREAM.VAG" type="data" source="${PROJECT_BINARY_DIR}/stream-playable.vag" />
 			<file name="MENU.VAG" type="data" source="${PROJECT_BINARY_DIR}/menu.vag" />
 			<file name="FRESH.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/fresh.vag" />
@@ -20,6 +25,22 @@
 			<file name="PICO.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/pico.vag" />
 			<file name="PHILLY.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/philly-nice.vag" />
 			<file name="BLAMMED.VAG" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/blammed.vag" />
+			<file name="SATIN.VAG" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/satin.vag" />
+			<file name="HIGH.VAG" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/high.vag" />
+			<file name="MILF.VAG" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/milf.vag" />
+			<file name="COCOA.VAG" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/cocoa.vag" />
+			<file name="EGGNOG.VAG" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/eggnog.vag" />
+			<file name="WINTER.VAG" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/winter.vag" />
+			<file name="SENPAI.VAG" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/senpai.vag" />
+			<file name="ROSES.VAG" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/roses.vag" />
+			<file name="THORNS.VAG" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/thorns.vag" />
+			<file name="UGH.VAG" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/ugh.vag" />
+			<file name="GUNS.VAG" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/guns.vag" />
+			<file name="STRESS.VAG" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/stress.vag" />
+			<file name="DARNELL.VAG" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/darnell.vag" />
+			<file name="LITUP.VAG" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/litup.vag" />
+			<file name="2HOT.VAG" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/2hot.vag" />
+			<file name="BLAZIN.VAG" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/blazin.vag" />
 			<file name="TUTE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTE.BIN" />
 			<file name="TUTN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTN.BIN" />
 			<file name="TUTH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/TUTH.BIN" />
@@ -50,10 +71,57 @@
 			<file name="BLAE.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAE.BIN" />
 			<file name="BLAN.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAN.BIN" />
 			<file name="BLAH.BIN" type="data" source="${PROJECT_BINARY_DIR}/catalog-audio/charts/BLAH.BIN" />
+			<file name="SATE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/SATE.BIN" />
+			<file name="SATN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/SATN.BIN" />
+			<file name="SATH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/SATH.BIN" />
+			<file name="HIGE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/HIGE.BIN" />
+			<file name="HIGN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/HIGN.BIN" />
+			<file name="HIGH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/HIGH.BIN" />
+			<file name="MILE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/MILE.BIN" />
+			<file name="MILN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/MILN.BIN" />
+			<file name="MILH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-audio/charts/MILH.BIN" />
+			<file name="COCE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/COCE.BIN" />
+			<file name="COCN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/COCN.BIN" />
+			<file name="COCH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/COCH.BIN" />
+			<file name="EGGE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/EGGE.BIN" />
+			<file name="EGGN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/EGGN.BIN" />
+			<file name="EGGH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/EGGH.BIN" />
+			<file name="WINE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/WINE.BIN" />
+			<file name="WINN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/WINN.BIN" />
+			<file name="WINH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week5-audio/charts/WINH.BIN" />
+			<file name="SENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/SENE.BIN" />
+			<file name="SENN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/SENN.BIN" />
+			<file name="SENH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/SENH.BIN" />
+			<file name="ROSE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/ROSE.BIN" />
+			<file name="ROSN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/ROSN.BIN" />
+			<file name="ROSH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/ROSH.BIN" />
+			<file name="THOE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/THOE.BIN" />
+			<file name="THON.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/THON.BIN" />
+			<file name="THOH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week6-audio/charts/THOH.BIN" />
+			<file name="UGHE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/UGHE.BIN" />
+			<file name="UGHN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/UGHN.BIN" />
+			<file name="UGHH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/UGHH.BIN" />
+			<file name="GUNE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/GUNE.BIN" />
+			<file name="GUNN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/GUNN.BIN" />
+			<file name="GUNH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/GUNH.BIN" />
+			<file name="STRE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/STRE.BIN" />
+			<file name="STRN.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/STRN.BIN" />
+			<file name="STRH.BIN" type="data" source="${PROJECT_BINARY_DIR}/week7-audio/charts/STRH.BIN" />
+			<file name="DNLE.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/DNLE.BIN" />
+			<file name="DNLN.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/DNLN.BIN" />
+			<file name="DNLH.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/DNLH.BIN" />
+			<file name="LITE.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/LITE.BIN" />
+			<file name="LITN.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/LITN.BIN" />
+			<file name="LITH.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/LITH.BIN" />
+			<file name="2HTE.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/2HTE.BIN" />
+			<file name="2HTN.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/2HTN.BIN" />
+			<file name="2HTH.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/2HTH.BIN" />
+			<file name="BLZE.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/BLZE.BIN" />
+			<file name="BLZN.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/BLZN.BIN" />
+			<file name="BLZH.BIN" type="data" source="${PROJECT_BINARY_DIR}/weekend1-audio/charts/BLZH.BIN" />
 			<file name="GOLOOP.VAG" type="data" source="${PROJECT_BINARY_DIR}/gameover-loop.vag" />
 			<file name="GOEND.VAG" type="data" source="${PROJECT_BINARY_DIR}/gameover-end.vag" />
 			<dummy sectors="128" />
 		</directory_tree>
 	</track>
 </iso_project>
-

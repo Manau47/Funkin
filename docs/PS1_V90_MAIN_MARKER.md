@@ -33,4 +33,3 @@ Le véritable exécutable jouable atteint-il le début de `main()` et peut-il y 
 Les disques v75 et v76 restent inchangés et disponibles séparément : v75 SHA-256 `6C09832B3BB2BABE77EA5411EFE83D5445AA34F189FBB5882C773A3DB1B760F6`; v76 SHA-256 `828489413342768586115C99AD5C1A6B82FC65F88800A17F16308A3BC9E08402`. Ils restent des références binaires, pas des sources exactes reconstruites.
 
 v90 est compilé et son ISO/EXE ont été vérifiés statiquement. Il n’a pas encore été exécuté dans DuckStation ni sur console. L’observation de l’écran blanc, si elle se produit, est à fournir par l’essai utilisateur.
-

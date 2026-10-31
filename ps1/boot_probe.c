@@ -29,4 +29,3 @@ int main(void)
 	for (;;) VSync(0);
 	return 0;
 }
-

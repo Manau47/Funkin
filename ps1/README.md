@@ -429,3 +429,10 @@ Après lecture de 32 secteurs et vérification du CRC de la première page, la s
 
 La chronologie des jalons, diagnostics et validations utilisateur est tenue dans [docs/PS1_DEVLOG.md](../docs/PS1_DEVLOG.md). Les mesures et détails techniques des images restent dans [docs/PS1_PORT.md](../docs/PS1_PORT.md).
 
+### Week 7 (v104) — build d’essai
+
+Ajoute Ugh, Guns et Stress en Easy/Normal/Hard, leurs stems VAGi 4 canaux à 43 008 Hz, et une première scène Battlefield chargée indépendamment. Décor statique et animations partielles : essai utilisateur en attente. Voir [le manifeste v104](../docs/PS1_WEEK7_V104.md) pour le CUE, les contrôles et les budgets.
+
+### WeekEnd 1 classique (v105b) — à tester
+
+Freeplay rend jouables Darnell, Lit Up, 2Hot et Blazin en Easy/Normal/Hard. Pico Erect et Spaghetti restent exclus. Le premier port de Blazin ne reproduit pas encore ses mécaniques de combat spécifiques. [CUE v105b](../ps1/build/weekend1-v105b/delivery/funkin-ps1-weekend1-test-v105b.cue) · [Manifeste, limites et tests à faire](../docs/PS1_WEEKEND1_V105.md).

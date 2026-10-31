@@ -25,6 +25,7 @@ SFX_RATE = 22050
 BLOCK_BYTES = 16
 MENU_SOUNDS = ("scrollMenu", "confirmMenu", "cancelMenu")
 MISS_SOUNDS = ("missnote1", "missnote2", "missnote3")
+THUNDER_SOUNDS = ("thunder_1", "thunder_2")
 
 
 def decode_pcm(ffmpeg: Path, source: Path, rate: int, channels: int) -> array:
@@ -68,6 +69,8 @@ def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
              for name in MENU_SOUNDS]
     names.extend((name, assets / "shared" / "sounds" / f"{name}.ogg")
                  for name in MISS_SOUNDS)
+    names.extend((name, assets / "week2" / "sounds" / f"{name}.ogg")
+                 for name in THUNDER_SOUNDS)
     names.append(("fnf_loss_sfx", assets / "shared" / "sounds" /
                   "gameplay" / "gameover" / "fnf_loss_sfx.ogg"))
     for name, source in names:
@@ -104,7 +107,8 @@ def make_sfx(ffmpeg: Path, assets: Path, header_path: Path) -> tuple[int, int]:
              f"#define MENU_SFX_RATE {SFX_RATE}u"]
     for index, (name, _source) in enumerate(names):
         macro = name.upper()
-        prefix = ("MISS_SFX" if name.startswith("missnote") else
+        prefix = ("THUNDER_SFX" if name.startswith("thunder_") else
+                  "MISS_SFX" if name.startswith("missnote") else
                   "GAMEOVER_SFX" if name == "fnf_loss_sfx" else "MENU_SFX")
         lines.extend((f"#define {prefix}_{macro}_OFFSET {offsets[index]}u",
                       f"#define {prefix}_{macro}_SIZE {len(samples[index])}u",
@@ -139,12 +143,12 @@ def main() -> None:
     print(f"Menu music: pinned FreakyMenu, stereo decoded at {MENU_RATE} Hz, "
           f"two interleaved VAGi channels, "
           f"{frames / MENU_RATE:.3f} s, looping")
-    print(f"Official navigation and miss SFX: VAGp ADPCM, {bank_size} SPU bytes, "
-          f"max {max_sfx_frames} frames, one-shot; missnote1..3 share the playable SFX pool")
+    print(f"Official navigation, miss and Week 2 thunder SFX: VAGp ADPCM, "
+          f"{bank_size} SPU bytes, max {max_sfx_frames} frames, one-shot; "
+          f"missnote1..3 and thunder_1..2 share the playable SFX pool")
     print(f"Game over: pinned gameOver {loop_frames / MENU_RATE:.3f}s, "
           f"gameOverEnd {end_frames / MENU_RATE:.3f}s and fnf_loss_sfx in the resident SFX bank")
 
 
 if __name__ == "__main__":
     main()
-

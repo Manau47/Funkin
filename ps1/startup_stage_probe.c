@@ -278,10 +278,3 @@ int main(void)
 	SetDispMask(1);
 	for (;;) VSync(0);
 }
-
-
-
-
-
-
-
