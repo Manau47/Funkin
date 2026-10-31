@@ -32,7 +32,7 @@ WEEK2_CHAR_H = 84
 WEEK2_MONSTER_FRAME_W = WEEK2_CHAR_W
 WEEK2_MONSTER_FRAME_H = WEEK2_CHAR_H
 WEEK2_STAGE_DIVISOR = 7
-WEEK2_LIGHTNING_CROP = (92, 81, 255, 211)
+WEEK2_LIGHTNING_CROP = (10, 0, 173, 130)
 WEEK2_LIGHTNING_TEX_W = 104
 WEEK2_LIGHTNING_TEX_H = 83
 
@@ -613,6 +613,8 @@ def write_header(output: pathlib.Path,
              f"#define BOPEEBO_WEEK3_PAGE_COUNT {len(week3_stage_pages) + len(week3_character_pages)}u",
              "#define BOPEEBO_WEEK3_CHARACTER_FRAME_W 72u",
              "#define BOPEEBO_WEEK3_CHARACTER_FRAME_H 84u",
+             "#define BOPEEBO_WEEK3_TRAIN_PIECE_W 228u",
+             "#define BOPEEBO_WEEK3_TRAIN_H 85u",
              "#define BOPEEBO_MENU_CAPSULE_W 148u",
              "#define BOPEEBO_MENU_CAPSULE_H 32u",
              "#define BOPEEBO_MENU_ICON_COUNT 11u",
@@ -646,7 +648,7 @@ def write_header(output: pathlib.Path,
     w2_page_slots = [0, 1] + [2, 3, 4, 5, 6][:len(week2_character_pages)]
     lines.append("static const uint8_t bopeebo_week2_page_slots[BOPEEBO_WEEK2_PAGE_COUNT] = {" +
                  ",".join(str(slot) for slot in w2_page_slots) + "};")
-    w3_page_slots = [0, 1] + [2, 3][:len(week3_character_pages)]
+    w3_page_slots = list(range(len(week3_stage_pages) + len(week3_character_pages)))
     lines.append("static const uint8_t bopeebo_week3_page_slots[BOPEEBO_WEEK3_PAGE_COUNT] = {" +
                  ",".join(str(slot) for slot in w3_page_slots) + "};")
     for name, value in week3_char_layout.items():
@@ -860,13 +862,15 @@ def build(args: argparse.Namespace) -> None:
     # is needed at runtime. These small patches fit in the unused right strip
     # of Week 2 stage page 1, avoiding extra VRAM pages or CD reads.
     week2_lightning_names: list[str] = []
-    week2_lightning_crop = (92, 81, 255, 211)  # measured on the 362x262 PS1 scene
+    # Include the actual window-flash sprite and its floor reflection. The
+    # earlier crop sampled only a dim reflection patch and cut the window out.
+    week2_lightning_crop = WEEK2_LIGHTNING_CROP
     week2_lightning_x0, week2_lightning_y0, week2_lightning_x1, week2_lightning_y1 = week2_lightning_crop
     week2_lightning_world_w = week2_lightning_x1 - week2_lightning_x0
     week2_lightning_world_h = week2_lightning_y1 - week2_lightning_y0
     week2_lightning_origin = (
         week2_stage_origin[0] + week2_lightning_x0,
-        week2_stage_origin[1] + week2_lightning_y0 - week2_crop_y)
+        week2_stage_origin[1] + week2_lightning_y0)
     for i, source_frame in enumerate((0, 1, 2)):
         full = bytearray(week2_bg_w * week2_bg_h * 4)
         # Use the same root instance transform as the permanent décor so the
@@ -1017,10 +1021,9 @@ def build(args: argparse.Namespace) -> None:
         week2_character_names.append(name)
     week2_character_palette_names.extend(week2_gf_names)
 
-    # Week 3's train platform is composed from the pinned stage props at the
-    # same 1/6 world scale used for its character anchors. The moving train is
-    # deliberately left out of this first static scene package; it will be an
-    # independently streamed animation layer in a later pass.
+    # Week 3's platform uses two independently rendered depth layers. Keep
+    # the train between the city/backdrop and the foreground street so its
+    # official sprite can pass behind the singing area.
     week3_stage_json = json.loads(
         (assets / "preload" / "data" / "stages" / "phillyTrain.json").read_text(encoding="utf-8"))
     week3_camera_zoom_q8 = max(1, int(float(week3_stage_json["cameraZoom"]) * 640.0 / 1.1 + 0.5))
@@ -1038,9 +1041,14 @@ def build(args: argparse.Namespace) -> None:
         camera_offset = source_char.get("cameraOffsets", [0, 0])
         week3_char_layout[f"{out_name}_camera_x"] = week3_world(camera_offset[0])
         week3_char_layout[f"{out_name}_camera_y"] = week3_world(camera_offset[1])
-    week3_stage_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
-    for i in range(0, len(week3_stage_rgba), 4):
-        week3_stage_rgba[i:i + 4] = bytes((14, 13, 27, 255))
+    # Camera targets use the center of each PS1 frame. Pico's extracted frame
+    # is 10 world units taller than BF's, so compensate by +10 here to keep
+    # the two targets at the same vertical screen height.
+    week3_char_layout["pico_camera_y"] += 10
+    week3_back_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
+    week3_front_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
+    for i in range(0, len(week3_back_rgba), 4):
+        week3_back_rgba[i:i + 4] = bytes((14, 13, 27, 255))
     week3_props = sorted(week3_stage_json["props"], key=lambda prop: int(prop.get("zIndex", 0)))
     week3_layer_names = {"sky": "sky", "city": "city", "lights": "win",
                          "behindTrain": "behindTrain", "street": "street"}
@@ -1059,17 +1067,42 @@ def build(args: argparse.Namespace) -> None:
                            width, height)
         px = math.floor(float(prop["position"][0]) / week3_stage_divisor + 0.5) - week3_stage_origin[0]
         py = math.floor(float(prop["position"][1]) / week3_stage_divisor + 0.5) - week3_stage_origin[1]
-        blend_at(week3_stage_rgba, (week3_stage_w, week3_stage_h), layer, (width, height), (px, py))
+        destination = week3_front_rgba if int(prop.get("zIndex", 0)) > 60 else week3_back_rgba
+        blend_at(destination, (week3_stage_w, week3_stage_h), layer, (width, height), (px, py))
     week3_stage_names = []
-    for tile in range(2):
-        name = f"week3_stage_scene_{tile}"
+    for depth_name, rgba in (("back", week3_back_rgba), ("front", week3_front_rgba)):
+        for tile in range(2):
+            name = f"week3_stage_{depth_name}_{tile}"
+            pixels = bytearray()
+            for y in range(week3_stage_h):
+                start = (y * week3_stage_w + tile * 256) * 4
+                pixels.extend(rgba[start:start + 256 * 4])
+            temp_images[name] = pixels
+            frame_sizes[name] = (256, week3_stage_h)
+            week3_stage_names.append(name)
+
+    # Convert the official 4096x512 train to the 1/6 stage scale, then split
+    # its 683x85 image into texture-page-safe pieces for contiguous drawing.
+    week3_train_source = assets / "week3" / "images" / "philly" / "train.png"
+    week3_train_w = math.ceil(4096 / week3_stage_divisor)
+    week3_train_h = math.floor(512 / week3_stage_divisor + 0.5)
+    week3_train_rgba = run_ffmpeg(ffmpeg, week3_train_source,
+        f"scale={week3_train_w}:{week3_train_h}:flags=area", week3_train_w, week3_train_h)
+    week3_train_names = []
+    week3_train_piece_w = math.ceil(week3_train_w / 3)
+    for piece in range(3):
+        x0 = piece * week3_train_piece_w
+        width = min(week3_train_piece_w, week3_train_w - x0)
+        if width <= 0:
+            continue
+        name = f"week3_train_{piece}"
         pixels = bytearray()
-        for y in range(week3_stage_h):
-            start = (y * week3_stage_w + tile * 256) * 4
-            pixels.extend(week3_stage_rgba[start:start + 256 * 4])
+        for y in range(week3_train_h):
+            start = (y * week3_train_w + x0) * 4
+            pixels.extend(week3_train_rgba[start:start + width * 4])
         temp_images[name] = pixels
-        frame_sizes[name] = (256, week3_stage_h)
-        week3_stage_names.append(name)
+        frame_sizes[name] = (width, week3_train_h)
+        week3_train_names.append(name)
 
     pico_rig = Rig(assets / "shared" / "images" / "characters" / "pico" / "basic-animations", ffmpeg)
     week3_pico_sources = {
@@ -1085,7 +1118,7 @@ def build(args: argparse.Namespace) -> None:
         temp_images[name] = mirror_rgba(pico_poses[source_frame], 72, 84)
         frame_sizes[name] = (72, 84)
         week3_character_names.append(name)
-    for pose, source_index in enumerate((0, 5)):
+    for pose, source_index in enumerate(range(10)):
         name = f"week3_gf_dance_{pose}"
         temp_images[name] = bytearray(temp_images[f"gf_dance_{source_index}"])
         frame_sizes[name] = frame_sizes[f"gf_dance_{source_index}"]
@@ -1094,6 +1127,7 @@ def build(args: argparse.Namespace) -> None:
     temp_images["week3_pico_icon"] = extract_crop(ffmpeg, pico_icon, 0, 0, 150, 150, (24, 24))
     frame_sizes["week3_pico_icon"] = (24, 24)
     week3_character_names.append("week3_pico_icon")
+    week3_character_names.extend(week3_train_names)
     week3_palette_names = week3_stage_names + week3_character_names
 
     # Tutorial uses Girlfriend as the opponent; keep her official four singing
@@ -1751,7 +1785,7 @@ def build(args: argparse.Namespace) -> None:
     for name in week2_stage_names:
         descriptors[name]["palette"] = 0
 
-    week3_stage_pages = [bytearray(PAGE_W * PAGE_H) for _ in range(2)]
+    week3_stage_pages = [bytearray(PAGE_W * PAGE_H) for _ in week3_stage_names]
     for tile, name in enumerate(week3_stage_names):
         indices = quantized_week3[name]
         for py in range(PAGE_H):
@@ -1765,9 +1799,10 @@ def build(args: argparse.Namespace) -> None:
     pack_8bpp([(name, quantized_week3[name], *frame_sizes[name])
                for name in week3_character_names], 0, 8,
               week3_character_pages, week3_character_local)
-    if not week3_character_pages or len(week3_character_pages) > 2:
-        raise ValueError(f"Week 3 character atlas needs {len(week3_character_pages)} pages; expected one or two")
-    week3_character_page_slots = (2, 3)
+    if not week3_character_pages or len(week3_character_pages) > 5:
+        raise ValueError(f"Week 3 character atlas needs {len(week3_character_pages)} pages; expected one to five")
+    week3_character_page_slots = tuple(range(len(week3_stage_pages),
+                                             len(week3_stage_pages) + len(week3_character_pages)))
     for name, frame in week3_character_local.items():
         descriptors[name] = {**frame,
             "page": week3_character_page_slots[int(frame["page"])], "palette": 0}

@@ -1,0 +1,35 @@
+{
+  "version": "v124-week3-philly",
+  "source_commit": "6d655a6a12fcaa40067757f03ffad32b47498a2b",
+  "branch": "ps1-port",
+  "assets_submodule_commit": "724eba9de9e76761d9cefd52169926bc51c760a5",
+  "toolchain": {
+    "sdk": "PSn00bSDK 0.24",
+    "compiler": "MIPS GCC 12.3.0",
+    "cmake": "4.5",
+    "generator": "Ninja"
+  },
+  "disc": {
+    "cue": "ps1/build/week3-v124-philly-20261031/delivery-v124-r2-rootfix/funkin-ps1-week3-v124.cue",
+    "cue_sha256": "ADBA74115FF0BF2B45509B1F5804E7BCB6CDF5B875D6F0629C87A4931EF570A6",
+    "bin": "ps1/build/week3-v124-philly-20261031/delivery-v124-r2-rootfix/funkin-ps1-week3-v124.bin",
+    "bin_bytes": 338506896,
+    "bin_sha256": "BCDAE9C21D128952F3AF6C2B0861C0625F2FA6548919931A39E064298EC73D55",
+    "iso_root_order": ["SYSTEM.CNF;1", "FUNKIN.EXE;1"],
+    "iso_file_count": 117
+  },
+  "converted_assets": {
+    "week3_scene_bytes": 524800,
+    "week3_scene_sha256": "4887C63C159574D853C330BB1F07EA738B469BEB363F79F5B0ED7038C5373A14",
+    "week1_scene_sha256": "C2444F178F0A9A7F28B4B24476B9058E74FB15237DDD4BB786907F73A6CD0E8F",
+    "week2_scene_sha256": "BA93EC25BDAEABFDC21AA4BF32D2E7910367517DD4CEF863A3EB9259137F11D4",
+    "week3_texture_pages_8bpp": 8,
+    "available_texture_pages_8bpp": 9
+  },
+  "validation": {
+    "compiled": true,
+    "static_iso_checks": true,
+    "duckstation_runtime": "pending_user_test",
+    "real_console": "not_tested"
+  }
+}

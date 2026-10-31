@@ -1,6 +1,7 @@
 /* CD-to-SPU VAGi streaming probe; audio data is supplied locally at build time. */
 #include <stdbool.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,8 @@
 
 #define SCREEN_W 320
 #define SCREEN_H 240
+#define WEEK3_SCENE_ZOOM_Q8 384u
+#define WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 640u
 #define RAM_BUFFER_SIZE 0x18000u
 #define REFILL_THRESHOLD (24u * 2048u)
 #define DUMMY_BLOCK_ADDR 0x1000u
@@ -83,10 +86,14 @@
 #define BOPEEBO_BPM 100u
 #define MENU_BPM_CENTI 10200u /* freakyMenu-metadata.json, 102 BPM */
 #define WEEK2_CAMERA_ZOOM_Q8_4_3 BOPEEBO_STAGE_CAMERA_ZOOM_Q8 /* match Week 1 camera zoom */
-/* The Week 2 set prop is a wide background; at the singer camera zoom (2.5x)
-   only a dark floor slice fits on screen. Keep the singer camera targets, but
-   render the set and its lightning at 1.25x so the room/window remain framed. */
-#define WEEK2_BACKGROUND_ZOOM_Q8 320u
+/* Keep the Week 2 room behind the singers, but crop farther into its source
+   art and lower the room slightly. This adds overscan around the 4:3 viewport
+   while keeping the scene window and lightning overlay on one transform. */
+#define WEEK2_BACKGROUND_ZOOM_Q8 576u
+#define WEEK2_BACKGROUND_X_OFFSET 46
+#define WEEK2_BACKGROUND_Y_OFFSET 85
+#define WEEK2_BACKGROUND_TINT 192u
+#define WEEK2_EARLY_OPPONENT_CAMERA_LOWER_WORLD 5
 #define GAME_SCROLL_PIXELS_PER_SECOND 176u
 #define CAMERA_FOCUS_TIME_MS 600u /* official FocusCamera default: four steps at 100 BPM */
 #ifndef GAME_DAD_LANES_DEFAULT
@@ -158,6 +165,12 @@ static bool menu_dj_vram_loaded;
 static bool menu_visuals_loaded;
 static bool week2_visuals_loaded;
 static bool week3_visuals_loaded;
+static unsigned week3_train_song_index = UINT_MAX;
+static unsigned week3_train_last_beat = UINT_MAX;
+static int week3_train_cooldown;
+static bool week3_train_moving;
+static uint32_t week3_train_start_sample;
+static uint32_t week3_train_random_state;
 static bool week4_visuals_loaded;
 static bool week5_visuals_loaded;
 static bool week6_visuals_loaded;
@@ -2104,7 +2117,15 @@ static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
 	int w = ((int)world_w * (int)combined_scale) / 256;
 	int h = ((int)world_h * (int)combined_scale) / 256;
 	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
+	/* The official Halloween room is encoded in an extremely dark palette.
+	   On the PS1's composite output its static details collapse into the
+	   clear color, while the lightning patch remains obvious. Lift only the
+	   two permanent room tiles; characters and flash frames keep neutral tint. */
+	if (active_song && active_song->stage_id == 2u &&
+		(frame == VIS_WEEK2_STAGE_SCENE_0 || frame == VIS_WEEK2_STAGE_SCENE_1))
+		setRGB0(p, WEEK2_BACKGROUND_TINT, WEEK2_BACKGROUND_TINT, WEEK2_BACKGROUND_TINT);
+	else
+		setRGB0(p, 128, 128, 128);
 	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
 	setUV4(p, visual->u, visual->v,
 		(uint8_t)(visual->u + visual->w - 1u), visual->v,
@@ -2122,6 +2143,68 @@ static void draw_visual_frame(unsigned frame, int world_x, int world_y,
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	draw_visual_frame_scaled(frame, world_x, world_y, visual->w, visual->h,
 		camera_x, camera_y, zoom_q8, scale_q8);
+}
+
+/* Week 3's composition camera is wider than the prior test scene. Keep the
+   already-approved character pixel sizes while moving their anchors with the
+   new camera: compensate the world-space frame dimensions for the zoom ratio. */
+static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || !zoom_q8) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	unsigned width = ((unsigned)visual->w * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
+		zoom_q8;
+	unsigned height = ((unsigned)visual->h * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
+		zoom_q8;
+	if (!width || !height) return;
+	draw_visual_frame_scaled(frame, center_x - (int)(width / 2u),
+		floor_y - (int)height, width, height, camera_x, camera_y, zoom_q8, 256u);
+}
+
+/* Clip Week 2's oversized static room quads on the CPU and crop their UVs.
+   Drawing a 2.25x FT4 well beyond both viewport edges made the room vanish in
+   DuckStation while its smaller lightning overlay still appeared. Keep the
+   same world transform, but submit only the visible rectangle to the GPU. */
+static void draw_week2_room_tile(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	if (visual_prim_count >= visual_prim_limit ||
+	    frame >= BOPEEBO_VISUAL_FRAME_COUNT || !zoom_q8) {
+		visual_prim_rejected++;
+		return;
+	}
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256;
+	int width = ((int)visual->w * (int)zoom_q8) / 256;
+	int height = ((int)visual->h * (int)zoom_q8) / 256;
+	if (width <= 0 || height <= 0) return;
+	int x1 = x0 + width;
+	int y1 = y0 + height;
+	int draw_x0 = x0 < 0 ? 0 : x0;
+	int draw_y0 = y0 < 0 ? 0 : y0;
+	int draw_x1 = x1 > SCREEN_W ? SCREEN_W : x1;
+	int draw_y1 = y1 > SCREEN_H ? SCREEN_H : y1;
+	if (draw_x0 >= draw_x1 || draw_y0 >= draw_y1) return;
+	unsigned u0 = visual->u + (unsigned)((draw_x0 - x0) * visual->w / width);
+	unsigned v0 = visual->v + (unsigned)((draw_y0 - y0) * visual->h / height);
+	unsigned u1 = visual->u + (unsigned)((draw_x1 - x0) * visual->w / width) - 1u;
+	unsigned v1 = visual->v + (unsigned)((draw_y1 - y0) * visual->h / height) - 1u;
+	if (u1 >= (unsigned)visual->u + visual->w) u1 = visual->u + visual->w - 1u;
+	if (v1 >= (unsigned)visual->v + visual->h) v1 = visual->v + visual->h - 1u;
+	if (u0 > u1 || v0 > v1 || u1 > 255u || v1 > 255u) return;
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, WEEK2_BACKGROUND_TINT, WEEK2_BACKGROUND_TINT, WEEK2_BACKGROUND_TINT);
+	setXY4(p, draw_x0, draw_y0, draw_x1, draw_y0,
+		draw_x0, draw_y1, draw_x1, draw_y1);
+	setUV4(p, u0, v0, u1, v0, u0, v1, u1, v1);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
 }
 
 static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
@@ -2482,23 +2565,27 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 		switch (focus) {
 		case 1:
 			*x = BOPEEBO_WEEK3_PICO_X + BOPEEBO_WEEK3_PICO_CAMERA_X;
-			*y = BOPEEBO_WEEK3_PICO_Y - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_PICO_CAMERA_Y; break;
+			*y = 75; break;
 		case 0:
 			*x = BOPEEBO_WEEK3_BF_X + BOPEEBO_WEEK3_BF_CAMERA_X;
-			*y = BOPEEBO_WEEK3_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_BF_CAMERA_Y; break;
+			*y = 75; break;
 		case 2:
 			*x = BOPEEBO_WEEK3_GF_X + BOPEEBO_WEEK3_GF_CAMERA_X;
-			*y = BOPEEBO_WEEK3_GF_Y - (int)(BOPEEBO_GF_FRAME_H / 2u) +
-				BOPEEBO_WEEK3_GF_CAMERA_Y; break;
-		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+			*y = 75; break;
+		default: *x = SCREEN_W / 2; *y = 75; break;
 		}
 		return;
 	}
 	if (active_song->stage_id == 2u) {
 		switch (focus) {
-		case 1: *x = 48 + 19; *y = 108 - 40 - 13; break;
+		case 1:
+			*x = 48 + 19;
+			*y = 108 - 40 - 13;
+			/* Lower the camera only for Spookeez/South; the scene moves up
+			   about 12 screen pixels at the Week 2 camera zoom. */
+			if (active_song_index == 4u || active_song_index == 5u)
+				*y += WEEK2_EARLY_OPPONENT_CAMERA_LOWER_WORLD;
+			break;
 		case 0: *x = 124 - 13; *y = 111 - (int)(BOPEEBO_BF_FRAME_H / 2u) - 13; break;
 		case 2: *x = 94; *y = 98 - 40; break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
@@ -2557,7 +2644,9 @@ static bool week2_lightning_frame_at(uint32_t samples, unsigned *frame)
 {
 	uint32_t beat = music_beat_q16(samples) >> 16;
 	int last_strike = -1;
-	unsigned next_strike = (active_song_index == 4u) ? 4u : 12u;
+	/* Give each Week 2 song an early, reproducible first strike; subsequent
+	   intervals stay in the original 8-24 beat range. */
+	unsigned next_strike = 4u;
 	while (next_strike <= beat) {
 		last_strike = (int)next_strike;
 		/* Reproducible visual strikes use the official 8-24 beat interval
@@ -2579,7 +2668,7 @@ static bool week2_lightning_frame_at(uint32_t samples, unsigned *frame)
 	uint32_t source_tick = (uint32_t)((uint64_t)elapsed * 24u / rate);
 	if (source_tick < 1u) *frame = VIS_WEEK2_LIGHTNING_0;
 	else if (source_tick < 2u) *frame = VIS_WEEK2_LIGHTNING_1;
-	else if (source_tick < 18u) *frame = VIS_WEEK2_LIGHTNING_2;
+	else if (source_tick < 30u) *frame = VIS_WEEK2_LIGHTNING_2;
 	else return false;
 	return true;
 }
@@ -2698,6 +2787,60 @@ static void draw_weekend1_scene(uint32_t samples)
 	}
 }
 
+static bool week3_train_position(uint32_t samples, uint32_t beat_q16,
+	uint32_t rate, int *train_x)
+{
+	unsigned beat = beat_q16 >> 16;
+	if (week3_train_song_index != active_song_index || samples < week3_train_start_sample) {
+		week3_train_song_index = active_song_index;
+	week3_train_last_beat = UINT_MAX;
+		week3_train_cooldown = 0;
+		week3_train_moving = false;
+		week3_train_start_sample = 0;
+		week3_train_random_state = 0x574b3301u ^ active_song_index;
+	}
+	if (beat != week3_train_last_beat) {
+		week3_train_last_beat = beat;
+		if (!week3_train_moving) {
+			week3_train_cooldown++;
+			/* The pinned stage checks beat 4 of each 8-beat bar, with a 30%
+			   random chance after an 8-beat cooldown. Use a stable per-beat
+			   hash so this PS1 adaptation remains deterministic on retry. */
+			if ((beat & 7u) == 4u && week3_train_cooldown > 8) {
+				week3_train_random_state = week3_train_random_state * 1664525u + 1013904223u;
+				if ((week3_train_random_state % 100u) < 30u) {
+					week3_train_moving = true;
+					week3_train_start_sample = samples;
+					week3_train_cooldown = (int)(week3_train_random_state % 5u) - 4;
+				}
+			}
+		}
+	}
+	if (!week3_train_moving || !rate || samples < week3_train_start_sample)
+		return false;
+	uint32_t delay_samples = (uint32_t)(((uint64_t)rate * 4700u) / 1000u);
+	if (samples - week3_train_start_sample < delay_samples)
+		return false;
+	uint32_t elapsed = samples - week3_train_start_sample - delay_samples;
+	unsigned frame = (unsigned)(((uint64_t)elapsed * 24u) / rate);
+	int x = 333;
+	int cars = 8;
+	bool finishing = false;
+	for (unsigned i = 0; i < frame && i < 256u; i++) {
+		x -= 67; /* source moves 400 px per 24 Hz update; stage scale is 1/6 */
+		if (x < -333 && !finishing) {
+			x = -192;
+			if (--cars <= 0) finishing = true;
+		}
+		if (x < -667 && finishing) {
+			week3_train_moving = false;
+			return false;
+		}
+	}
+	*train_x = x;
+	return true;
+}
+
 static void draw_scene(uint32_t samples)
 {
 	if (active_song->stage_id == 8u || active_song->stage_id == 9u) {
@@ -2728,7 +2871,7 @@ static void draw_scene(uint32_t samples)
 	   world calibration. On the 4:3 PS1 viewport this cropped both singers;
 	   retain the authored stage positions but use a 1.5x composition. */
 	unsigned base_zoom_q8 = week2 ? WEEK2_CAMERA_ZOOM_Q8_4_3 :
-		week3 ? BOPEEBO_WEEK3_CAMERA_ZOOM_Q8 :
+		week3 ? WEEK3_SCENE_ZOOM_Q8 :
 		week4 ? BOPEEBO_WEEK4_CAMERA_ZOOM_Q8 :
 		week5 ? BOPEEBO_WEEK5_CAMERA_ZOOM_Q8 : BOPEEBO_STAGE_CAMERA_ZOOM_Q8;
 	unsigned zoom_q8 = base_zoom_q8 + pulse_q8;
@@ -2753,26 +2896,46 @@ static void draw_scene(uint32_t samples)
 	camera_focus_display = (uint8_t)target_focus;
 	camera_transitioning = event_index && elapsed < transition;
 
-	/* Stage props stay anchored in world coordinates. Week 2 uses a wider
-	   background transform than the singer camera crop; characters and notes
-	   below retain the shared gameplay camera mapping. */
+	/* Stage props stay anchored in world coordinates. Week 2's background
+	   keeps the proven v115 framing; camera targets continue to drive singers
+	   and notes independently. */
 	if (week2) {
 		unsigned background_zoom_q8 = WEEK2_BACKGROUND_ZOOM_Q8 + pulse_q8;
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_0, BOPEEBO_WEEK2_STAGE_X,
-			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, background_zoom_q8, 256);
-		draw_visual_frame(VIS_WEEK2_STAGE_SCENE_1, BOPEEBO_WEEK2_STAGE_X + 256,
-			BOPEEBO_WEEK2_STAGE_Y, camera_x, camera_y, background_zoom_q8, 256);
+		/* The lowered room leaves a strip above its top edge at this camera
+		   crop; fill it with the source backdrop's own flat base color. */
+		draw_rect(0, 0, SCREEN_W, SCREEN_H, 36, 35, 54);
+		draw_week2_room_tile(VIS_WEEK2_STAGE_SCENE_0,
+			BOPEEBO_WEEK2_STAGE_X + WEEK2_BACKGROUND_X_OFFSET,
+			BOPEEBO_WEEK2_STAGE_Y + WEEK2_BACKGROUND_Y_OFFSET,
+			camera_x, camera_y, background_zoom_q8);
+		draw_week2_room_tile(VIS_WEEK2_STAGE_SCENE_1,
+			BOPEEBO_WEEK2_STAGE_X + 256 + WEEK2_BACKGROUND_X_OFFSET,
+			BOPEEBO_WEEK2_STAGE_Y + WEEK2_BACKGROUND_Y_OFFSET,
+			camera_x, camera_y, background_zoom_q8);
 		unsigned lightning_frame;
 		if (week2_lightning_frame_at(samples, &lightning_frame))
-			draw_visual_frame_scaled(lightning_frame, BOPEEBO_WEEK2_LIGHTNING_X,
-				BOPEEBO_WEEK2_LIGHTNING_Y,
+			draw_visual_frame_scaled(lightning_frame,
+				BOPEEBO_WEEK2_LIGHTNING_X + WEEK2_BACKGROUND_X_OFFSET,
+				BOPEEBO_WEEK2_LIGHTNING_Y + WEEK2_BACKGROUND_Y_OFFSET,
 				BOPEEBO_WEEK2_LIGHTNING_WORLD_W,
 				BOPEEBO_WEEK2_LIGHTNING_WORLD_H, camera_x, camera_y,
 				background_zoom_q8, 256);
 	} else if (week3) {
-		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_0, BOPEEBO_WEEK3_STAGE_X,
+		draw_visual_frame(VIS_WEEK3_STAGE_BACK_0, BOPEEBO_WEEK3_STAGE_X,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-		draw_visual_frame(VIS_WEEK3_STAGE_SCENE_1, BOPEEBO_WEEK3_STAGE_X + 256,
+		draw_visual_frame(VIS_WEEK3_STAGE_BACK_1, BOPEEBO_WEEK3_STAGE_X + 256,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		int train_x;
+		if (week3_train_position(samples, beat_q16, rate, &train_x)) {
+			for (unsigned piece = 0; piece < 3u; piece++) {
+				unsigned frame = VIS_WEEK3_TRAIN_0 + piece;
+				draw_visual_frame(frame, train_x + (int)piece * BOPEEBO_WEEK3_TRAIN_PIECE_W,
+					60, camera_x, camera_y, zoom_q8, 256);
+			}
+		}
+		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_0, BOPEEBO_WEEK3_STAGE_X,
+			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_1, BOPEEBO_WEEK3_STAGE_X + 256,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
 	} else if (week4) {
 		draw_week4_visual_frame(WEEK4_FRAME_STAGE_0, BOPEEBO_WEEK4_STAGE_X,
@@ -2837,13 +3000,19 @@ static void draw_scene(uint32_t samples)
 			94 - (int)(BOPEEBO_GF_FRAME_W / 2u), 98 - (int)BOPEEBO_GF_FRAME_H,
 			camera_x, camera_y, zoom_q8, 256);
 	} else if (week3) {
-		static const uint8_t week3_gf_dance[2] = {
-			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1
+		static const uint8_t week3_gf_dance[10] = {
+			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1,
+			VIS_WEEK3_GF_DANCE_2, VIS_WEEK3_GF_DANCE_3,
+			VIS_WEEK3_GF_DANCE_4, VIS_WEEK3_GF_DANCE_5,
+			VIS_WEEK3_GF_DANCE_6, VIS_WEEK3_GF_DANCE_7,
+			VIS_WEEK3_GF_DANCE_8, VIS_WEEK3_GF_DANCE_9
 		};
-		draw_visual_frame(week3_gf_dance[beat & 1u],
-			BOPEEBO_WEEK3_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
-			BOPEEBO_WEEK3_GF_Y - (int)BOPEEBO_GF_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
+		unsigned gf_side = (beat & 1u) ? 0u : 5u;
+		unsigned gf_pose = (unsigned)((uint64_t)beat_phase * 5u >> 16);
+		if (gf_pose > 4u) gf_pose = 4u;
+		draw_week3_character_frame(week3_gf_dance[gf_side + gf_pose],
+			BOPEEBO_WEEK3_GF_X, BOPEEBO_WEEK3_GF_Y,
+			camera_x, camera_y, zoom_q8);
 	} else if (week5) {
 		draw_week5_visual_frame((beat & 1u) ? WEEK5_FRAME_GF_DANCE_1 : WEEK5_FRAME_GF_DANCE_0,
 			BOPEEBO_WEEK5_GF_X - 32, BOPEEBO_WEEK5_GF_Y - 64,
@@ -2914,10 +3083,9 @@ static void draw_scene(uint32_t samples)
 		unsigned pico_frame = samples < dad_visual_until ?
 			pico_sing[dad_visual_lane & 3u][(beat_phase >> 15) & 1u] :
 			((beat_phase < 32768u) ? VIS_WEEK3_PICO_IDLE_0 : VIS_WEEK3_PICO_IDLE_1);
-		draw_visual_frame(pico_frame,
-			BOPEEBO_WEEK3_PICO_X - (int)(BOPEEBO_WEEK3_CHARACTER_FRAME_W / 2u),
-			BOPEEBO_WEEK3_PICO_Y - (int)BOPEEBO_WEEK3_CHARACTER_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
+		draw_week3_character_frame(pico_frame,
+			BOPEEBO_WEEK3_PICO_X, BOPEEBO_WEEK3_PICO_Y,
+			camera_x, camera_y, zoom_q8);
 	} else if (week5) {
 		unsigned opponent_frame = WEEK5_FRAME_PARENTS_IDLE;
 		if (samples < dad_visual_until) {
@@ -2984,10 +3152,14 @@ static void draw_scene(uint32_t samples)
 		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
 		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
-	draw_visual_frame(bf_frame,
-		bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
-		bf_world_y - (int)BOPEEBO_BF_FRAME_H,
-		camera_x, camera_y, zoom_q8, 256);
+	if (week3)
+		draw_week3_character_frame(bf_frame, bf_world_x, bf_world_y,
+			camera_x, camera_y, zoom_q8);
+	else
+		draw_visual_frame(bf_frame,
+			bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
+			bf_world_y - (int)BOPEEBO_BF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256);
 }
 
 static void draw_gameplay(uint32_t samples)

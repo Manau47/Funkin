@@ -390,6 +390,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/city.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/win.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/behindTrain.png"
+		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/train.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/week3/images/philly/street.png"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/Animation.json"
 		"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/pico/basic-animations/spritemap1.json"
