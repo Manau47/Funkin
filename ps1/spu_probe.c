@@ -721,6 +721,24 @@ static void load_week3_visuals(bool enable)
 			}
 			DrawSync(0);
 		}
+		/* Week 3 leases pages 0..7, but the shared BF idle/sing atlas is page 7.
+		   Keep a copy in the otherwise menu-only page 8 for the whole song. */
+		{
+			unsigned destination_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+			unsigned source_page = enable ? bopeebo_visual_frames[VIS_BF_IDLE_0].page :
+				destination_page;
+			if (destination_page >= BOPEEBO_VISUAL_PAGE8_COUNT ||
+			    source_page == destination_page) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			const BopeeboVisualPage *destination = &bopeebo_visual_page_table[destination_page];
+			RECT rect = { (short)destination->x, (short)destination->y, 128, 256 };
+			if (!read_cd_file_range("\\W1SCENE.BIN", source_page * 32u, 32u, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			}
+			LoadImage(&rect, page_data);
+			DrawSync(0);
+		}
 		free(page_data);
 	}
 	if (enable) {
@@ -2098,9 +2116,9 @@ static bool draw_textured_frame_rotated_180(unsigned frame, int x, int y,
 	return true;
 }
 
-static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
+static void draw_visual_frame_scaled_on_page(unsigned frame, int world_x, int world_y,
 	unsigned world_w, unsigned world_h, int camera_x, int camera_y,
-	unsigned zoom_q8, unsigned scale_q8)
+	unsigned zoom_q8, unsigned scale_q8, unsigned page_override)
 {
 	if (visual_prim_count >= visual_prim_limit) {
 		visual_prim_rejected++;
@@ -2108,7 +2126,8 @@ static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
 	}
 	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
+		page_override < BOPEEBO_VISUAL_PAGE_COUNT ? page_override : visual->page];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
@@ -2136,6 +2155,14 @@ static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
 	DrawPrim((uint32_t *)p);
 }
 
+static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
+	unsigned world_w, unsigned world_h, int camera_x, int camera_y,
+	unsigned zoom_q8, unsigned scale_q8)
+{
+	draw_visual_frame_scaled_on_page(frame, world_x, world_y, world_w, world_h,
+		camera_x, camera_y, zoom_q8, scale_q8, BOPEEBO_VISUAL_PAGE_COUNT);
+}
+
 static void draw_visual_frame(unsigned frame, int world_x, int world_y,
 	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
@@ -2158,8 +2185,11 @@ static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y
 	unsigned height = ((unsigned)visual->h * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
 		zoom_q8;
 	if (!width || !height) return;
-	draw_visual_frame_scaled(frame, center_x - (int)(width / 2u),
-		floor_y - (int)height, width, height, camera_x, camera_y, zoom_q8, 256u);
+	unsigned bf_base_page = (frame >= VIS_BF_IDLE_0 && frame <= VIS_BF_RIGHT_1) ?
+		bopeebo_visual_frames[VIS_MENU_LOGO].page : BOPEEBO_VISUAL_PAGE_COUNT;
+	draw_visual_frame_scaled_on_page(frame, center_x - (int)(width / 2u),
+		floor_y - (int)height, width, height, camera_x, camera_y, zoom_q8, 256u,
+		bf_base_page);
 }
 
 /* Clip Week 2's oversized static room quads on the CPU and crop their UVs.
