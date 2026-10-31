@@ -2863,10 +2863,13 @@ static void draw_scene(uint32_t samples)
 				};
 				opponent_frame = sing[lane][(beat_phase >> 15) & 1u];
 			} else {
-				static const uint8_t sing[4] = { VIS_WEEK2_MONSTER_SING_LEFT,
-					VIS_WEEK2_MONSTER_SING_DOWN, VIS_WEEK2_MONSTER_SING_UP,
-					VIS_WEEK2_MONSTER_SING_RIGHT };
-				opponent_frame = sing[lane];
+				static const uint8_t sing[4][2] = {
+					{ VIS_WEEK2_MONSTER_SING_LEFT_0, VIS_WEEK2_MONSTER_SING_LEFT_1 },
+					{ VIS_WEEK2_MONSTER_SING_DOWN_0, VIS_WEEK2_MONSTER_SING_DOWN_1 },
+					{ VIS_WEEK2_MONSTER_SING_UP_0, VIS_WEEK2_MONSTER_SING_UP_1 },
+					{ VIS_WEEK2_MONSTER_SING_RIGHT_0, VIS_WEEK2_MONSTER_SING_RIGHT_1 }
+				};
+				opponent_frame = sing[lane][(beat_phase >> 15) & 1u];
 			}
 		} else if (active_song->opponent_kind == PS1_OPPONENT_SPOOKY) {
 			static const uint8_t idle[8] = { VIS_WEEK2_SPOOKY_IDLE_0,
@@ -2880,7 +2883,12 @@ static void draw_scene(uint32_t samples)
 			unsigned idle_step = ((beat_q16 >> 14) & 7u);
 			opponent_frame = idle[idle_step];
 		} else {
-			opponent_frame = (beat_phase < 32768u) ? VIS_WEEK2_MONSTER_IDLE : VIS_WEEK2_MONSTER_IDLE_HOLD;
+			static const uint8_t idle[4] = {
+				VIS_WEEK2_MONSTER_IDLE_0, VIS_WEEK2_MONSTER_IDLE_1,
+				VIS_WEEK2_MONSTER_IDLE_2, VIS_WEEK2_MONSTER_IDLE_3
+			};
+			/* Four official idle poses cycle over two musical beats. */
+			opponent_frame = idle[(beat_q16 >> 15) & 3u];
 		}
 		if (active_song->opponent_kind == PS1_OPPONENT_MONSTER)
 			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_MONSTER_FRAME_W / 2u),
@@ -4324,6 +4332,11 @@ static bool start_stream_file(const char *path, unsigned expected_channels,
 		failure_code = FAIL_STREAM_START;
 		return false;
 	}
+	/* Stream_Start primes the two SPU DMA chunks by invoking the IRQ handler
+	   before key-on; those queued samples are not yet audible. Rebase the chart
+	   clock at the first playable sample so notes and beat animations share the
+	   audio's actual origin. */
+	Stream_ResetSamplesPlayed(&stream);
 	return true;
 }
 

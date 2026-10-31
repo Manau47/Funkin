@@ -921,14 +921,24 @@ def build(args: argparse.Namespace) -> None:
     # Render the official character symbols directly. The top-level Christmas
     # stage export positions Monster partly outside its composition viewport;
     # using it as a character sprite cuts the face/body at a vertical edge.
-    monster_selections = (
-        ("week2_monster_idle", "monster idle", 0),
-        ("week2_monster_idle_hold", "monster idle", 6),
-        ("week2_monster_sing_left", "Monster left note", 2),
-        ("week2_monster_sing_right", "Monster Right note", 2),
-        ("week2_monster_sing_up", "monster up note", 2),
-        ("week2_monster_sing_down", "monster down", 2),
-    )
+    # Keep a compact, genuinely animated subset of each official timeline.
+    # Four idle poses cover the cycle; two singing poses preserve the initial
+    # anticipation and held pose for every direction without expanding the
+    # Week 2 atlas beyond its five reserved character pages.
+    monster_selections = [
+        (f"week2_monster_idle_{pose}", "monster idle", source_frame)
+        for pose, source_frame in enumerate((0, 4, 8, 12))
+    ]
+    for name, symbol in (
+        ("left", "Monster left note"),
+        ("right", "Monster Right note"),
+        ("up", "monster up note"),
+        ("down", "monster down"),
+    ):
+        monster_selections.extend(
+            (f"week2_monster_sing_{name}_{pose}", symbol, source_frame)
+            for pose, source_frame in enumerate((0, 2))
+        )
     for name, symbol, source_frame in monster_selections:
         _, _, width, height, pixels = monster_rig.render_symbol_positioned(symbol, source_frame)
         if not pixels:
@@ -1846,7 +1856,7 @@ def build(args: argparse.Namespace) -> None:
     print(f"Freeplay DJ checks: 9 sampled Intro frames + 7 sampled Idle frames, anchored to one floor; crop {dj_frame_w}x{MENU_DJ_FRAME_H} has transparent margins and scales 1.75x at runtime")
     print(f"Freeplay DJ atlas: {len(menu_dj_pages)} full-page 8bpp texture ({len(menu_dj_pages) * 65536} bytes resident); underlying menu background remains a separate layer")
     print(f"Freeplay DJ color check: shared 8bpp CLUT RMSE {rmse(menu_dj_frame_names, palette8):.2f} RGB levels; palette sampled from 3 transparent poses only")
-    print(f"Week 2 art: {week2_bg_w}x{week2_bg_h} stage, aligned root background/decor, 8 Spooky idle poses, 10 GF dance poses, per-pose {WEEK2_MONSTER_FRAME_W}x{WEEK2_MONSTER_FRAME_H} Monster, {len(week2_lightning_names)} official lightning frames, {len(week2_character_names)} character/icon frames, {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, dedicated 255-color CLUT, RMSE {rmse(week2_character_palette_names, week2_palette):.2f} RGB levels")
+    print(f"Week 2 art: {week2_bg_w}x{week2_bg_h} stage, aligned root background/decor, 8 Spooky idle poses, 10 GF dance poses, 4 Monster idle + 2 sing poses per direction at {WEEK2_MONSTER_FRAME_W}x{WEEK2_MONSTER_FRAME_H}, {len(week2_lightning_names)} official lightning frames, {len(week2_character_names)} character/icon frames, {len(week2_stage_pages)} stage + {len(week2_character_pages)} character pages, dedicated 255-color CLUT, RMSE {rmse(week2_character_palette_names, week2_palette):.2f} RGB levels")
     week2_payload_path = pathlib.Path(args.week2_pages_output)
     week2_payload_path.parent.mkdir(parents=True, exist_ok=True)
     palette_words = [0] + [rgb555(c) for c in week2_palette[:255]]
