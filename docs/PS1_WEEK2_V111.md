@@ -47,3 +47,17 @@ Generated inputs remain outside Git under `ps1/build/week2-monster-sync-v111-202
 
 Compilation and static atlas/build checks succeeded. The BIN is 338,203,488 bytes. The CUE and BIN are in `ps1/build/week2-monster-sync-v111-20261031/delivery-v111-final/`. This image has **not** been run in DuckStation by Codex or tested on real hardware. Await the user's manual DuckStation check for the relative music/chart timing and Monster animation cadence; no gameplay validation is claimed.
 
+## Boot-order correction (v111b)
+
+The user reported that v111 remained at the Sony PlayStation logo. Comparing the delivered ISO root directory with the previously bootable v110b delivery identified the cause: the v111 `SYSTEM.CNF;1` record was the 93rd file entry (record index 95 when the two ISO directory-special records are counted), while `FUNKIN.EXE;1` was entry 36. The v110b delivery put `SYSTEM.CNF` first and `FUNKIN.EXE` second. The v111 CMake ISO output had not passed through the existing root-order correction step.
+
+v111b is a copy of the v111 BIN with only the ISO root-directory file records reordered. The existing helper verified the original root-sector EDC/ECC, regenerated checks for the changed sectors, and asserts that every byte outside the root-directory sectors is preserved. The `SYSTEM.CNF` and `FUNKIN.EXE` directory records are byte-identical to their v111 versions; the executable remains at LBA 27 and 1,017,856 bytes. On v111b, the files are entries 1 and 2 respectively. No code, chart, audio, scene, or texture was rebuilt or modified.
+
+v111b is statically checked but **awaits user execution in DuckStation**. This ISO fix addresses the Sony-logo boot failure only; it does not itself validate the Monster animations or music/chart alignment.
+
+| v111b delivery file | SHA-256 |
+| --- | --- |
+| `funkin-ps1-bopeebo-playable-v111b.bin` (338,203,488 bytes) | `D5B3423E38E78B794BFABD40D229F3CC54E229716CF3B37CBACE53B417304C3B` |
+| `funkin-ps1-bopeebo-playable-v111b.cue` (96 bytes) | `DD44981C6385B66FA0DAE16A49FD7C965701DFDFAE2C870BCF220C1CD772FA2F` |
+
+Delivery directory: `ps1/build/week2-monster-sync-v111-20261031/delivery-v111b-bootfix/`. The original v111 delivery is retained unchanged for comparison.
