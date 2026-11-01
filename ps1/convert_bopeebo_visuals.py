@@ -1064,6 +1064,13 @@ def build(args: argparse.Namespace) -> None:
         camera_offset = source_char.get("cameraOffsets", [0, 0])
         week3_char_layout[f"{out_name}_camera_x"] = week3_world(camera_offset[0])
         week3_char_layout[f"{out_name}_camera_y"] = week3_world(camera_offset[1])
+    # Give the Week 3 singers a little more screen space between them while
+    # preserving each authored camera focus target (position + camera offset).
+    # Ten world units on each side add about 30 pixels of separation at 1.5x.
+    week3_char_layout["pico_x"] -= 10
+    week3_char_layout["pico_camera_x"] += 10
+    week3_char_layout["bf_x"] += 10
+    week3_char_layout["bf_camera_x"] -= 10
     # Camera targets use the center of each PS1 frame. Pico's extracted frame
     # is 10 world units taller than BF's, so compensate by +10 here to keep
     # the two targets at the same vertical screen height.

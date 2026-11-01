@@ -503,3 +503,14 @@ Retour utilisateur : le premier CUE v139 reste au logo Sony. Comparaison avec v1
 Sans recompiler ni reconvertir, v139b repart du BIN brut du même build et applique uniquement `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` dans un nouveau dossier de livraison. L’image v139 initiale est préservée. Contrôle statique : 117 entrées, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`; directive `BOOT=cdrom:\\FUNKIN.EXE;1`; PS-X EXE de 1 021 952 octets, byte-identique au v139 initial, SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`. BIN v139b SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. Livré sous `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/`.
 
 **État :** ISO contrôlé statiquement; démarrage DuckStation de v139b à confirmer par l’utilisateur. Aucun essai console réelle.
+
+
+### 2026-11-01 — v140 : espacer Pico et BF en Week 3
+
+À la demande de l’utilisateur, les chanteurs Week 3 sont éloignés chacun de 10 unités de monde : Pico vers la gauche, BF vers la droite. À la composition 1,5× cela ajoute environ 30 pixels entre leurs centres. Les offsets caméra sont compensés de +10 pour Pico et −10 pour BF : leurs cibles caméra restent strictement identiques (Pico 111, BF 137), de sorte que la caméra, le fond/parallaxe, les proportions, animations, charts et gameplay ne changent pas. Le convertisseur encode ces offsets pour que la disposition reste reproductible.
+
+Les ressources préconverties de v139b ont été copiées dans une nouvelle zone de staging; seules quatre macros de position dans leur en-tête ont été ajustées. Dry-run : compilation de `spu_probe.c` et `stream.c`, édition de liens et image disque; aucun asset, chart ou audio reconverti. L’image ISO v140 a été comparée fichier par fichier à v139b : seul `FUNKIN.EXE;1` change. Les 116 autres ressources sont byte-identiques. Le réordonnanceur BIOS place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête du répertoire racine.
+
+PSn00bSDK 0.24 / GCC MIPS 12.3 : compilation réussie. BIN 338 509 248 octets, SHA-256 `C691A74571FEFE2587C5DEA56C284C868DC9EB535143FDCD961528404B470E6A`; CUE SHA-256 `B9CC1B288089DF4CD0C0BFA5053A2AC6589F85F1BE839C4A255E2D0AE66A32E7`. Livraison : `ps1/build/week3-pico-bf-spacing-v140/delivery-v140-pico-bf-spacing/`; manifeste [`PS1_WEEK3_V140_SPACING.md`](PS1_WEEK3_V140_SPACING.md).
+
+**État :** build et comparaison statique réussis; le CUE n’a pas encore été lancé dans DuckStation. L’utilisateur doit confirmer l’espacement en jeu et la lisibilité pendant les focus Pico/BF. Aucun test console réelle.
