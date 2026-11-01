@@ -3971,6 +3971,21 @@ static void return_to_freeplay(void)
 	load_week6_visuals(false);
 	load_week7_visuals(false);
 	load_weekend1_visuals(false);
+	/* Stage packages lease overlapping texture pages and replace the shared
+	   8bpp CLUT. Freeplay also leases page 7 for its DJ animation. Establish a
+	   canonical Week 1 atlas/palette after unloading the active stage so the
+	   next song never depends on a partially restored VRAM state. */
+	if (!load_bopeebo_visuals()) {
+		show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
+		return;
+	}
+	week2_visuals_loaded = false;
+	week3_visuals_loaded = false;
+	week4_visuals_loaded = false;
+	week5_visuals_loaded = false;
+	week6_visuals_loaded = false;
+	week7_visuals_loaded = false;
+	weekend1_visuals_loaded = false;
 	load_freeplay_dj_pages(false);
 	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 	song_finished = true;
