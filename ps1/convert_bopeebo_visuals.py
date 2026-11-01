@@ -1047,6 +1047,9 @@ def build(args: argparse.Namespace) -> None:
     week3_char_layout["pico_camera_y"] += 10
     week3_back_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
     week3_front_rgba = bytearray(week3_stage_w * week3_stage_h * 4)
+    # Keep a mask for Philly's window-light sprite. Its texels get a reserved
+    # CLUT index later so the palette can pulse without tinting the whole city.
+    week3_light_mask = bytearray(week3_stage_w * week3_stage_h)
     for i in range(0, len(week3_back_rgba), 4):
         week3_back_rgba[i:i + 4] = bytes((14, 13, 27, 255))
     week3_props = sorted(week3_stage_json["props"], key=lambda prop: int(prop.get("zIndex", 0)))
@@ -1069,6 +1072,15 @@ def build(args: argparse.Namespace) -> None:
         py = math.floor(float(prop["position"][1]) / week3_stage_divisor + 0.5) - week3_stage_origin[1]
         destination = week3_front_rgba if int(prop.get("zIndex", 0)) > 60 else week3_back_rgba
         blend_at(destination, (week3_stage_w, week3_stage_h), layer, (width, height), (px, py))
+        if prop.get("name") == "lights":
+            for sy in range(height):
+                dy = py + sy
+                if not 0 <= dy < week3_stage_h:
+                    continue
+                for sx in range(width):
+                    dx = px + sx
+                    if 0 <= dx < week3_stage_w and layer[(sy * width + sx) * 4 + 3] >= 128:
+                        week3_light_mask[dy * week3_stage_w + dx] = 1
     week3_stage_names = []
     for depth_name, rgba in (("back", week3_back_rgba), ("front", week3_front_rgba)):
         for tile in range(2):
@@ -1122,6 +1134,18 @@ def build(args: argparse.Namespace) -> None:
         name = f"week3_gf_dance_{pose}"
         temp_images[name] = bytearray(temp_images[f"gf_dance_{source_index}"])
         frame_sizes[name] = frame_sizes[f"gf_dance_{source_index}"]
+        week3_character_names.append(name)
+    # The pinned GF rig has dedicated 30-frame hairBlow and Hair landing
+    # timelines at source frames 124..153 and 154..183. Two anchored samples
+    # per timeline keep the motion visible while staying inside the four-page
+    # Week 3 character atlas budget.
+    week3_hair_sources = (124, 139, 154, 169)
+    week3_hair_frames = fit_anchored_rig(gf_rig, list(week3_hair_sources), 87, 79)
+    for name, source_frame in zip(("week3_gf_hair_blow_0", "week3_gf_hair_blow_1",
+                                   "week3_gf_hair_fall_0", "week3_gf_hair_fall_1"),
+                                  week3_hair_sources):
+        temp_images[name] = week3_hair_frames[source_frame]
+        frame_sizes[name] = (87, 79)
         week3_character_names.append(name)
     pico_icon = assets / "preload" / "images" / "icons" / "icon-pico.png"
     temp_images["week3_pico_icon"] = extract_crop(ffmpeg, pico_icon, 0, 0, 150, 150, (24, 24))
@@ -1544,7 +1568,9 @@ def build(args: argparse.Namespace) -> None:
                           menu_icon_images)
     palette8 = median_palette([temp_images[n] for n in stage_names + dad_names + gf_names + menu_palette_names], 255)
     week2_palette = median_palette([temp_images[n] for n in week2_character_palette_names], 255)
-    week3_palette = median_palette([temp_images[n] for n in week3_palette_names], 255)
+    # Index 255 is reserved for the Philly windows and is updated by the
+    # runtime beat pulse. Other Week 3 art uses indices 1..254.
+    week3_palette = median_palette([temp_images[n] for n in week3_palette_names], 254)
     palette4 = median_palette([temp_images[n] for n in bf_miss_names], 15)
     palette_ui4 = [median_palette([temp_images[n] for n in ui4_by_direction[d]], 15)
                    for d in directions]
@@ -1791,16 +1817,42 @@ def build(args: argparse.Namespace) -> None:
         for py in range(PAGE_H):
             src = py * PAGE_W
             week3_stage_pages[tile][src:src + PAGE_W] = indices[src:src + PAGE_W]
+            if tile < 2:
+                mask_src = (py * week3_stage_w) + tile * PAGE_W
+                for px in range(PAGE_W):
+                    if week3_light_mask[mask_src + px]:
+                        week3_stage_pages[tile][src + px] = 255
         descriptors[name] = {"page": tile, "palette": 0, "u": 0, "v": 0,
                              "w": PAGE_W, "h": PAGE_H}
 
     week3_character_pages: list[bytearray] = []
     week3_character_local: dict[str, dict] = {}
+    # Pack the three wide train strips first (one page), then group two GF
+    # frames and one Pico pose per shelf row. This leaves room for the four
+    # dedicated GF train-hair frames without allocating a fifth character page.
+    week3_gf_pack_names = [name for name in week3_character_names
+                           if name.startswith("week3_gf_dance_") or
+                           name.startswith("week3_gf_hair_")]
+    week3_pico_pack_names = [name for name in week3_character_names
+                             if name.startswith("week3_pico_") and name != "week3_pico_icon"]
+    week3_train_pack_names = [name for name in week3_character_names
+                              if name.startswith("week3_train_")]
+    week3_character_pack_names = []
+    if week3_train_pack_names:
+        # The small health icon fits in the unused 28px strip beside train[0].
+        week3_character_pack_names.extend(week3_train_pack_names[:1])
+        week3_character_pack_names.append("week3_pico_icon")
+        week3_character_pack_names.extend(week3_train_pack_names[1:])
+    for group in range(len(week3_gf_pack_names) // 2):
+        week3_character_pack_names.extend(week3_gf_pack_names[group * 2:group * 2 + 2])
+        if group < len(week3_pico_pack_names):
+            week3_character_pack_names.append(week3_pico_pack_names[group])
+    week3_character_pack_names.extend(week3_pico_pack_names[len(week3_gf_pack_names) // 2:])
     pack_8bpp([(name, quantized_week3[name], *frame_sizes[name])
-               for name in week3_character_names], 0, 8,
+               for name in week3_character_pack_names], 0, 8,
               week3_character_pages, week3_character_local)
-    if not week3_character_pages or len(week3_character_pages) > 5:
-        raise ValueError(f"Week 3 character atlas needs {len(week3_character_pages)} pages; expected one to five")
+    if len(week3_character_pages) != 4:
+        raise ValueError(f"Week 3 character atlas needs {len(week3_character_pages)} pages; expected four to preserve the BF backup page")
     week3_character_page_slots = tuple(range(len(week3_stage_pages),
                                              len(week3_stage_pages) + len(week3_character_pages)))
     for name, frame in week3_character_local.items():
@@ -1906,7 +1958,7 @@ def build(args: argparse.Namespace) -> None:
     print(f"Week 1 shared gameplay package: {len(pages8)} 8bpp + {len(pages4)} 4bpp pages, {week1_payload_path.stat().st_size} bytes on disc; page arrays are no longer resident in executable data")
     week3_payload_path = pathlib.Path(args.week3_pages_output)
     week3_payload_path.parent.mkdir(parents=True, exist_ok=True)
-    week3_palette_words = [0] + [rgb555(c) for c in week3_palette[:255]]
+    week3_palette_words = [0] + [rgb555(c) for c in week3_palette[:254]] + [rgb555((255, 255, 255))]
     week3_palette_words += [0] * (256 - len(week3_palette_words))
     week3_payload_path.write_bytes(
         b"".join(bytes(page) for page in week3_stage_pages + week3_character_pages) +
