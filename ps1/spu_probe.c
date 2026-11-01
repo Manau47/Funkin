@@ -2222,10 +2222,10 @@ static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y
 	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || !zoom_q8) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
 	unsigned anchor_w = visual->w, anchor_h = visual->h;
-	if (frame >= VIS_WEEK3_PICO_IDLE_0 && frame <= VIS_WEEK3_PICO_SING_RIGHT_1) {
+	if (visual->anchor == 1u) {
 		anchor_w = 72u;
 		anchor_h = 84u;
-	} else if (frame >= VIS_WEEK3_GF_DANCE_0 && frame <= VIS_WEEK3_GF_HAIR_FALL_5) {
+	} else if (visual->anchor == 2u) {
 		anchor_w = 87u;
 		anchor_h = 79u;
 	}
