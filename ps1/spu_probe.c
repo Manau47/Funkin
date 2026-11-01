@@ -171,6 +171,12 @@ static int week3_train_cooldown;
 static bool week3_train_moving;
 static uint32_t week3_train_start_sample;
 static uint32_t week3_train_random_state;
+static unsigned week3_gf_hair_state;
+static uint32_t week3_gf_hair_start_sample;
+static unsigned week3_light_last_beat = UINT_MAX;
+static unsigned week3_light_color_index;
+static uint32_t week3_light_random_state;
+static uint32_t week3_light_clut_upload;
 static bool week4_visuals_loaded;
 static bool week5_visuals_loaded;
 static bool week6_visuals_loaded;
@@ -2828,6 +2834,10 @@ static bool week3_train_position(uint32_t samples, uint32_t beat_q16,
 		week3_train_moving = false;
 		week3_train_start_sample = 0;
 		week3_train_random_state = 0x574b3301u ^ active_song_index;
+		week3_gf_hair_state = 0;
+		week3_gf_hair_start_sample = 0;
+		week3_light_last_beat = UINT_MAX;
+		week3_light_random_state = 0x50484c59u ^ active_song_index;
 	}
 	if (beat != week3_train_last_beat) {
 		week3_train_last_beat = beat;
@@ -2869,6 +2879,37 @@ static bool week3_train_position(uint32_t samples, uint32_t beat_q16,
 	}
 	*train_x = x;
 	return true;
+}
+
+/* Philly's official `win` sprite is encoded with CLUT index 255. Update only
+   that palette entry on quarter-note beats, matching the original five-color
+   window cycle and its slow fade without touching the city or character art. */
+static void update_week3_building_lights(uint32_t beat_q16)
+{
+	static const uint8_t light_colors[5][3] = {
+		{49, 162, 253}, {49, 253, 140}, {251, 51, 245},
+		{251, 166, 51}, {253, 69, 49}
+	};
+	unsigned beat = beat_q16 >> 16;
+	if (beat == week3_light_last_beat) return;
+	week3_light_last_beat = beat;
+	if ((beat & 3u) == 0u) {
+		week3_light_random_state = week3_light_random_state * 1664525u + 1013904223u;
+		week3_light_color_index = (week3_light_random_state >> 16) % 5u;
+	}
+	uint32_t cycle_q16 = ((beat & 3u) << 16) | (beat_q16 & 0xffffu);
+	unsigned fade = (unsigned)(((uint64_t)cycle_q16 * 210u) / (4u * 65536u));
+	if (fade > 210u) fade = 210u;
+	unsigned brightness = 255u - fade;
+	unsigned r = (light_colors[week3_light_color_index][0] * brightness + 127u) / 255u;
+	unsigned g = (light_colors[week3_light_color_index][1] * brightness + 127u) / 255u;
+	unsigned b = (light_colors[week3_light_color_index][2] * brightness + 127u) / 255u;
+	uint16_t rgb555 = (uint16_t)(((b >> 3) << 10) | ((g >> 3) << 5) | (r >> 3));
+	week3_light_clut_upload = rgb555 ? rgb555 : 1u;
+	RECT light_clut = {255, 496, 1, 1};
+	DrawSync(0);
+	LoadImage(&light_clut, &week3_light_clut_upload);
+	DrawSync(0);
 }
 
 static void draw_scene(uint32_t samples)
@@ -2951,18 +2992,38 @@ static void draw_scene(uint32_t samples)
 				BOPEEBO_WEEK2_LIGHTNING_WORLD_H, camera_x, camera_y,
 				background_zoom_q8, 256);
 	} else if (week3) {
+		int train_x = 0;
+		bool train_visible = week3_train_position(samples, beat_q16, rate, &train_x);
+		update_week3_building_lights(beat_q16);
+		/* Official Philly uses 0.3 scroll on sky/city/windows and 1.0 on the
+		   dock. The bridge/behindTrain pixels remain baked into the city layer
+		   to preserve the tested train occlusion within the current VRAM budget. */
+		int city_camera_x = camera_x * 3 / 10;
+		int city_camera_y = camera_y * 3 / 10;
+		/* Keep the parallax factor, but raise only the city composition by
+		   eight world pixels (about twelve screen pixels at the 1.5x zoom). */
+		int city_stage_y = BOPEEBO_WEEK3_STAGE_Y - 8;
 		draw_visual_frame(VIS_WEEK3_STAGE_BACK_0, BOPEEBO_WEEK3_STAGE_X,
-			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+			city_stage_y, city_camera_x, city_camera_y, zoom_q8, 256);
 		draw_visual_frame(VIS_WEEK3_STAGE_BACK_1, BOPEEBO_WEEK3_STAGE_X + 256,
-			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-		int train_x;
-		if (week3_train_position(samples, beat_q16, rate, &train_x)) {
+			city_stage_y, city_camera_x, city_camera_y, zoom_q8, 256);
+		if (train_visible) {
+			if (week3_gf_hair_state != 1u) {
+				week3_gf_hair_state = 1u;
+				week3_gf_hair_start_sample = samples;
+			}
 			for (unsigned piece = 0; piece < 3u; piece++) {
 				unsigned frame = VIS_WEEK3_TRAIN_0 + piece;
 				draw_visual_frame(frame, train_x + (int)piece * BOPEEBO_WEEK3_TRAIN_PIECE_W,
 					60, camera_x, camera_y, zoom_q8, 256);
 			}
+		} else if (week3_gf_hair_state == 1u && !week3_train_moving) {
+			week3_gf_hair_state = 2u;
+			week3_gf_hair_start_sample = samples;
 		}
+		if (week3_gf_hair_state == 2u && rate &&
+			samples - week3_gf_hair_start_sample >= (uint32_t)(((uint64_t)rate * 30u) / 24u))
+			week3_gf_hair_state = 0;
 		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_0, BOPEEBO_WEEK3_STAGE_X,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
 		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_1, BOPEEBO_WEEK3_STAGE_X + 256,
@@ -3040,7 +3101,18 @@ static void draw_scene(uint32_t samples)
 		unsigned gf_side = (beat & 1u) ? 0u : 5u;
 		unsigned gf_pose = (unsigned)((uint64_t)beat_phase * 5u >> 16);
 		if (gf_pose > 4u) gf_pose = 4u;
-		draw_week3_character_frame(week3_gf_dance[gf_side + gf_pose],
+		unsigned week3_gf_frame = week3_gf_dance[gf_side + gf_pose];
+		if (week3_gf_hair_state == 1u || week3_gf_hair_state == 2u) {
+			uint32_t elapsed = samples >= week3_gf_hair_start_sample ?
+				samples - week3_gf_hair_start_sample : 0u;
+			unsigned source_frame = rate ? (unsigned)(((uint64_t)elapsed * 24u) / rate) : 0u;
+			unsigned pose = (source_frame % 30u) < 15u ? 0u : 1u;
+			if (week3_gf_hair_state == 1u)
+				week3_gf_frame = pose ? VIS_WEEK3_GF_HAIR_BLOW_1 : VIS_WEEK3_GF_HAIR_BLOW_0;
+			else
+				week3_gf_frame = pose ? VIS_WEEK3_GF_HAIR_FALL_1 : VIS_WEEK3_GF_HAIR_FALL_0;
+		}
+		draw_week3_character_frame(week3_gf_frame,
 			BOPEEBO_WEEK3_GF_X, BOPEEBO_WEEK3_GF_Y,
 			camera_x, camera_y, zoom_q8);
 	} else if (week5) {
