@@ -1,5 +1,9 @@
 # Adaptation PlayStation 1 — cadrage initial
 
+## Poses de chant de BF (build après v140)
+
+L’animation de chant de BF échantillonne trois images officielles par direction (début/milieu/fin), au lieu des deux premières images de l’atlas. La sélection avance depuis l’horloge audio à 15 images/s pendant le chant et les holds. Les séquences idle/faute, règles de jeu, espacement de Pico, scène et audio restent inchangés. Quatre cels de pose finale utilisent l’espace libre de la page 8bpp Week 1; quatre poses médianes remplacent les secondes poses presque identiques. Le générateur ciblé `augment_bf_sing_poses.py` évite une reconversion complète. Confirmation DuckStation en attente.
+
 ## Objectif
 
 Créer une adaptation non officielle au style PS1 marqué, en préservant autant que le matériel le permet les chansons, charts et difficultés, personnages, semaines, dialogues et modes du jeu. Le premier morceau jouable sera un jalon de validation audio, timing et gameplay, pas la limite du portage. Un mode local à deux joueurs viendra plus tard; les états d'entrée doivent donc rester distincts par joueur.

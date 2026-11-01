@@ -275,6 +275,8 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	set(_playable_visual_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_visual_data.h")
 	set(_week2_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene.bin")
 	set(_week1_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene.bin")
+	set(_bf_pose_header "${CMAKE_CURRENT_BINARY_DIR}/bf_sing_pose_data.h")
+	set(_week1_bf_pose_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene-bf-poses.bin")
 	set(_week3_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week3-scene.bin")
 	set(_week4_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week4_visual_data.h")
 	set(_week4_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week4-scene.bin")
@@ -427,6 +429,25 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			VERBATIM
 		)
 	endif()
+	# Add only four sampled official BF sing frames to the free area of the
+	# existing Week 1 8bpp atlas page. This is independent from the full visual
+	# converter, so builds that reuse converted packages stay incremental.
+	add_custom_command(
+		OUTPUT "${_bf_pose_header}" "${_week1_bf_pose_payload}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/augment_bf_sing_poses.py"
+			--assets "${FUNKIN_PS1_ASSETS_DIR}"
+			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			--base-header "${_playable_visual_header}"
+			--base-scene "${_week1_visual_payload}"
+			--output-header "${_bf_pose_header}"
+			--output-scene "${_week1_bf_pose_payload}"
+		DEPENDS augment_bf_sing_poses.py convert_bopeebo_visuals.py
+			"${_playable_visual_header}" "${_week1_visual_payload}"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml"
+		VERBATIM
+	)
+	add_custom_target(funkin-ps1-bf-sing-poses DEPENDS "${_bf_pose_header}" "${_week1_bf_pose_payload}")
 	set(_song_catalog_dependencies
 		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
 		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py")
@@ -942,7 +963,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	endif()
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		${_playable_sources}
-		"${_playable_chart_header}" "${_playable_visual_header}"
+		"${_playable_chart_header}" "${_playable_visual_header}" "${_bf_pose_header}"
 		"${_menu_audio_header}" "${_week4_header}" "${_week4_visual_header}"
 		"${_week5_header}" "${_week5_visual_header}"
 		"${_week6_header}" "${_week6_visual_header}"
@@ -951,6 +972,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}"
 		"${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
+	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bf-sing-poses)
 	add_custom_target(funkin-ps1-week5-assets DEPENDS "${_week5_header}"
 		"${_week5_visual_header}" "${_week5_scene}" ${_week5_audio_outputs} ${_week5_chart_outputs})
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-week5-assets)
@@ -989,7 +1011,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
 			"${_week2_visual_payload}"
-			"${_week1_visual_payload}"
+			"${_week1_bf_pose_payload}"
 			"${_week3_visual_payload}"
 			"${_week4_visual_payload}"
 			"${_week5_scene}"

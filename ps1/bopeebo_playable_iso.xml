@@ -6,7 +6,7 @@
 			<file name="SYSTEM.CNF" type="data" source="${PROJECT_SOURCE_DIR}/system.cnf" />
 			<file name="FUNKIN.EXE" type="data" source="funkin-ps1-bopeebo-playable.exe" />
 			<!-- Boot-time assets first: the program reads W1SCENE before its first menu frame. -->
-			<file name="W1SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week1-scene.bin" />
+			<file name="W1SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week1-scene-bf-poses.bin" />
 			<file name="W2SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week2-scene.bin" />
 			<file name="W3SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week3-scene.bin" />
 			<file name="W4SCENE.BIN" type="data" source="${PROJECT_BINARY_DIR}/week4-scene.bin" />

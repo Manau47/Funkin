@@ -61,6 +61,7 @@
 #if TEST_PLAYABLE_BOPEEBO
 #include "week4_catalog.h"
 #include "bopeebo_visual_data.h"
+#include "bf_sing_pose_data.h"
 #include "week4_visual_data.h"
 #include "menu_audio_data.h"
 #include "week5_catalog.h"
@@ -1996,6 +1997,7 @@ static void game_update(uint32_t samples)
 		bf_miss_silenced = false;
 		bf_visual_state = 1;
 		bf_visual_lane = (uint8_t)lane;
+		bf_visual_start = samples;
 		bf_visual_until = active_chart->notes[target].tail > samples ?
 			active_chart->notes[target].tail : samples + rate * 220u / 1000u;
 		if (active_chart->notes[target].tail > head && (game_buttons & mask) == 0) {
@@ -2196,6 +2198,37 @@ static void draw_visual_frame_scaled_on_page(unsigned frame, int world_x, int wo
 	DrawPrim((uint32_t *)p);
 }
 
+static void draw_visual_record_scaled_on_page(const BopeeboVisualFrame *visual,
+	int world_x, int world_y, unsigned world_w, unsigned world_h,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8,
+	unsigned page_override)
+{
+	if (!visual || visual_prim_count >= visual_prim_limit) {
+		if (visual) visual_prim_rejected++;
+		return;
+	}
+	if (!zoom_q8 || !world_w || !world_h) return;
+	unsigned page_index = page_override < BOPEEBO_VISUAL_PAGE_COUNT ? page_override : visual->page;
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
+	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
+	int w = ((int)world_w * (int)combined_scale) / 256;
+	int h = ((int)world_h * (int)combined_scale) / 256;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
+	setUV4(p, visual->u, visual->v,
+		(uint8_t)(visual->u + visual->w - 1u), visual->v,
+		visual->u, (uint8_t)(visual->v + visual->h - 1u),
+		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	set_visual_clut(p, visual);
+	DrawPrim((uint32_t *)p);
+}
+
 static void draw_visual_frame_scaled(unsigned frame, int world_x, int world_y,
 	unsigned world_w, unsigned world_h, int camera_x, int camera_y,
 	unsigned zoom_q8, unsigned scale_q8)
@@ -2247,6 +2280,28 @@ static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y
 	draw_visual_frame_scaled_on_page(frame, center_x - (int)(full_width / 2u) + trim_x,
 		floor_y - (int)full_height + trim_y, width, height, camera_x, camera_y, zoom_q8, 256u,
 		bf_base_page);
+}
+
+static void draw_bf_sing_extra_frame(unsigned extra_index, int center_x, int floor_y,
+	int camera_x, int camera_y, unsigned zoom_q8, bool week3)
+{
+	if (extra_index >= BOPEEBO_BF_SING_EXTRA_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_bf_sing_extra_frames[extra_index];
+	unsigned width = visual->w;
+	unsigned height = visual->h;
+	unsigned full_width = BOPEEBO_BF_FRAME_W;
+	unsigned full_height = BOPEEBO_BF_FRAME_H;
+	if (week3) {
+		width = ((unsigned)visual->w * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
+		height = ((unsigned)visual->h * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
+		full_width = (BOPEEBO_BF_FRAME_W * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
+		full_height = (BOPEEBO_BF_FRAME_H * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
+	}
+	unsigned page_override = week3 ? bopeebo_visual_frames[VIS_MENU_LOGO].page :
+		BOPEEBO_VISUAL_PAGE_COUNT;
+	draw_visual_record_scaled_on_page(visual,
+		center_x - (int)(full_width / 2u), floor_y - (int)full_height,
+		width, height, camera_x, camera_y, zoom_q8, 256u, page_override);
 }
 
 /* Clip Week 2's oversized static room quads on the CPU and crop their UVs.
@@ -3298,7 +3353,8 @@ static void draw_scene(uint32_t samples)
 			BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
 			camera_x, camera_y, zoom_q8, 256);
 
-	unsigned bf_frame;
+	unsigned bf_frame = VIS_BF_IDLE_0;
+	int bf_extra_pose = -1;
 	if (bf_visual_state == 2u) {
 		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
 		uint32_t miss_duration = BOPEEBO_CHART_RATE * 350u / 1000u;
@@ -3307,8 +3363,16 @@ static void draw_scene(uint32_t samples)
 		unsigned miss_pose = elapsed >= miss_duration / 3u ? 1u : 0u;
 		bf_frame = VIS_BF_MISS_LEFT_0 + (unsigned)bf_visual_lane * 2u + miss_pose;
 	}
-	else if (bf_visual_state == 1u)
-		bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + ((beat_phase >> 15) & 1u);
+	else if (bf_visual_state == 1u) {
+		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+		uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
+		if (!pose_period) pose_period = 1u;
+		unsigned pose = (unsigned)((elapsed / pose_period) % 3u);
+		if (pose < 2u)
+			bf_frame = VIS_BF_LEFT_0 + (unsigned)bf_visual_lane * 2u + pose;
+		else
+			bf_extra_pose = (int)(bf_visual_lane & 3u);
+	}
 	else
 		{
 			unsigned idle_step = (unsigned)((uint64_t)beat_phase * BOPEEBO_BF_IDLE_SEQUENCE_LENGTH >> 16);
@@ -3320,7 +3384,10 @@ static void draw_scene(uint32_t samples)
 		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
 		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
-	if (week3)
+	if (bf_extra_pose >= 0)
+		draw_bf_sing_extra_frame((unsigned)bf_extra_pose,
+			bf_world_x, bf_world_y, camera_x, camera_y, zoom_q8, week3);
+	else if (week3)
 		draw_week3_character_frame(bf_frame, bf_world_x, bf_world_y,
 			camera_x, camera_y, zoom_q8);
 	else
@@ -3832,6 +3899,7 @@ static void update_scene_demo_visuals(uint32_t samples)
 		} else {
 			bf_visual_lane = (uint8_t)note->lane;
 			bf_visual_state = 1u;
+			bf_visual_start = note->head;
 			bf_visual_until = until;
 		}
 	}
