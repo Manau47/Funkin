@@ -3001,8 +3001,8 @@ static void draw_scene(uint32_t samples)
 		int city_camera_x = camera_x * 3 / 10;
 		int city_camera_y = camera_y * 3 / 10;
 		/* Keep the parallax factor, but raise only the city composition by
-		   31 world pixels (about 46 screen pixels at the 1.5x zoom). */
-		int city_stage_y = BOPEEBO_WEEK3_STAGE_Y - 31;
+		   58 world pixels (about 87 screen pixels at the 1.5x zoom). */
+		int city_stage_y = BOPEEBO_WEEK3_STAGE_Y - 58;
 		draw_visual_frame(VIS_WEEK3_STAGE_BACK_0, BOPEEBO_WEEK3_STAGE_X,
 			city_stage_y, city_camera_x, city_camera_y, zoom_q8, 256);
 		draw_visual_frame(VIS_WEEK3_STAGE_BACK_1, BOPEEBO_WEEK3_STAGE_X + 256,
