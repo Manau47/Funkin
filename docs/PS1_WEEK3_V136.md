@@ -10,7 +10,7 @@ Les scènes partagent les pages de texture et une CLUT 8bpp. Les pages 0–7 son
 
 v136 ajoute au retour Freeplay un rechargement complet de l’atlas/palettes de base Bopeebo depuis `W1SCENE.BIN`, après le déchargement de la scène. Les indicateurs de location des packages semaine sont alors remis à `false`; l’entrée suivante recharge les pages du morceau sélectionné depuis son package. Le DJ Freeplay et son écran sont restaurés ensuite. Aucun asset, chart, son ou transform graphique n’est modifié par ce correctif.
 
-La cause est identifiée comme une faiblesse de restauration de l’état VRAM partagé; le rôle exact dans le défaut observé reste à confirmer par l’essai de ce build après un cycle Freeplay → morceau → Freeplay → morceau.
+L’inspection identifie une faiblesse possible de restauration de l’état VRAM partagé, mais le lien causal avec la corruption reste à confirmer par l’essai après un cycle Freeplay → morceau → Freeplay → morceau. Le rechargement complet de l’atlas de base en v136 est une remise à zéro conservatrice pour ce test, pas une nécessité de conserver les assets de toutes les pistes en VRAM ni l’architecture mémoire finale. Les palettes peuvent être chargées avec le paquet de scène; la pression principale porte sur les pages de texture qui doivent coexister avec les framebuffers et les éléments communs.
 
 ## Build
 
