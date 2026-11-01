@@ -2221,15 +2221,31 @@ static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y
 {
 	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT || !zoom_q8) return;
 	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	unsigned anchor_w = visual->w, anchor_h = visual->h;
+	if (frame >= VIS_WEEK3_PICO_IDLE_0 && frame <= VIS_WEEK3_PICO_SING_RIGHT_1) {
+		anchor_w = 72u;
+		anchor_h = 84u;
+	} else if (frame >= VIS_WEEK3_GF_DANCE_0 && frame <= VIS_WEEK3_GF_HAIR_FALL_5) {
+		anchor_w = 87u;
+		anchor_h = 79u;
+	}
+	unsigned full_width = (anchor_w * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
+		zoom_q8;
+	unsigned full_height = (anchor_h * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
+		zoom_q8;
 	unsigned width = ((unsigned)visual->w * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
 		zoom_q8;
 	unsigned height = ((unsigned)visual->h * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) /
 		zoom_q8;
-	if (!width || !height) return;
+	int trim_x = ((int)visual->trim_x * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + (int)zoom_q8 / 2) /
+		(int)zoom_q8;
+	int trim_y = ((int)visual->trim_y * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + (int)zoom_q8 / 2) /
+		(int)zoom_q8;
+	if (!width || !height || !full_width || !full_height) return;
 	unsigned bf_base_page = (frame >= VIS_BF_IDLE_0 && frame <= VIS_BF_RIGHT_1) ?
 		bopeebo_visual_frames[VIS_MENU_LOGO].page : BOPEEBO_VISUAL_PAGE_COUNT;
-	draw_visual_frame_scaled_on_page(frame, center_x - (int)(width / 2u),
-		floor_y - (int)height, width, height, camera_x, camera_y, zoom_q8, 256u,
+	draw_visual_frame_scaled_on_page(frame, center_x - (int)(full_width / 2u) + trim_x,
+		floor_y - (int)full_height + trim_y, width, height, camera_x, camera_y, zoom_q8, 256u,
 		bf_base_page);
 }
 
@@ -3142,11 +3158,21 @@ static void draw_scene(uint32_t samples)
 			uint32_t elapsed = samples >= week3_gf_hair_start_sample ?
 				samples - week3_gf_hair_start_sample : 0u;
 			unsigned source_frame = rate ? (unsigned)(((uint64_t)elapsed * 24u) / rate) : 0u;
-			unsigned pose = (source_frame % 30u) < 15u ? 0u : 1u;
-			if (week3_gf_hair_state == 1u)
-				week3_gf_frame = pose ? VIS_WEEK3_GF_HAIR_BLOW_1 : VIS_WEEK3_GF_HAIR_BLOW_0;
-			else
-				week3_gf_frame = pose ? VIS_WEEK3_GF_HAIR_FALL_1 : VIS_WEEK3_GF_HAIR_FALL_0;
+			unsigned timeline_frame = source_frame % 30u;
+			if (week3_gf_hair_state == 1u) {
+				static const uint8_t hair_blow[4] = {
+					VIS_WEEK3_GF_HAIR_BLOW_0, VIS_WEEK3_GF_HAIR_BLOW_1,
+					VIS_WEEK3_GF_HAIR_BLOW_2, VIS_WEEK3_GF_HAIR_BLOW_3
+				};
+				week3_gf_frame = hair_blow[timeline_frame * 4u / 30u];
+			} else {
+				static const uint8_t hair_fall[6] = {
+					VIS_WEEK3_GF_HAIR_FALL_0, VIS_WEEK3_GF_HAIR_FALL_1,
+					VIS_WEEK3_GF_HAIR_FALL_2, VIS_WEEK3_GF_HAIR_FALL_3,
+					VIS_WEEK3_GF_HAIR_FALL_4, VIS_WEEK3_GF_HAIR_FALL_5
+				};
+				week3_gf_frame = hair_fall[timeline_frame * 6u / 30u];
+			}
 		}
 		draw_week3_character_frame(week3_gf_frame,
 			BOPEEBO_WEEK3_GF_X, BOPEEBO_WEEK3_GF_Y,
@@ -3212,6 +3238,10 @@ static void draw_scene(uint32_t samples)
 			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
 				108 - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
 	} else if (week3) {
+		static const uint8_t pico_idle[4] = {
+			VIS_WEEK3_PICO_IDLE_0, VIS_WEEK3_PICO_IDLE_1,
+			VIS_WEEK3_PICO_IDLE_2, VIS_WEEK3_PICO_IDLE_3
+		};
 		static const uint8_t pico_sing[4][2] = {
 			{ VIS_WEEK3_PICO_SING_LEFT_0, VIS_WEEK3_PICO_SING_LEFT_1 },
 			{ VIS_WEEK3_PICO_SING_DOWN_0, VIS_WEEK3_PICO_SING_DOWN_1 },
@@ -3220,7 +3250,7 @@ static void draw_scene(uint32_t samples)
 		};
 		unsigned pico_frame = samples < dad_visual_until ?
 			pico_sing[dad_visual_lane & 3u][(beat_phase >> 15) & 1u] :
-			((beat_phase < 32768u) ? VIS_WEEK3_PICO_IDLE_0 : VIS_WEEK3_PICO_IDLE_1);
+			pico_idle[(beat_phase >> 14) & 3u];
 		draw_week3_character_frame(pico_frame,
 			BOPEEBO_WEEK3_PICO_X, BOPEEBO_WEEK3_PICO_Y,
 			camera_x, camera_y, zoom_q8);
