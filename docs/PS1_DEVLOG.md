@@ -414,3 +414,9 @@ Retour utilisateur sur v129 : seul le fond ville semblait avoir glissé vers le 
 
 Build séparé PSn00bSDK 0.24 / GCC MIPS 12.3 : compilation réussie; avertissements `volatile` préexistants dans cdstream. Image réordonnée et contrôlée (117 fichiers, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`), 338509248 octets. BIN SHA-256 `9660E496BDAE906C7A3A41CE1921B2B9B7DA86391059296685CCF0BEB1AA3D99`; CUE SHA-256 `32F6069BC1FB3B5A563126E84749269BFE7818B2CD07DB2DB1799EAF1B87E597`. Livraison dans `ps1/build/week3-v130-city-raise-cmake/delivery-v130-rootfix/`. La v128 reste la référence stable et v129 est conservée pour comparaison. v130 n’a pas encore été exécutée dans DuckStation : la hauteur et les régressions visuelles attendent l’essai utilisateur. Aucun test console. Détails : [`PS1_WEEK3_V130.md`](PS1_WEEK3_V130.md).
 
+
+### 2026-11-01 — v131 : relever davantage le fond ville Week 3
+
+Retour utilisateur : même après v130, le fond ville doit encore remonter d’environ 30–40 px. v131 ajoute 23 unités monde de décalage vertical au fond ville (environ 34,5 pixels écran au zoom 1,5×); décalage total par rapport à v129 : 31 unités monde, environ 46,5 px. Aucun changement au quai, au train, personnages, caméras, parallaxe, lumières, cheveux GF, chart ou audio.
+
+Ressources converties réutilisées, pas de reconversion; `week3-scene.bin` est inchangé (SHA-256 `886D0CED3C52B63C2CDEC752D59B78ADCE86894FDA4AFAD17F9F00AFF48B4AED`). Build séparé PSn00bSDK 0.24 / GCC MIPS 12.3 compilé. ISO vérifié : 117 fichiers, `SYSTEM.CNF;1` en premier, `FUNKIN.EXE;1` en deuxième, 338509248 octets. BIN SHA-256 `0ABC1392884DA8A352253417A65C6736632340D00A4361201CB3EAC7C75B6A5E`; CUE SHA-256 `21DEA8C78B05242B27F5ACFBB7F2BAB560B08E2C4644AFB246E260E77E9FC35D`. Livraison dans `ps1/build/week3-v131-city-raise-cmake/delivery-v131-rootfix/`. v131 n’a pas encore été observée dans DuckStation; essai utilisateur requis. Aucun test console. Détails : [`PS1_WEEK3_V131.md`](PS1_WEEK3_V131.md).
