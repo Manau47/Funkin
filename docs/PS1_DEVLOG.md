@@ -494,3 +494,12 @@ Le placement des cels W3 recadrés utilisait des plages numériques de numéros 
 Compilation incrémentale PSn00bSDK 0.24/GCC MIPS 12.3 réussie; le dry-run de `ps1-bopeebo-playable-disc` ne comportait que compilation de `spu_probe.c`, édition de liens et création du disque. Aucun convertisseur ni générateur audio/chart ne s’est exécuté. L’ISO est de 338 509 248 octets. BIN SHA-256 `AF7390FD068FAA46D5DA0E18D390A8B2ED294E6E6965F9BFC91182F77112A40F`; CUE SHA-256 `BF60EF5FC7517B3DF32AC5BC0C7DB3BC4DC619AC983160B4D559624F1BC068A6`. Livraison `ps1/build/week3-animation-compromise-v138/delivery-v139-palette-anchor-correction/`; manifeste : [`PS1_V139_PALETTE_ANCHOR_FIX.md`](PS1_V139_PALETTE_ANCHOR_FIX.md).
 
 **État :** différences de palette et d’ancrage établies statiquement; compilation réussie. Le nouveau disque n’a pas encore été exécuté dans DuckStation et n’est pas validé par l’utilisateur. À vérifier : couleurs du titre/options et de Tutorial/Bopeebo, poses Pico et GF pendant le train, puis parcours Freeplay → jeu → retour. Aucun essai console réelle.
+
+
+### 2026-11-01 — v139b : correction de l’ordre du répertoire ISO
+
+Retour utilisateur : le premier CUE v139 reste au logo Sony. Comparaison avec v138 : l’exécutable et `SYSTEM.CNF` v139 sont valides, mais l’entrée racine ISO `SYSTEM.CNF;1` était en position 93 au lieu de la première position attendue par la chaîne BIOS validée; `FUNKIN.EXE;1` suit en deuxième position dans v138. Le CUE initial ciblait correctement son BIN; le défaut était l’ordre racine du disque.
+
+Sans recompiler ni reconvertir, v139b repart du BIN brut du même build et applique uniquement `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` dans un nouveau dossier de livraison. L’image v139 initiale est préservée. Contrôle statique : 117 entrées, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`; directive `BOOT=cdrom:\\FUNKIN.EXE;1`; PS-X EXE de 1 021 952 octets, byte-identique au v139 initial, SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`. BIN v139b SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. Livré sous `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/`.
+
+**État :** ISO contrôlé statiquement; démarrage DuckStation de v139b à confirmer par l’utilisateur. Aucun essai console réelle.
