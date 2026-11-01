@@ -438,3 +438,9 @@ Ressources préconverties réutilisées sans reconversion; `week3-scene.bin` inc
 v133 ne décalait pas encore assez le fond ville. v134 ajoute 27 unités monde vers la gauche (~40,5 px écran au zoom 1,5×), pour un total d’environ 81 pixels depuis v129. Hauteur, quai, train, personnages et parallaxe inchangés.
 
 Ressources préconverties réutilisées; `week3-scene.bin` inchangé (SHA-256 `886D0CED3C52B63C2CDEC752D59B78ADCE86894FDA4AFAD17F9F00AFF48B4AED`). Compilation PSn00bSDK 0.24/GCC 12.3 réussie. Disque vérifié : 117 fichiers, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`, 338509248 octets. BIN SHA-256 `838AF71BEFB4543F427715F4C2015934D855D9000BA94BCFDFE8D7C6AF96BEDA`; CUE SHA-256 `FF78750116A72600F7435E17EF6DDCC1A9E722DADC3768B37BAC8C9DAD817445`. Livraison dans `ps1/build/week3-v134-city-shift-cmake/delivery-v134-rootfix/`. DuckStation/console non testés; attendre l’essai utilisateur pour confirmer composition, raccords et marges. Voir [`PS1_WEEK3_V134.md`](PS1_WEEK3_V134.md).
+
+### 2026-11-01 — v135 : décaler le fond ville de 30 px vers la gauche
+
+Après v134, l’utilisateur demande encore 30 px à gauche. v135 ajoute 20 unités monde de décalage horizontal (~30 px écran au zoom 1,5×), pour un total d’environ 111 px depuis v129. Hauteur approuvée, quai, train, personnages et caméra inchangés.
+
+Aucune reconversion; `week3-scene.bin` inchangé (SHA-256 `886D0CED3C52B63C2CDEC752D59B78ADCE86894FDA4AFAD17F9F00AFF48B4AED`). Build PSn00bSDK 0.24/GCC 12.3 compilé. ISO contrôlé : 117 fichiers, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`, 338509248 octets. BIN SHA-256 `AD0E8A58C54B59717AB90A2B72090BF2FFF78AF3AF4F238FB182FB6BADF82E23`; CUE SHA-256 `89B42CA537E16FB2ACFF8365215311C36B29CFAE55C60291A10D06068683374E`. Livraison dans `ps1/build/week3-v135-city-shift-cmake/delivery-v135-rootfix/`. Pas d’exécution DuckStation/console; vérifier rognage et raccords à l’essai utilisateur. Voir [`PS1_WEEK3_V135.md`](PS1_WEEK3_V135.md).
