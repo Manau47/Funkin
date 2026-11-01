@@ -1584,3 +1584,12 @@ Toutes les scènes jouées sélectionnent déjà la danse de GF depuis l’horlo
 Seul `spu_probe.c` a été recompilé. Le dry-run annonçait deux objets C, le lien puis l’image disque. Aucun asset, chart, stem, décor ni scène n’a été reconverti. Les paquets Week 1–3 du build v90 sont réutilisés avec les mêmes SHA-256; la carte VRAM, la mémoire SPU et les flux CD sont inchangés. Le total ELF `.text/.rodata/.data/.sdata/.sbss/.bss` est 922 442 octets. Le CUE distinct utilise une copie ISO réordonnée pour avoir `SYSTEM.CNF` puis `FUNKIN.EXE` comme deux premières entrées racine; le BIN généré brut est conservé.
 
 **État :** compilé et contrôlé statiquement, essai manuel DuckStation en attente. Aucun rendu v106 n’a encore été observé par Codex ou validé par l’utilisateur, et aucune console réelle n’a été testée. Voir le [manifeste v106](PS1_WEEK2_V106.md) pour le chemin du CUE, les hashes et les détails de compilation.
+
+## Audit de chargement VRAM/RAM et réduction des transferts (v137, essai)
+
+L’état source/configuration v136 est archivé dans [`PS1_VRAM_AUDIT_BASELINE_V136.md`](PS1_VRAM_AUDIT_BASELINE_V136.md). La v136 elle-même n’a pas été confirmée par l’utilisateur; elle demeure une base de code, pas une validation de stabilité. L’audit statique des transitions et de la carte mémoire est dans [`PS1_VRAM_LOADING_AUDIT_V136.md`](PS1_VRAM_LOADING_AUDIT_V136.md).
+
+Les modifications v137 retirent les réécritures immédiatement remplacées : logo W1 relu avant l’overlay menu, CLUT réécrite par les chargeurs inactifs, pages de semaine restaurées avant le rechargement W1 au retour Freeplay, et paquets complets relus au Retry alors que Game Over n’altère que la CLUT et la zone d’animation. Au Retry Week 3, la page BF de secours reste rechargée. Le propriétaire de la région de scènes partagée est suivi explicitement. Les données de scène, audio, chart, composition et gameplay ne changent pas.
+
+Les gains chiffrés dans l’audit sont des calculs à partir des appels CD et GPU et ne sont pas des mesures d’exécution. v137b a été compilée et vérifiée statiquement; les détails de dry-run, configuration, BIN/CUE, hashes et contrôle ISO sont dans [`PS1_VRAM_LOADING_V137.md`](PS1_VRAM_LOADING_V137.md). Attendre le retour utilisateur après plusieurs cycles Freeplay → semaines différentes → Game Over/Retry avant toute conclusion de stabilité/corruption. Aucun test console réelle n’est revendiqué.
+

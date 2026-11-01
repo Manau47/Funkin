@@ -182,6 +182,10 @@ static bool week5_visuals_loaded;
 static bool week6_visuals_loaded;
 static bool week7_visuals_loaded;
 static bool weekend1_visuals_loaded;
+/* Owner of the shared scene pages/8bpp CLUT: 0=transition/unknown, 1=base,
+   2..9=active week package. Page 7's Freeplay DJ and page 8's menu/death art
+   remain separately tracked because they have independent lifetimes. */
+static uint8_t vram_scene_owner_stage = 1u;
 static int menu_art_loaded = -1;
 static bool menu_capsule_loaded;
 static int menu_selection = 1; /* Freeplay is the only functional destination. */
@@ -581,6 +585,7 @@ static bool load_bopeebo_visuals(void)
 	/* The page atlas lives on CD; retain only one aligned page in main RAM. */
 	uint32_t *page_data = (uint32_t *)malloc(65536u);
 	if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+	vram_scene_owner_stage = 0u;
 	unsigned menu_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
 	for (unsigned page = 0; page < BOPEEBO_VISUAL_PAGE8_COUNT; page++) {
 		if (page == menu_page) continue;
@@ -627,27 +632,28 @@ static bool load_bopeebo_visuals(void)
 	LoadImage(&relocated_popup_palette_rect, (uint32_t *)bopeebo_visual_palette_popup4);
 #endif
 	DrawSync(0);
+	/* This atlas overwrote every shared week slot and the shared CLUT. */
+	week2_visuals_loaded = false;
+	week3_visuals_loaded = false;
+	week4_visuals_loaded = false;
+	week5_visuals_loaded = false;
+	week6_visuals_loaded = false;
+	week7_visuals_loaded = false;
+	weekend1_visuals_loaded = false;
+	vram_scene_owner_stage = 1u;
 	return true;
 }
 
 static bool load_menu_visuals(void)
 {
 	if (menu_visuals_loaded) return true;
-	unsigned page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
-	if (page >= BOPEEBO_VISUAL_PAGE8_COUNT) return false;
-	const BopeeboVisualPage *info = &bopeebo_visual_page_table[page];
-	RECT rect = { (short)info->x, (short)info->y, 128, 256 };
-	uint32_t *page_data = (uint32_t *)malloc(65536u);
-	if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
-	if (!read_cd_file_range("\\W1SCENE.BIN", page * 32u, 32u, page_data)) {
-		free(page_data); failure_code = FAIL_ASSET_LOAD; return false;
+	if (vram_scene_owner_stage != 1u) {
+		failure_code = FAIL_ASSET_LOAD;
+		return false;
 	}
-	LoadImage(&rect, page_data);
-	DrawSync(0);
-	free(page_data);
-	RECT palette = { 0, 496, 256, 1 };
-	LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
-	DrawSync(0);
+	/* The logo page is never sampled by the menu: load_menu_screen_art() uploads
+	   the selected full-screen artwork into this page before drawing it. The
+	   base palette is already owned by the canonical Week 1 atlas. */
 	menu_visuals_loaded = true;
 	return true;
 }
@@ -971,69 +977,98 @@ static void load_weekend1_visuals(bool enable)
 
 static void load_song_stage_visuals(void)
 {
-	if (active_song->stage_id == 8u || active_song->stage_id == 9u) {
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week5_visuals(false);
-		load_week6_visuals(false);
-		load_week7_visuals(false);
-		load_weekend1_visuals(true);
-	} else if (active_song->stage_id == 7u) {
-		load_weekend1_visuals(false);
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week5_visuals(false);
-		load_week6_visuals(false);
-		load_week7_visuals(true);
-	} else if (active_song->stage_id == 6u) {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week5_visuals(false);
-		load_week6_visuals(true);
-	} else if (active_song->stage_id == 2u) {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week6_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week2_visuals(true);
-	} else if (active_song->stage_id == 3u) {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week6_visuals(false);
-		load_week2_visuals(false);
-		load_week4_visuals(false);
-		load_week3_visuals(true);
-	} else if (active_song->stage_id == 4u) {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week6_visuals(false);
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week5_visuals(false);
-		load_week4_visuals(true);
-	} else if (active_song->stage_id == 5u) {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week6_visuals(false);
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week5_visuals(true);
-	} else {
-		load_weekend1_visuals(false);
-		load_week7_visuals(false);
-		load_week6_visuals(false);
-		load_week2_visuals(false);
-		load_week3_visuals(false);
-		load_week4_visuals(false);
-		load_week5_visuals(false);
+	/* Freeplay establishes the canonical Week 1 atlas and clears every week
+	   ownership flag. Therefore a song entry only needs to acquire its own
+	   package; calling all inactive loaders redundantly rewrites the same CLUT. */
+	if (vram_scene_owner_stage != 1u) {
+		failure_code = FAIL_ASSET_LOAD;
+		return;
 	}
+	if (active_song->stage_id >= 2u && active_song->stage_id <= 9u)
+		vram_scene_owner_stage = 0u;
+	switch (active_song->stage_id) {
+	case 2u: load_week2_visuals(true); break;
+	case 3u: load_week3_visuals(true); break;
+	case 4u: load_week4_visuals(true); break;
+	case 5u: load_week5_visuals(true); break;
+	case 6u: load_week6_visuals(true); break;
+	case 7u: load_week7_visuals(true); break;
+	case 8u:
+	case 9u: load_weekend1_visuals(true); break;
+	default: break; /* Week 1 already is the canonical base atlas. */
+	}
+	if (failure_code != FAIL_ASSET_LOAD)
+		vram_scene_owner_stage = active_song->stage_id;
+}
+
+/* Game Over only replaces the shared 8bpp CLUT and animates in the menu/logo
+   page. The week texture pages remain resident. Restore just the active
+   package's palette before retry; Week 3 also uses the menu page as a live BF
+   atlas, so restore that one page after the death animation overwrote it. */
+static bool restore_song_stage_after_game_over(void)
+{
+	const char *palette_path = 0;
+	unsigned palette_sector = 0;
+	unsigned stage_id = active_song ? active_song->stage_id : 1u;
+	if (vram_scene_owner_stage != stage_id) {
+		failure_code = FAIL_ASSET_LOAD;
+		return false;
+	}
+	vram_scene_owner_stage = 0u;
+	switch (stage_id) {
+	case 2u: palette_path = "\\W2SCENE.BIN"; palette_sector = BOPEEBO_WEEK2_PAGE_COUNT * 32u; break;
+	case 3u: palette_path = "\\W3SCENE.BIN"; palette_sector = BOPEEBO_WEEK3_PAGE_COUNT * 32u; break;
+	case 4u: palette_path = "\\W4SCENE.BIN"; palette_sector = BOPEEBO_WEEK4_PAGE_COUNT * 32u; break;
+	case 5u: palette_path = "\\W5SCENE.BIN"; palette_sector = BOPEEBO_WEEK5_PAGE_COUNT * 32u; break;
+	case 6u: palette_path = "\\W6SCENE.BIN"; palette_sector = BOPEEBO_WEEK6_PAGE_COUNT * 32u; break;
+	case 7u: palette_path = "\\W7SCENE.BIN"; palette_sector = BOPEEBO_WEEK7_PAGE_COUNT * 32u; break;
+	case 8u:
+	case 9u: palette_path = "\\WEND1.BIN"; palette_sector = BOPEEBO_WEEKEND1_PAGE_COUNT * 32u; break;
+	default: break;
+	}
+
+	if (stage_id == 3u) {
+		unsigned source_page = bopeebo_visual_frames[VIS_BF_IDLE_0].page;
+		unsigned destination_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
+		if (source_page >= BOPEEBO_VISUAL_PAGE8_COUNT ||
+		    destination_page >= BOPEEBO_VISUAL_PAGE8_COUNT ||
+		    source_page == destination_page)
+			return false;
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+		const BopeeboVisualPage *page = &bopeebo_visual_page_table[destination_page];
+		RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+		bool read_ok = read_cd_file_range("\\W1SCENE.BIN", source_page * 32u, 32u, page_data);
+		if (read_ok) {
+			LoadImage(&rect, page_data);
+			DrawSync(0);
+		}
+		free(page_data);
+		if (!read_ok) { failure_code = FAIL_ASSET_LOAD; return false; }
+	}
+
+	if (!palette_path) {
+		RECT palette = { 0, 496, 256, 1 };
+		DrawSync(0);
+		LoadImage(&palette, (uint32_t *)bopeebo_visual_palette8);
+		DrawSync(0);
+		vram_scene_owner_stage = (uint8_t)stage_id;
+		return true;
+	}
+
+	uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+	if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+	bool read_ok = read_cd_file_range(palette_path, palette_sector, 1u, palette_data);
+	if (read_ok) {
+		RECT palette = { 0, 496, 256, 1 };
+		DrawSync(0);
+		LoadImage(&palette, palette_data);
+		DrawSync(0);
+	}
+	free(palette_data);
+	if (!read_ok) failure_code = FAIL_ASSET_LOAD;
+	else vram_scene_owner_stage = (uint8_t)stage_id;
+	return read_ok;
 }
 
 static void load_freeplay_dj_pages(bool restore_gameplay)
@@ -3899,16 +3934,12 @@ static void begin_retry_countdown(void)
 	release_song_resources();
 	show_loading_screen("RETRYING SONG");
 	SpuSetKey(0, 1u << 11u);
-	/* The death screen replaces the shared CLUT and the W2 atlas page 8;
-	   restore the selected song package before presenting the countdown. */
-	if (active_song->stage_id == 2u) week2_visuals_loaded = false;
-	if (active_song->stage_id == 3u) week3_visuals_loaded = false;
-	if (active_song->stage_id == 4u) week4_visuals_loaded = false;
-	if (active_song->stage_id == 5u) week5_visuals_loaded = false;
-	if (active_song->stage_id == 6u) week6_visuals_loaded = false;
-	if (active_song->stage_id == 7u) week7_visuals_loaded = false;
-	if (active_song->stage_id == 8u || active_song->stage_id == 9u) weekend1_visuals_loaded = false;
-	load_song_stage_visuals();
+	/* Gameplay page slots survive Game Over. Re-read only its overwritten CLUT
+	   (and Week 3's BF backup page, which shares the death-animation page). */
+	if (!restore_song_stage_after_game_over()) {
+		show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
+		return;
+	}
 	reset_game_state();
 	countdown_start_frame = gameplay_frame_counter;
 	game_screen = SCREEN_COUNTDOWN;
@@ -3964,28 +3995,13 @@ static void return_to_freeplay(void)
 	release_song_resources();
 	show_loading_screen("RETURNING TO FREEPLAY");
 	release_song_chart();
-	load_week2_visuals(false);
-	load_week3_visuals(false);
-	load_week4_visuals(false);
-	load_week5_visuals(false);
-	load_week6_visuals(false);
-	load_week7_visuals(false);
-	load_weekend1_visuals(false);
-	/* Stage packages lease overlapping texture pages and replace the shared
-	   8bpp CLUT. Freeplay also leases page 7 for its DJ animation. Establish a
-	   canonical Week 1 atlas/palette after unloading the active stage so the
-	   next song never depends on a partially restored VRAM state. */
+	/* Stage packages lease overlapping pages and one shared CLUT. The full
+	   Week 1 atlas below is the Freeplay destination, so restoring the active
+	   week first would upload pages only to overwrite them immediately. */
 	if (!load_bopeebo_visuals()) {
 		show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 		return;
 	}
-	week2_visuals_loaded = false;
-	week3_visuals_loaded = false;
-	week4_visuals_loaded = false;
-	week5_visuals_loaded = false;
-	week6_visuals_loaded = false;
-	week7_visuals_loaded = false;
-	weekend1_visuals_loaded = false;
 	load_freeplay_dj_pages(false);
 	if (!load_menu_visuals()) show_error(failure_code ? failure_code : FAIL_ASSET_LOAD);
 	song_finished = true;
@@ -4887,3 +4903,4 @@ int main(void)
 #endif
 	}
 }
+
