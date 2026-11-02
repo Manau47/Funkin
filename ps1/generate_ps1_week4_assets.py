@@ -120,6 +120,21 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
     blend_at(stage, stage_size, bg_limo, (370, 64), (31, 80))
     blend_at(stage, stage_size, limo, (341, 108), (44, 88))
 
+    # A PS1 8bpp page is 256x256 texels. Do not split the 512x256 RGBA
+    # buffer into two byte ranges: that turns each row into two texture rows
+    # and scrambles the world. Copy each source row's left/right half into
+    # the matching page, preserving the stage's 512x256 spatial layout.
+    stage_pages = [bytearray(PAGE_BYTES * 4), bytearray(PAGE_BYTES * 4)]
+    source_stride = 512 * 4
+    page_stride = PAGE_W * 4
+    for y in range(PAGE_H):
+        source_row = y * source_stride
+        page_row = y * page_stride
+        stage_pages[0][page_row:page_row + page_stride] = stage[
+            source_row:source_row + page_stride]
+        stage_pages[1][page_row:page_row + page_stride] = stage[
+            source_row + page_stride:source_row + source_stride]
+
     mom_rig = Rig(assets / "shared/images/characters/momCar", ffmpeg)
     # Main timeline frame IDs follow the official Mom Car Animate atlas:
     # Up=0, Right=14, Down=23, Left=37, Idle=46.
@@ -131,8 +146,8 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
                         0, 0, 150, 150, (24, 24))
 
     images: list[tuple[str, bytearray, int, int]] = [
-        ("stage0", stage[:PAGE_BYTES * 4], 256, 256),
-        ("stage1", stage[PAGE_BYTES * 4:], 256, 256),
+        ("stage0", stage_pages[0], 256, 256),
+        ("stage1", stage_pages[1], 256, 256),
     ]
     frames: list[tuple[str, int, int, int, int, int]] = [
         ("STAGE_0", 0, 0, 0, 256, 256), ("STAGE_1", 1, 0, 0, 256, 256),
@@ -249,3 +264,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
