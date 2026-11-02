@@ -481,29 +481,25 @@ L’atlas personnage W3 reste à quatre pages 8bpp et le paquet W3 reste à 524 
 
 Le dry-run prévoit uniquement compilation `spu_probe.c`, lien et image disque; aucune reconversion n’est déclenchée par CMake. Compilation PSn00bSDK 0.24/GCC 12.3 réussie. ISO contrôlé (117 fichiers, `SYSTEM.CNF;1` premier, `FUNKIN.EXE;1` deuxième), BIN 338 509 248 octets. BIN SHA-256 `09CABCD4A323A7C662C5436E74994CD4C4669E5DE65E3AFC471A9F6C9CF3E375`; CUE SHA-256 `29227A2C07AAE64828498B64FC24DBD85699561BD1E25AC1D1794A2C32F7ACB2`. Livraison `ps1/build/week3-animation-compromise-v138/delivery-v138-pico-gf-compromise-final/`. Pas d’essai DuckStation : l’utilisateur chargera le CUE; animations, composition, audio et cycles restent à confirmer. Aucun essai console. Détails : [`PS1_WEEK3_ANIMATION_COMPROMISE_V138.md`](PS1_WEEK3_ANIMATION_COMPROMISE_V138.md).
 
-
-
 ### 2026-11-01 — v139 : restaurer la palette de base et corriger les ancrages Pico/GF
 
 L’utilisateur signale des couleurs incorrectes sur GF à l’écran titre, l’option Options, Tutorial/Bopeebo, ainsi qu’un placement Pico incohérent en Week 3. Analyse de l’en-tête généré v138 : 240 entrées sur 256 de `bopeebo_visual_palette8` divergeaient du paquet de base v129b alors que les pages W1 déjà empaquetées étaient réutilisées. Le build mélangeait donc des pixels indexés issus de l’ancienne conversion et une CLUT recalculée. La génération a aussi pris l’image Options officielle comme solution de repli, car la source locale approuvée n’était pas présente dans cet environnement. Ce n’était pas un défaut GPU en exécution.
 
 La correction conserve les ressources globales/menu, la CLUT, les pages et les descripteurs non-W3 de la base v129b, puis fusionne uniquement les nouveaux descripteurs et poses W3 issus de v138. Le script reproductible `ps1/merge_week3_animation_header.py` valide les tables de pages, palettes et noms de frames avant d’écrire l’en-tête fusionné. Le fichier v138 remplacé a été conservé sous `ps1/build/week3-animation-compromise-v138/preconverted-base/bopeebo_visual_data.h.v138-palette-mismatch`; aucune ressource officielle ni SDK n’est ajouté au dépôt.
 
-Le placement des cels W3 recadrés utilisait des plages numériques de numéros de frame. L’ordre d’empaquetage ne rend pas ces plages monotones, donc certaines poses recevaient parfois le mauvais ancrage. `BopeeboVisualFrame` porte maintenant une classe d’ancrage explicite; les frames Pico et GF utilisent chacune leur point d’ancrage adapté. Aucune animation, taille d’affichage, caméra ou règle de gameplay n’est modifiée.
+Le placement des cels W3 recadrés utilisait des plages numériques de numéros de frame. L’ordre d’empaquetage ne rend pas ces plages monotones (les frames Pico/GF pertinentes sont numérotées dans l’ordre inverse), donc des poses recevaient parfois le mauvais ancrage. `BopeeboVisualFrame` porte maintenant une classe d’ancrage explicite; les frames Pico et GF utilisent chacune leur point d’ancrage adapté. Aucune animation, taille d’affichage, caméra ou règle de gameplay n’est modifiée.
 
 Compilation incrémentale PSn00bSDK 0.24/GCC MIPS 12.3 réussie; le dry-run de `ps1-bopeebo-playable-disc` ne comportait que compilation de `spu_probe.c`, édition de liens et création du disque. Aucun convertisseur ni générateur audio/chart ne s’est exécuté. L’ISO est de 338 509 248 octets. BIN SHA-256 `AF7390FD068FAA46D5DA0E18D390A8B2ED294E6E6965F9BFC91182F77112A40F`; CUE SHA-256 `BF60EF5FC7517B3DF32AC5BC0C7DB3BC4DC619AC983160B4D559624F1BC068A6`. Livraison `ps1/build/week3-animation-compromise-v138/delivery-v139-palette-anchor-correction/`; manifeste : [`PS1_V139_PALETTE_ANCHOR_FIX.md`](PS1_V139_PALETTE_ANCHOR_FIX.md).
 
 **État :** différences de palette et d’ancrage établies statiquement; compilation réussie. Le nouveau disque n’a pas encore été exécuté dans DuckStation et n’est pas validé par l’utilisateur. À vérifier : couleurs du titre/options et de Tutorial/Bopeebo, poses Pico et GF pendant le train, puis parcours Freeplay → jeu → retour. Aucun essai console réelle.
 
-
 ### 2026-11-01 — v139b : correction de l’ordre du répertoire ISO
 
-Retour utilisateur : le premier CUE v139 reste au logo Sony. Comparaison avec v138 : l’exécutable et `SYSTEM.CNF` v139 sont valides, mais l’entrée racine ISO `SYSTEM.CNF;1` était en position 93 au lieu de la première position attendue par la chaîne BIOS validée; `FUNKIN.EXE;1` suit en deuxième position dans v138. Le CUE initial ciblait correctement son BIN; le défaut était l’ordre racine du disque.
+Retour utilisateur : le premier CUE v139 reste au logo Sony. Comparaison avec v138 : l’exécutable et `SYSTEM.CNF` v139 sont valides, mais l’entrée racine ISO `SYSTEM.CNF;1` était en position 93 au lieu de la première position attendue par la chaîne BIOS validée; `FUNKIN.EXE;1` suivait en deuxième position dans v138. Le fichier CUE initial ciblait correctement son BIN, le défaut était l’ordre racine du disque.
 
-Sans recompiler ni reconvertir, v139b repart du BIN brut du même build et applique uniquement `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` dans un nouveau dossier de livraison. L’image v139 initiale est préservée. Contrôle statique : 117 entrées, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`; directive `BOOT=cdrom:\\FUNKIN.EXE;1`; PS-X EXE de 1 021 952 octets, byte-identique au v139 initial, SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`. BIN v139b SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. Livré sous `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/`.
+Sans recompiler ni reconvertir, v139b repart du BIN brut du même build et applique uniquement `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` dans un nouveau dossier de livraison. L’image v139 initiale est préservée. Vérification statique v139b : 117 entrées, `SYSTEM.CNF;1` puis `FUNKIN.EXE;1`; directive `BOOT=cdrom:\\FUNKIN.EXE;1`; PS-X EXE 1 021 952 octets byte-identique au v139 initial, SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`. BIN v139b SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. Livré sous `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/`.
 
-**État :** ISO contrôlé statiquement; démarrage DuckStation de v139b à confirmer par l’utilisateur. Aucun essai console réelle.
-
+**État :** ordre et contenu ISO contrôlés statiquement; DuckStation n’a pas encore confirmé le démarrage de v139b. L’essai utilisateur est requis avant de poursuivre l’inspection visuelle. Aucun test console réelle.
 
 ### 2026-11-01 — v140 : espacer Pico et BF en Week 3
 
@@ -523,12 +519,16 @@ Le script ciblé `ps1/augment_bf_sing_poses.py` réutilise la palette BF existan
 
 Le CMake ne relance pas le convertisseur général : il génère uniquement ces huit cels BF (quatre images médianes et quatre finales), leur petit tableau de descripteurs et une copie de `W1SCENE.BIN` de même taille avec la page 7 patchée. Le build PSn00bSDK 0.24 / GCC MIPS 12.3 a réussi. La livraison v141 et ses hashes sont consignés dans [`PS1_BF_SING_V141.md`](PS1_BF_SING_V141.md). Le CUE attend maintenant l’essai DuckStation de l’utilisateur. À vérifier en particulier : fluidité des quatre chants, orientation des poses, tenue longue, Week 3 après copie de la page BF, faute/récupération, relance et retour Freeplay. Aucun essai console réelle ni validation utilisateur pour cette passe.
 
-
 ## v142 — poses de chant pour Week 6, Week 7 et Weekend 1 (2 novembre 2026)
 
-L'atlas partagé de BF étendu en v141 couvre les Weeks 1 à 5. Cette passe l'étend à BF pixel de Week 6, BF de Week 7 et Pico joueur de Weekend 1 classique. Le générateur ciblé `ps1/augment_week_sing_poses.py` complète les paquets convertis sans conversion générale et réutilise les CLUT existantes. Week 6 obtient trois poses distinctes par direction, en utilisant l'espace libre d'une page. Les rigs Week 7 et Pico Weekend 1 ont deux images distinctes parmi les instants officiels début/milieu/fin examinés; ils alternent deux poses à 15 images/s selon l'horloge audio. Blazin et ses animations de combat ne changent pas.
+La remarque utilisateur est que Pico est convaincant mais BF semble moins fluide et manque de poses. L'atlas partagé qui couvre Week 1–5 avait déjà reçu les poses échantillonnées v141. Cette passe étend ce principe à BF pixel Week 6 et au rig BF de Week 7; Weekend 1 utilise Pico comme joueur sur Darnell/Lit Up/2Hot. Blazin et ses poses de combat ne sont pas modifiés.
 
-Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja réussie. L'ELF mesure 1 061 858 octets texte+données+BSS. Seule Week 7 gagne une page 8bpp (+65 536 octets); W6 et Weekend 1 réutilisent l'espace libre. Les chart, flux, gameplay, son et compositions ne changent pas. Manifeste et hashes dans [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md). Le CUE attend l'essai utilisateur; aucun DuckStation ni test console n'est revendiqué.
+Le nouvel outil `ps1/augment_week_sing_poses.py` complète les paquets déjà convertis avec leurs CLUT existantes, sans relancer les conversions générales. Week 6 gagne deux poses par direction (trois visibles au total) dans de l'espace de texture libre et conserve les 328 192 octets de scène. Week 7 n'a que deux rendus distincts parmi les instants init/milieu/fin examinés dans le rig officiel : elle alterne ces deux poses à 15 images/s et gagne une page 8bpp (+65 536 octets VRAM/CD pour la scène active). Weekend 1 ajoute une pose alternative par direction de Pico dans l'espace libre de sa page 7, sans grossir le paquet. Les sélections suivent l'horloge d'échantillons audio, à partir de l'événement chant; cadrage, gameplay, charts, sons, audio et compositions restent inchangés.
+
+PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja : compilation et image BIN/CUE produites. Les ressources Week 4/5 et le son/chart préconvertis ont été réutilisés; aucune reconversion audio, générale, chart ou décor. L'ELF compte 1 061 858 octets texte+données+BSS; staging de scène 64 Kio et ring audio 96 Kio inchangés. La seule hausse de paquet est la page Week 7. Les détails, hashes, configuration et commande de reproduction sont dans [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md).
+
+Le CUE n'a pas été lancé dans DuckStation pendant cette passe. Merci de l'essayer; je ne revendique ni fluidité observée dans l'émulateur, ni validation utilisateur, ni test console réelle.
+
 ## v143 — cycles d’animation étendus, Weeks 4–7 et Weekend 1 (2 novembre 2026)
 
 En réponse au retour sur les GF tardives limitées à deux poses et les adversaires rigides, ajout de cels officiels de danse GF, d’idles et de poses de chant dans Week 4, Week 5, Week 6, Week 7 et Weekend 1. Weeks 1–3 conservent les cycles déjà présents; Blazin et Spirit (dont le rig ne fournit pas de poses distinctes supplémentaires exploitables) restent limités aux cels disponibles. Pico/Darnell classiques reçoivent plus d’états dans Weekend 1. Les sélections sont synchronisées sur l’horloge audio. Aucun gameplay, timing, chart, caméra, composition, qualité audio ou son n’est modifié.
@@ -538,7 +538,6 @@ Le script `ps1/augment_week_animations_v143.py` reprend les paquets préconverti
 Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 à jour; dry-run final sans tâche. Le BIN brut est préservé. La copie de livraison change uniquement l’ordre racine de l’ISO : `SYSTEM.CNF` était en entrée 93; le CUE fourni a `SYSTEM.CNF` en entrée 1 et `FUNKIN.EXE` en entrée 2. BIN 339 116 064 octets, SHA-256 `0D48786850065B0018E9AAAC3BBEEC51651262F94E270E7EAE9F245CB25DC8AD`; CUE SHA-256 `6CDFC57781348025AD36D8A2F86732D762E04114F94CF8B1C5E12B1D8294FE7A`. Livraison hors Git `ps1/build/v143-animation-pass/delivery-v143-week-animations-rootfix/`.
 
 **État :** build et contrôles statiques réussis. DuckStation n’a pas été lancé; les animations ne sont pas observées sur ce build. Essai manuel requis sur W4–W7 et Weekend 1, avec les retours idle et contrôle stabilité audio. Pas de test console réelle.
-
 
 ## Retry W4 après Game Over — v144 (2 novembre 2026)
 
@@ -550,10 +549,22 @@ Le signalement utilisateur concerne un retry après game over sur MILF : la pist
 
 **Diagnostics :** `show_error()` utilisait `FntPrint(-1)`, dont la zone par défaut ne rendait pas les lignes de détails dans le cadre visible. Une région 304×224 est maintenant ouverte après `FntLoad`; les erreurs et données CD/SPU s’affichent dans cette zone. Le titre est devenu générique car toutes les erreurs ne viennent pas du flux SPU.
 
-**Build v144 :** compilation incrémentale PSn00bSDK 0.24/GCC 12.3. Le dry-run prévoyait seulement trois tâches : compilation de `spu_probe.c`, lien ELF et fabrication de l’image disque ; aucune conversion d’assets. Les anciens artefacts v143 et le cache/configuration ont été copiés avant génération dans `ps1/build/v144-milf-retry-fix/archive-v143-before-fix/`. Contrôle statique ISO : `SYSTEM.CNF` puis `FUNKIN.EXE` dans les deux premières entrées racine, en-tête PS-X EXE reconnu, et EXE extrait identique à l’EXE lié.
+**Build v144 :** compilation incrémentale PSn00bSDK 0.24/GCC 12.3. Le dry-run prévoyait seulement trois tâches : compilation de `spu_probe.c`, lien ELF et fabrication de l’image disque ; aucune conversion d’assets. Les anciens artefacts v143 et le cache/configuration ont été copiés avant build dans `ps1/build/v144-milf-retry-fix/archive-v143-before-fix/`. Contrôle statique ISO : `SYSTEM.CNF` puis `FUNKIN.EXE` dans les deux premières entrées racine, en-tête PS-X EXE reconnu, et EXE extrait identique à l’EXE lié.
 
 **Résultats :** compilation et contrôles ISO réussis. Le CUE v144 n’a pas encore été exécuté dans DuckStation ; le retry MILF reste à confirmer par l’utilisateur. Pas de validation console réelle.
 
 ### v144b — portée de la police d’erreur et image finale
 
-Avant la livraison, la déclaration de la police dédiée a été déplacée hors du bloc réservé au gameplay, car `show_error()` est aussi présent dans les probes. La cible secondaire `funkin-ps1-bopeebo-4ch-audio` n’a pas été compilée : son dry-run prévoyait la régénération de `bopeebo_sfx_data.h`/ `.vag`, inutile à ce correctif. Pour le build jouable, le dry-run final reste limité à la compilation de `spu_probe.c`, au lien et à l’image CD. Le disque final est la variante séparée `delivery-v144b-milf-retry-fix/`; BIN SHA-256 `E8EDE48C7E08A7ED00328B2F267DEA6F1508E7F0C2A95B84BDC62B523EAD1A3C`, CUE SHA-256 `0619CAD3085313DB3DF21998B644ACF012AD0A7155AB72EB6870F5BB4459251F`. Exécution DuckStation toujours en attente.
+Avant la livraison, la déclaration de la police dédiée a été déplacée hors du bloc réservé au gameplay, car `show_error()` est aussi présent dans les probes. La cible secondaire `funkin-ps1-bopeebo-4ch-audio` n’a pas été compilée : son dry-run prévoyait la régénération de `bopeebo_sfx_data.h`/`.vag`, inutile à ce correctif. Pour le build jouable, le dry-run final reste limité à la compilation de `spu_probe.c`, au lien et à l’image CD. Le disque final est la variante séparée `delivery-v144b-milf-retry-fix/`; BIN SHA-256 `E8EDE48C7E08A7ED00328B2F267DEA6F1508E7F0C2A95B84BDC62B523EAD1A3C`, CUE SHA-256 `0619CAD3085313DB3DF21998B644ACF012AD0A7155AB72EB6870F5BB4459251F`. Exécution DuckStation toujours en attente.
+
+## Week 4 — décor visible et poses Mom cohérentes (v145, essai)
+
+La scène Week 4 avait un défaut de découpe du bitmap 512×256 en deux pages : les moitiés étaient prises dans le tableau d’octets, ce qui séparait les données par rangées au lieu de couper l’image par colonnes. La conversion copie maintenant chaque demi-rangée vers sa page. Au rendu, les quads de fond agrandis sont découpés au viewport avec UV ajustées sur CPU.
+
+Les poses Mom ajoutées gardent le canevas officiel uniforme 72×84. Les cycles idle et chant prélèvent trois cels du rig officiel et tournent à 24 images/s depuis l’horloge audio, avec les durées officielles des séquences. Cela vise à stabiliser ses proportions et son animation; ce n’est pas encore une validation en jeu.
+
+Le paquet Week 4 passe de 262 656 à 393 728 octets (+131 072, deux pages 8bpp). Build jouable PSn00bSDK 0.24/GCC 12.3 compilé et livré. Contrôle statique : exécutable de 1 028 096 octets; W4SCENE extrait du disque identique au paquet préconverti (SHA-256 `1f178ae8fad8ec86d4914569050e8eac070702d6a1b336c56b734cf3679b5360`). BIN SHA-256 `7ea06c970517e1ac92f7f90905dd21973be27ebc99bdf34733f1ce18da59c08d`; CUE SHA-256 `d8ed08eac76f9ab390c1271aa21c61dcf7cfb3d5c71b67e1f843e389a2c43869`.
+
+**État :** compilé et vérifié statiquement; DuckStation attend le chargement manuel et le retour utilisateur. La prévisualisation convertie n’est pas une observation d’exécution. Les couches mobiles `bgLimo`/`limo` restent statiques dans cette étape; audio, charts, caméra et gameplay ne changent pas. Aucun test console réelle. Détails : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md).
+
+
