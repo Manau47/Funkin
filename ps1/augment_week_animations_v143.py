@@ -121,17 +121,31 @@ def week4(args):
     mom = Rig(assets / "shared/images/characters/momCar", ffmpeg)
     gf = Rig(assets / "shared/images/characters/gfCar", ffmpeg)
     mom_base = [46, 37, 23, 0, 14]
-    mom_extra = [50, 55, 41, 30, 5, 18]
-    mom_pixels = rig_cels(mom, mom_base, mom_extra)
+    # Sample the pinned root timeline at intermediate points. These indices
+    # are inside its official 0-14/14-23/23-37/37-46/46-59 action spans.
+    # Keep every Mom cel in the same 72x84 anchored box as the original cels.
+    mom_extra = [50, 55, 40, 43, 28, 33, 5, 10, 17, 20]
+    mom_pixels = rig_cels(mom, mom_base, mom_extra, 72, 84)
     dance_ids = list(range(0, 30, 3))
     gf_pixels = fit_anchored_rig(gf, dance_ids, 64, 64, anchor_frame_ids=[0, 15])
     gf_extra_ids = [source for source in dance_ids if source not in (0, 15)]
     extras = [(f"GF_DANCE_V143_{i}", gf_pixels[source], 64, 64)
               for i, source in enumerate(gf_extra_ids)]
-    mom_names = ["MOM_IDLE_1", "MOM_IDLE_2", "MOM_LEFT_ALT", "MOM_DOWN_ALT", "MOM_UP_ALT", "MOM_RIGHT_ALT"]
-    extras += [(f"MOM_{name.split('_', 1)[1]}" if name.startswith("MOM_") else f"MOM_{name}",
-                mom_pixels[source], 64, 64) for name, source in zip(mom_names, mom_extra)]
     put_frames(directory, "week4-scene.bin", "week4_visual_data.h", "WEEK4", extras, 3)
+
+    mom_names = [
+        "MOM_IDLE_1", "MOM_IDLE_2",
+        "MOM_LEFT_ALT_1", "MOM_LEFT_ALT_2",
+        "MOM_DOWN_ALT_1", "MOM_DOWN_ALT_2",
+        "MOM_UP_ALT_1", "MOM_UP_ALT_2",
+        "MOM_RIGHT_ALT_1", "MOM_RIGHT_ALT_2",
+    ]
+    mom_extras = [(name, mom_pixels[source], 72, 84)
+                  for name, source in zip(mom_names, mom_extra)]
+    # Nine 72x84 cels fit in a 3x3 grid on one page; the tenth uses one
+    # cel on a second page. These remain separate from GF's 64x64 dance page.
+    put_frames(directory, "week4-scene.bin", "week4_visual_data.h", "WEEK4",
+               mom_extras, 4, slots_per_page=9)
 
 
 def week5(args):
