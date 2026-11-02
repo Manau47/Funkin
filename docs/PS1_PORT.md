@@ -1597,17 +1597,15 @@ Les modifications v137 retirent les réécritures immédiatement remplacées : l
 
 Les gains chiffrés dans l’audit sont des calculs à partir des appels CD et GPU et ne sont pas des mesures d’exécution. v137b a été compilée et vérifiée statiquement; les détails de dry-run, configuration, BIN/CUE, hashes et contrôle ISO sont dans [`PS1_VRAM_LOADING_V137.md`](PS1_VRAM_LOADING_V137.md). Attendre le retour utilisateur après plusieurs cycles Freeplay → semaines différentes → Game Over/Retry avant toute conclusion de stabilité/corruption. Aucun test console réelle n’est revendiqué.
 
+## Poses de chant additionnelles (build v142)
 
+Le traitement de poses échantillonnées de BF v141 s'étend maintenant à la Week 6 (BF pixel), à la Week 7 (BF) et à Weekend 1 (Pico joueur sur les pistes classiques). Chaque scène alterne des poses officielles suivant l'horloge audio à 15 images/s; le nombre de poses distinctes varie avec les rigs disponibles. Les animations de combat Blazin restent inchangées. Cette passe ne touche pas les compositions, charts, règles, sons ni mixage. Voir [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md). Exécution DuckStation et validation utilisateur encore attendues.
 
-## Poses de chant additionnelles (v142)
-
-Les poses échantillonnées de BF couvrant déjà W1–W5 s'étendent à la Week 6 (BF pixel), Week 7 (BF) et Weekend 1 (Pico joueur sur les pistes classiques). Les rigs sont animés depuis l'horloge audio à 15 images/s avec le nombre de poses réellement distinctes disponible. Blazin reste intact. Aucun changement de composition, chart, règles ou mixage. Détails : [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md). CUE compilé, test DuckStation encore attendu.
 ## Animations Weeks 4–7 et Weekend 1 (v143, essai)
 
 Ajoute des poses officielles échantillonnées pour GF (cycles de 10 cels), les idles et chants de Mom/Parents/Monster, Senpai, Tankman, Pico et Darnell là où les rigs donnent des poses distinctes. Les cycles suivent la position audio. Weeks 1–3 gardent leurs cycles existants; Blazin reste inchangé. Spirit n’a pas de poses supplémentaires distinctes exploitables dans le rig empaqueté. Aucun changement de chart, gameplay, caméra, composition ou audio. Détails : [`PS1_ANIMATIONS_V143.md`](PS1_ANIMATIONS_V143.md).
 
 Build PSn00bSDK/GCC compilé et prêt; le CUE à tester manuellement est `ps1/build/v143-animation-pass/delivery-v143-week-animations-rootfix/funkin-ps1-v143-week-animations.cue`. La compilation n’est pas une validation visuelle : DuckStation n’a pas été exécuté sur v143 et le retour utilisateur est attendu. Aucun test console réelle.
-
 
 ## Retry après game over — v144 (2 novembre 2026)
 
@@ -1615,8 +1613,16 @@ Le retry sur MILF atteignait un échec avant la reprise du streaming. `begin_ret
 
 Le chargeur réutilise maintenant le paquet si son propriétaire VRAM correspond à `active_song->stage_id`; il ne recharge le paquet que depuis le propriétaire Freeplay/W1. En plus, l’écran d’erreur a sa propre région de texte visible (304×224) au lieu de la région par défaut `FntPrint(-1)`, qui masquait les détails. Aucun changement aux règles, à l’audio ni aux visuels normaux.
 
-Le dry-run a listé trois tâches uniquement : compilation C, lien ELF et création du disque ; aucune conversion de ressource. L’ISO livré a été contrôlé statiquement (ordre racine SYSTEM.CNF/FUNKIN.EXE et identité de l’exécutable extrait). Compilation réussie ; exécution et retry DuckStation en attente de l’essai utilisateur. Console réelle non testée.
+Le dry-run a listé trois tâches uniquement : compilation C, lien ELF et création du disque ; aucune conversion de ressource. L’ISO livré a été contrôlé statiquement (ordre racine SYSTEM.CNF/FUNKIN.EXE et identité de l’exécutable extrait). Compilation réussie ; exécution et retry DuckStation en attente de l’essai utilisateur. Console réelle non testée. Détails et hashes dans `ps1/build/v144-milf-retry-fix/delivery-v144-milf-retry-fix/BUILD-MANIFEST.txt`.
 
 ### Image livrée v144b
 
 La déclaration de la police d’erreur est commune aux cibles, pour garder `show_error()` compilable hors du gameplay. Le probe audio secondaire n’a pas été compilé, car son dry-run prévoyait de régénérer les données SFX alors que cela n’est pas requis ici. Le dernier dry-run du jeu n’avait que trois actions (compile, link, ISO), sans conversion des ressources. BIN/CUE v144b et hashes figurent dans son manifeste de livraison. Exécution DuckStation toujours non observée.
+
+## Week 4 — décor et Mom (v145, build d’essai)
+
+Le fond Week 4 est séparé correctement en pages gauche/droite (copie par rangée), puis dessiné avec découpage au viewport et UV ajustées. Les cels de Mom conservent le canevas officiel 72×84; trois poses idle et trois par direction de chant sont échantillonnées depuis le rig et choisies à 24 images/s par l’horloge audio.
+
+Le paquet de scène actif fait 393 728 octets, soit +131 072 octets (+2 pages 8bpp) par rapport au paquet pré-v145. Le buffer de transfert reste 64 Kio. Audio, charts, placements, caméra et règles inchangés. BIN/CUE distinct et manifeste : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md). Build et contrôle ISO statiques réussis; test DuckStation utilisateur en attente. Les couches de limousine ne sont pas animées dans ce jalon.
+
+
