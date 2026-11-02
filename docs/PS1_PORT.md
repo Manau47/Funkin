@@ -1616,3 +1616,7 @@ Le retry sur MILF atteignait un échec avant la reprise du streaming. `begin_ret
 Le chargeur réutilise maintenant le paquet si son propriétaire VRAM correspond à `active_song->stage_id`; il ne recharge le paquet que depuis le propriétaire Freeplay/W1. En plus, l’écran d’erreur a sa propre région de texte visible (304×224) au lieu de la région par défaut `FntPrint(-1)`, qui masquait les détails. Aucun changement aux règles, à l’audio ni aux visuels normaux.
 
 Le dry-run a listé trois tâches uniquement : compilation C, lien ELF et création du disque ; aucune conversion de ressource. L’ISO livré a été contrôlé statiquement (ordre racine SYSTEM.CNF/FUNKIN.EXE et identité de l’exécutable extrait). Compilation réussie ; exécution et retry DuckStation en attente de l’essai utilisateur. Console réelle non testée.
+
+### Image livrée v144b
+
+La déclaration de la police d’erreur est commune aux cibles, pour garder `show_error()` compilable hors du gameplay. Le probe audio secondaire n’a pas été compilé, car son dry-run prévoyait de régénérer les données SFX alors que cela n’est pas requis ici. Le dernier dry-run du jeu n’avait que trois actions (compile, link, ISO), sans conversion des ressources. BIN/CUE v144b et hashes figurent dans son manifeste de livraison. Exécution DuckStation toujours non observée.
