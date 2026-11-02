@@ -1608,3 +1608,11 @@ Ajoute des poses officielles échantillonnées pour GF (cycles de 10 cels), les 
 
 Build PSn00bSDK/GCC compilé et prêt; le CUE à tester manuellement est `ps1/build/v143-animation-pass/delivery-v143-week-animations-rootfix/funkin-ps1-v143-week-animations.cue`. La compilation n’est pas une validation visuelle : DuckStation n’a pas été exécuté sur v143 et le retour utilisateur est attendu. Aucun test console réelle.
 
+
+## Retry après game over — v144 (2 novembre 2026)
+
+Le retry sur MILF atteignait un échec avant la reprise du streaming. `begin_retry_countdown()` restaurait la palette W4, puis `enter_bopeebo()` appelait `load_song_stage_visuals()`. Cette fonction n’acceptait que `vram_scene_owner_stage == 1`, rejetant la scène W4 déjà chargée et signalant `FAIL_ASSET_LOAD` (10). Ce diagnostic vient du chemin statique ; la capture utilisateur ne rend pas lisible le numéro exact.
+
+Le chargeur réutilise maintenant le paquet si son propriétaire VRAM correspond à `active_song->stage_id`; il ne recharge le paquet que depuis le propriétaire Freeplay/W1. En plus, l’écran d’erreur a sa propre région de texte visible (304×224) au lieu de la région par défaut `FntPrint(-1)`, qui masquait les détails. Aucun changement aux règles, à l’audio ni aux visuels normaux.
+
+Le dry-run a listé trois tâches uniquement : compilation C, lien ELF et création du disque ; aucune conversion de ressource. L’ISO livré a été contrôlé statiquement (ordre racine SYSTEM.CNF/FUNKIN.EXE et identité de l’exécutable extrait). Compilation réussie ; exécution et retry DuckStation en attente de l’essai utilisateur. Console réelle non testée.
