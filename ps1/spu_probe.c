@@ -197,6 +197,7 @@ static int menu_detail_font_id = -1;
 static int menu_hint_font_id = -1;
 static int menu_song_font_id = -1;
 static int menu_button_anim_loaded = -1;
+static int error_font_id = -1;
 typedef enum { DEATH_INTRO, DEATH_LOOP, DEATH_CONFIRM } DeathPhase;
 static DeathPhase death_phase;
 static uint32_t death_phase_start_frame;
@@ -539,6 +540,7 @@ static void init_video(void)
 	SetDispMask(1);
 	VSync(0);
 	FntLoad(960, 0);
+	error_font_id = FntOpen(8, 8, 304, 224, 0, 1024);
 #if TEST_PLAYABLE_BOPEEBO
 	hud_font_id = FntOpen(32, 39, 256, 9, 0, 40);
 	/* Put the score on a second row under the life bar. The previous top-row
@@ -978,6 +980,11 @@ static void load_weekend1_visuals(bool enable)
 
 static void load_song_stage_visuals(void)
 {
+	/* A retry restores the active stage palette before the countdown. Keep that
+	   package: requiring the Freeplay/base owner here would reject a valid retry
+	   (for example MILF/W4, whose scene owner is stage 4). */
+	if (active_song && vram_scene_owner_stage == active_song->stage_id)
+		return;
 	/* Freeplay establishes the canonical Week 1 atlas and clears every week
 	   ownership flag. Therefore a song entry only needs to acquire its own
 	   package; calling all inactive loaders redundantly rewrites the same CLUT. */
@@ -1364,39 +1371,40 @@ static void show_error(int code)
 	if (Stream_IsActive(&stream))
 		Stream_Stop();
 	for (;;) {
-		FntPrint(-1, "SPU STREAM ERROR / CODE %d\n\n", code);
-		FntPrint(-1, "CD ERRORS %u  UNDERRUNS %u\n", (unsigned)read_errors,
+		int font = error_font_id >= 0 ? error_font_id : -1;
+		FntPrint(font, "FUNKIN PS1 ERROR / CODE %d\n", code);
+		FntPrint(font, "CD ERRORS %u  UNDERRUNS %u\n", (unsigned)read_errors,
 			(unsigned)underruns);
-		FntPrint(-1, "BUFFER %u / %u\n", (unsigned)stream.buffer.length,
+		FntPrint(font, "BUFFER %u / %u\n", (unsigned)stream.buffer.length,
 			(unsigned)stream.config.buffer_size);
-		FntPrint(-1, "READ PENDING %d\n", (int)read_ctx.read_pending);
-		FntPrint(-1, "SECTORS REQ %lu  LAST %u\n",
+		FntPrint(font, "READ PENDING %d\n", (int)read_ctx.read_pending);
+		FntPrint(font, "SECTORS REQ %lu LAST %u\n",
 			(unsigned long)read_ctx.total_requested_sectors,
 			(unsigned)read_ctx.last_read_sectors);
-		FntPrint(-1, "CALLBACKS %u  OK %u  ERR %u\n",
+		FntPrint(font, "CALLBACKS %u OK %u ERR %u\n",
 			(unsigned)read_ctx.callbacks_received,
 			(unsigned)read_ctx.callbacks_complete,
 			(unsigned)read_ctx.callbacks_error);
-		FntPrint(-1, "SECTORS RX %lu\n", (unsigned long)read_ctx.total_received_sectors);
-		FntPrint(-1, "LAST EVT %d  DATA %02X %02X %02X %02X\n",
+		FntPrint(font, "SECTORS RX %lu\n", (unsigned long)read_ctx.total_received_sectors);
+		FntPrint(font, "LAST EVT %d DATA %02X %02X %02X %02X\n",
 			(int)read_ctx.last_event, (unsigned)read_ctx.last_payload[0],
 			(unsigned)read_ctx.last_payload[1], (unsigned)read_ctx.last_payload[2],
 			(unsigned)read_ctx.last_payload[3]);
-		FntPrint(-1, "CDREAD %d  CDSYNC %d\n", (int)read_ctx.last_cdread_return,
+		FntPrint(font, "CDREAD %d CDSYNC %d\n", (int)read_ctx.last_cdread_return,
 			(int)read_ctx.last_cdsync_return);
-		FntPrint(-1, "SYNC DATA %02X %02X %02X %02X\n",
+		FntPrint(font, "SYNC DATA %02X %02X %02X %02X\n",
 			(unsigned)read_ctx.last_sync_result[0], (unsigned)read_ctx.last_sync_result[1],
 			(unsigned)read_ctx.last_sync_result[2], (unsigned)read_ctx.last_sync_result[3]);
-		FntPrint(-1, "CAUSE %d: %s\n", (int)read_ctx.error_cause,
+		FntPrint(font, "CAUSE %d: %s\n", (int)read_ctx.error_cause,
 			read_error_name(read_ctx.error_cause));
 #if TEST_BOPEEBO_4CH
 #if !TEST_PLAYABLE_BOPEEBO
-		FntPrint(-1, "SFX WRITE %u/%u DMA %d ADDR %05X\n",
+		FntPrint(font, "SFX WRITE %u/%u DMA %d ADDR %05X\n",
 			(unsigned)sfx_write_size, (unsigned)SFX_SAMPLE_SIZE,
 			sfx_transfer_completed, (unsigned)SFX_SPU_ADDR);
 #endif
 #endif
-		FntFlush(-1);
+		FntFlush(font);
 		display_frame();
 	}
 }
