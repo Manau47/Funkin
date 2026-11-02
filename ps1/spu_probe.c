@@ -782,7 +782,7 @@ static void load_week4_visuals(bool enable)
 		uint32_t *page_data = (uint32_t *)malloc(65536u);
 		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
 		for (unsigned i = 0; i < BOPEEBO_WEEK4_PAGE_COUNT; i++) {
-			unsigned page_index = i; /* Week 4 leases the first three gameplay pages. */
+			unsigned page_index = i; /* Week 4 leases its package pages while active. */
 			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
 			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
 			if (enable) {
@@ -2387,6 +2387,48 @@ static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
 	DrawPrim((uint32_t *)p);
 }
 
+/* Week 4's 2.05x camera makes each 256x256 background tile exceed the PS1
+   viewport on both axes. Clip the quad and its UVs on the CPU, as for Week 2,
+   so the GPU never receives the oversized off-screen background primitive. */
+static void draw_week4_stage_tile(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	if (visual_prim_count >= visual_prim_limit ||
+	    frame >= WEEK4_VISUAL_FRAME_COUNT || !zoom_q8) {
+		visual_prim_rejected++;
+		return;
+	}
+	const Week4VisualFrame *visual = &week4_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256;
+	int width = ((int)visual->w * (int)zoom_q8) / 256;
+	int height = ((int)visual->h * (int)zoom_q8) / 256;
+	if (width <= 0 || height <= 0) return;
+	int x1 = x0 + width, y1 = y0 + height;
+	int draw_x0 = x0 < 0 ? 0 : x0;
+	int draw_y0 = y0 < 0 ? 0 : y0;
+	int draw_x1 = x1 > SCREEN_W ? SCREEN_W : x1;
+	int draw_y1 = y1 > SCREEN_H ? SCREEN_H : y1;
+	if (draw_x0 >= draw_x1 || draw_y0 >= draw_y1) return;
+	unsigned u0 = visual->u + (unsigned)((int64_t)(draw_x0 - x0) * visual->w / width);
+	unsigned v0 = visual->v + (unsigned)((int64_t)(draw_y0 - y0) * visual->h / height);
+	unsigned u1 = visual->u + (unsigned)(((int64_t)(draw_x1 - x0) * visual->w + width - 1) / width) - 1u;
+	unsigned v1 = visual->v + (unsigned)(((int64_t)(draw_y1 - y0) * visual->h + height - 1) / height) - 1u;
+	if (u1 > 255u) u1 = 255u;
+	if (v1 > 255u) v1 = 255u;
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, draw_x0, draw_y0, draw_x1, draw_y0,
+		draw_x0, draw_y1, draw_x1, draw_y1);
+	setUV4(p, u0, v0, u1, v0, u0, v1, u1, v1);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
 static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
@@ -3221,10 +3263,10 @@ static void draw_scene(uint32_t samples)
 		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_1, BOPEEBO_WEEK3_STAGE_X + 256,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
 	} else if (week4) {
-		draw_week4_visual_frame(WEEK4_FRAME_STAGE_0, BOPEEBO_WEEK4_STAGE_X,
-			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
-		draw_week4_visual_frame(WEEK4_FRAME_STAGE_1, BOPEEBO_WEEK4_STAGE_X + 256,
-			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
+		draw_week4_stage_tile(WEEK4_FRAME_STAGE_0, BOPEEBO_WEEK4_STAGE_X,
+			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
+		draw_week4_stage_tile(WEEK4_FRAME_STAGE_1, BOPEEBO_WEEK4_STAGE_X + 256,
+			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
 	} else if (week5) {
 		unsigned stage_frame = active_song->opponent_kind == PS1_OPPONENT_MONSTER ?
 			WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
@@ -3453,16 +3495,30 @@ static void draw_scene(uint32_t samples)
 	} else if (week4) {
 		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
 			WEEK4_FRAME_MOM_IDLE_1, WEEK4_FRAME_MOM_IDLE_2 };
-		unsigned mom_frame = mom_idle[beat_pose(beat_q16, 3u)];
+		uint32_t sample_rate = stream.config.sample_rate > 0 ?
+			(uint32_t)stream.config.sample_rate : BOPEEBO_CHART_RATE;
+		uint32_t idle_frame = (uint32_t)(((uint64_t)samples * 24u / sample_rate) % 13u);
+		unsigned idle_pose = idle_frame < 4u ? 0u : idle_frame < 9u ? 1u : 2u;
+		unsigned mom_frame = mom_idle[idle_pose];
 		if (samples < dad_visual_until) {
-			static const uint8_t sing[4] = {
-				WEEK4_FRAME_MOM_LEFT, WEEK4_FRAME_MOM_DOWN,
-				WEEK4_FRAME_MOM_UP, WEEK4_FRAME_MOM_RIGHT
+			static const uint8_t sing[4][3] = {
+				{ WEEK4_FRAME_MOM_LEFT, WEEK4_FRAME_MOM_LEFT_ALT_1,
+				  WEEK4_FRAME_MOM_LEFT_ALT_2 },
+				{ WEEK4_FRAME_MOM_DOWN, WEEK4_FRAME_MOM_DOWN_ALT_1,
+				  WEEK4_FRAME_MOM_DOWN_ALT_2 },
+				{ WEEK4_FRAME_MOM_UP, WEEK4_FRAME_MOM_UP_ALT_1,
+				  WEEK4_FRAME_MOM_UP_ALT_2 },
+				{ WEEK4_FRAME_MOM_RIGHT, WEEK4_FRAME_MOM_RIGHT_ALT_1,
+				  WEEK4_FRAME_MOM_RIGHT_ALT_2 }
 			};
-			static const uint8_t sing_alt[4] = { WEEK4_FRAME_MOM_LEFT_ALT,
-				WEEK4_FRAME_MOM_DOWN_ALT, WEEK4_FRAME_MOM_UP_ALT, WEEK4_FRAME_MOM_RIGHT_ALT };
+			static const uint8_t sing_frames_per_action[4] = { 9u, 14u, 14u, 9u };
 			unsigned lane = dad_visual_lane & 3u;
-			mom_frame = beat_pose(beat_q16, 2u) ? sing_alt[lane] : sing[lane];
+			uint32_t elapsed = samples >= dad_visual_start ? samples - dad_visual_start : 0u;
+			unsigned timeline_frame = (unsigned)(((uint64_t)elapsed * 24u) / sample_rate);
+			unsigned action_frame = timeline_frame % sing_frames_per_action[lane];
+			unsigned pose = action_frame * 3u / sing_frames_per_action[lane];
+			if (pose > 2u) pose = 2u;
+			mom_frame = sing[lane][pose];
 		}
 		draw_week4_visual_frame(mom_frame,
 			BOPEEBO_WEEK4_MOM_X - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_W / 2u),
