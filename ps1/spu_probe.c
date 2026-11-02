@@ -2767,6 +2767,19 @@ static uint32_t music_beat_q16(uint32_t samples)
 	return beat > 0xffffffffu ? 0xffffffffu : (uint32_t)beat;
 }
 
+static unsigned beat_pose(uint32_t beat_q16, unsigned count)
+{
+	if (count < 2u) return 0u;
+	return (unsigned)(((uint64_t)(beat_q16 & 0xffffu) * count) >> 16);
+}
+
+static unsigned gf_dance_pose(uint32_t beat_q16)
+{
+	/* Alternate the official dance sides every beat; five sampled cels fill
+	   each beat and remain locked to the audio clock. */
+	return ((beat_q16 >> 16) & 1u) * 5u + beat_pose(beat_q16, 5u);
+}
+
 static uint32_t music_sample_for_beat(uint32_t beat)
 {
 	uint32_t target_q16 = beat << 16;
@@ -2828,13 +2841,18 @@ static uint32_t menu_beat_q16(uint32_t samples, unsigned sample_rate)
 static void draw_week6_scene(uint32_t samples)
 {
 	uint32_t beat_q16 = music_beat_q16(samples);
-	uint32_t beat = beat_q16 >> 16;
-	uint32_t beat_phase = beat_q16 & 0xffffu;
 	unsigned stage = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ?
 		WEEK6_FRAME_STAGE_EVIL : WEEK6_FRAME_STAGE_SCHOOL;
 	draw_week6_visual_frame(stage, 0, 0, SCREEN_W, SCREEN_H);
 
-	unsigned gf_frame = (beat & 1u) ? WEEK6_FRAME_GF_DANCE_0 : WEEK6_FRAME_GF_DANCE_1;
+	static const uint8_t gf_dance[10] = {
+		WEEK6_FRAME_GF_DANCE_0, WEEK6_FRAME_GF_DANCE_2,
+		WEEK6_FRAME_GF_DANCE_3, WEEK6_FRAME_GF_DANCE_4,
+		WEEK6_FRAME_GF_DANCE_5, WEEK6_FRAME_GF_DANCE_1,
+		WEEK6_FRAME_GF_DANCE_6, WEEK6_FRAME_GF_DANCE_7,
+		WEEK6_FRAME_GF_DANCE_8, WEEK6_FRAME_GF_DANCE_9
+	};
+	unsigned gf_frame = gf_dance[gf_dance_pose(beat_q16)];
 	draw_week6_visual_frame(gf_frame, 138, 87, 48, 48);
 
 	unsigned opponent_frame;
@@ -2843,22 +2861,32 @@ static void draw_week6_scene(uint32_t samples)
 			WEEK6_FRAME_SENPAI_LEFT, WEEK6_FRAME_SENPAI_DOWN,
 			WEEK6_FRAME_SENPAI_UP, WEEK6_FRAME_SENPAI_RIGHT
 		};
+		static const uint8_t senpai_alt[4] = { WEEK6_FRAME_SENPAI_LEFT_ALT,
+			WEEK6_FRAME_SENPAI_DOWN_ALT, WEEK6_FRAME_SENPAI_UP_ALT, WEEK6_FRAME_SENPAI_RIGHT_ALT };
 		static const uint8_t angry_sing[4] = {
 			WEEK6_FRAME_ANGRY_LEFT, WEEK6_FRAME_ANGRY_DOWN,
 			WEEK6_FRAME_ANGRY_UP, WEEK6_FRAME_ANGRY_RIGHT
 		};
+		static const uint8_t angry_alt[4] = { WEEK6_FRAME_ANGRY_LEFT_ALT,
+			WEEK6_FRAME_ANGRY_DOWN_ALT, WEEK6_FRAME_ANGRY_UP_ALT, WEEK6_FRAME_ANGRY_RIGHT_ALT };
 		static const uint8_t spirit_sing[4] = {
 			WEEK6_FRAME_SPIRIT_LEFT, WEEK6_FRAME_SPIRIT_DOWN,
 			WEEK6_FRAME_SPIRIT_UP, WEEK6_FRAME_SPIRIT_RIGHT
 		};
 		unsigned lane = dad_visual_lane & 3u;
-		opponent_frame = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? spirit_sing[lane] :
-			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ? angry_sing[lane] : senpai_sing[lane];
+		bool alternate = beat_pose(beat_q16, 2u) != 0u;
+		if (active_song->opponent_kind == PS1_OPPONENT_SPIRIT)
+			opponent_frame = spirit_sing[lane];
+		else if (active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY)
+			opponent_frame = alternate ? angry_alt[lane] : angry_sing[lane];
+		else
+			opponent_frame = alternate ? senpai_alt[lane] : senpai_sing[lane];
 	} else {
+		static const uint8_t senpai_idle[2] = { WEEK6_FRAME_SENPAI_IDLE, WEEK6_FRAME_SENPAI_IDLE_ALT };
+		static const uint8_t angry_idle[2] = { WEEK6_FRAME_ANGRY_IDLE, WEEK6_FRAME_ANGRY_IDLE_ALT };
 		opponent_frame = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? WEEK6_FRAME_SPIRIT_IDLE :
-			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ? WEEK6_FRAME_ANGRY_IDLE :
-			WEEK6_FRAME_SENPAI_IDLE;
-		(void)beat_phase;
+			active_song->opponent_kind == PS1_OPPONENT_SENPAI_ANGRY ?
+			angry_idle[beat_pose(beat_q16, 2u)] : senpai_idle[beat_pose(beat_q16, 2u)];
 	}
 	int opponent_x = active_song->opponent_kind == PS1_OPPONENT_SPIRIT ? 25 : 42;
 	draw_week6_visual_frame(opponent_frame, opponent_x, 65, 84, 92);
@@ -2888,17 +2916,29 @@ static void draw_week6_scene(uint32_t samples)
 static void draw_week7_scene(uint32_t samples)
 {
 	uint32_t beat_q16 = music_beat_q16(samples);
-	uint32_t beat = beat_q16 >> 16;
 	/* The paired pages are a 512px wide precomposed 4:3 battlefield. */
 	draw_week7_visual_frame(WEEK7_FRAME_STAGE_LEFT, -96, 0, 256, SCREEN_H);
 	draw_week7_visual_frame(WEEK7_FRAME_STAGE_RIGHT, 160, 0, 256, SCREEN_H);
-	unsigned gf = (beat & 1u) ? WEEK7_FRAME_GF_DANCE_0 : WEEK7_FRAME_GF_DANCE_1;
+	static const uint8_t gf_dance[10] = {
+		WEEK7_FRAME_GF_DANCE_0, WEEK7_FRAME_GF_DANCE_V143_0,
+		WEEK7_FRAME_GF_DANCE_V143_1, WEEK7_FRAME_GF_DANCE_V143_2,
+		WEEK7_FRAME_GF_DANCE_V143_3, WEEK7_FRAME_GF_DANCE_1,
+		WEEK7_FRAME_GF_DANCE_V143_4, WEEK7_FRAME_GF_DANCE_V143_5,
+		WEEK7_FRAME_GF_DANCE_V143_6, WEEK7_FRAME_GF_DANCE_V143_7
+	};
+	unsigned gf = gf_dance[gf_dance_pose(beat_q16)];
 	draw_week7_visual_frame(gf, 135, 88, 48, 64);
 	static const uint8_t tank_sing[4] = {
 		WEEK7_FRAME_TANK_LEFT, WEEK7_FRAME_TANK_DOWN,
 		WEEK7_FRAME_TANK_UP, WEEK7_FRAME_TANK_RIGHT
 	};
-	unsigned tank = samples < dad_visual_until ? tank_sing[dad_visual_lane & 3u] : WEEK7_FRAME_TANK_IDLE;
+	static const uint8_t tank_alt[4] = { WEEK7_FRAME_TANK_LEFT_ALT,
+		WEEK7_FRAME_TANK_DOWN_ALT, WEEK7_FRAME_TANK_UP_ALT, WEEK7_FRAME_TANK_RIGHT_ALT };
+	static const uint8_t tank_idle[3] = { WEEK7_FRAME_TANK_IDLE,
+		WEEK7_FRAME_TANK_IDLE_1, WEEK7_FRAME_TANK_IDLE_2 };
+	unsigned tank = samples < dad_visual_until ?
+		(beat_pose(beat_q16, 2u) ? tank_alt[dad_visual_lane & 3u] : tank_sing[dad_visual_lane & 3u]) :
+		tank_idle[beat_pose(beat_q16, 3u)];
 	draw_week7_visual_frame(tank, 46, 82, 82, 96);
 	static const uint8_t bf_sing[4] = {
 		WEEK7_FRAME_BF_LEFT, WEEK7_FRAME_BF_DOWN,
@@ -2927,21 +2967,29 @@ static void draw_weekend1_scene(uint32_t samples)
 	draw_weekend1_visual_frame(blazin ? WEND_FRAME_STAGE_BLAZIN_1 : WEND_FRAME_STAGE_STREET_1,
 		160, 0, 256, SCREEN_H);
 	if (!blazin) {
-		static const unsigned pico_sing[4] = { WEND_FRAME_PICO_LEFT, WEND_FRAME_PICO_DOWN,
-			WEND_FRAME_PICO_UP, WEND_FRAME_PICO_RIGHT };
-		static const unsigned pico_alt[4] = { WEND_FRAME_PICO_LEFT_ALT, WEND_FRAME_PICO_DOWN_ALT,
-			WEND_FRAME_PICO_UP_ALT, WEND_FRAME_PICO_RIGHT_ALT };
+		static const unsigned pico_sing[4][3] = {
+			{ WEND_FRAME_PICO_LEFT, WEND_FRAME_PICO_LEFT_ALT, WEEKEND1_FRAME_PICO_LEFT_END },
+			{ WEND_FRAME_PICO_DOWN, WEND_FRAME_PICO_DOWN_ALT, WEEKEND1_FRAME_PICO_DOWN_END },
+			{ WEND_FRAME_PICO_UP, WEND_FRAME_PICO_UP_ALT, WEEKEND1_FRAME_PICO_UP_END },
+			{ WEND_FRAME_PICO_RIGHT, WEND_FRAME_PICO_RIGHT_ALT, WEEKEND1_FRAME_PICO_RIGHT_END }
+		};
+		static const unsigned pico_idle[3] = { WEND_FRAME_PICO_IDLE,
+			WEEKEND1_FRAME_PICO_IDLE_1, WEEKEND1_FRAME_PICO_IDLE_2 };
 		static const unsigned darnell_sing[4] = { WEND_FRAME_DARNELL_LEFT, WEND_FRAME_DARNELL_DOWN,
 			WEND_FRAME_DARNELL_UP, WEND_FRAME_DARNELL_RIGHT };
-		uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
-		if (!pose_period) pose_period = 1u;
-		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
-		unsigned phase = (unsigned)((elapsed / pose_period) & 1u);
+		static const unsigned darnell_alt[4] = { WEEKEND1_FRAME_DARNELL_LEFT_ALT,
+			WEEKEND1_FRAME_DARNELL_DOWN_ALT, WEEKEND1_FRAME_DARNELL_UP_ALT,
+			WEEKEND1_FRAME_DARNELL_RIGHT_ALT };
+		static const unsigned darnell_idle[3] = { WEND_FRAME_DARNELL_IDLE,
+			WEEKEND1_FRAME_DARNELL_IDLE_1, WEEKEND1_FRAME_DARNELL_IDLE_2 };
 		unsigned lane = bf_visual_lane & 3u;
 		unsigned pico = samples < bf_visual_until ?
-			(phase ? pico_alt[lane] : pico_sing[lane]) :
-			WEND_FRAME_PICO_IDLE;
-		unsigned darnell = samples < dad_visual_until ? darnell_sing[dad_visual_lane & 3u] : WEND_FRAME_DARNELL_IDLE;
+			pico_sing[lane][beat_pose(music_beat_q16(samples), 3u)] :
+			pico_idle[beat_pose(music_beat_q16(samples), 3u)];
+		unsigned darnell = samples < dad_visual_until ?
+			(beat_pose(music_beat_q16(samples), 2u) ? darnell_alt[dad_visual_lane & 3u] :
+			 darnell_sing[dad_visual_lane & 3u]) :
+			darnell_idle[beat_pose(music_beat_q16(samples), 3u)];
 		draw_weekend1_visual_frame(darnell, 43, 92, 79, 99);
 		draw_weekend1_visual_frame(pico, 217, 129, 72, 90);
 	} else {
@@ -3262,11 +3310,25 @@ static void draw_scene(uint32_t samples)
 			BOPEEBO_WEEK3_GF_X, BOPEEBO_WEEK3_GF_Y,
 			camera_x, camera_y, zoom_q8);
 	} else if (week5) {
-		draw_week5_visual_frame((beat & 1u) ? WEEK5_FRAME_GF_DANCE_1 : WEEK5_FRAME_GF_DANCE_0,
+		static const uint8_t dance[10] = {
+			WEEK5_FRAME_GF_DANCE_0, WEEK5_FRAME_GF_DANCE_V143_0,
+			WEEK5_FRAME_GF_DANCE_V143_1, WEEK5_FRAME_GF_DANCE_V143_2,
+			WEEK5_FRAME_GF_DANCE_V143_3, WEEK5_FRAME_GF_DANCE_1,
+			WEEK5_FRAME_GF_DANCE_V143_4, WEEK5_FRAME_GF_DANCE_V143_5,
+			WEEK5_FRAME_GF_DANCE_V143_6, WEEK5_FRAME_GF_DANCE_V143_7
+		};
+		draw_week5_visual_frame(dance[gf_dance_pose(beat_q16)],
 			BOPEEBO_WEEK5_GF_X - 32, BOPEEBO_WEEK5_GF_Y - 64,
 			camera_x, camera_y, zoom_q8, 256);
 	} else if (week4) {
-		draw_week4_visual_frame((beat & 1u) ? WEEK4_FRAME_GF_DANCE_1 : WEEK4_FRAME_GF_DANCE_0,
+		static const uint8_t dance[10] = {
+			WEEK4_FRAME_GF_DANCE_0, WEEK4_FRAME_GF_DANCE_V143_0,
+			WEEK4_FRAME_GF_DANCE_V143_1, WEEK4_FRAME_GF_DANCE_V143_2,
+			WEEK4_FRAME_GF_DANCE_V143_3, WEEK4_FRAME_GF_DANCE_1,
+			WEEK4_FRAME_GF_DANCE_V143_4, WEEK4_FRAME_GF_DANCE_V143_5,
+			WEEK4_FRAME_GF_DANCE_V143_6, WEEK4_FRAME_GF_DANCE_V143_7
+		};
+		draw_week4_visual_frame(dance[gf_dance_pose(beat_q16)],
 			BOPEEBO_WEEK4_GF_X - 43, BOPEEBO_WEEK4_GF_Y - 79,
 			camera_x, camera_y, zoom_q8, 256);
 	}
@@ -3340,6 +3402,7 @@ static void draw_scene(uint32_t samples)
 			camera_x, camera_y, zoom_q8);
 	} else if (week5) {
 		unsigned opponent_frame = WEEK5_FRAME_PARENTS_IDLE;
+		unsigned lane = dad_visual_lane & 3u;
 		if (samples < dad_visual_until) {
 			static const uint8_t parents_mom[4] = {
 				WEEK5_FRAME_PARENTS_MOM_LEFT, WEEK5_FRAME_PARENTS_MOM_DOWN,
@@ -3349,28 +3412,49 @@ static void draw_scene(uint32_t samples)
 				WEEK5_FRAME_PARENTS_DAD_LEFT, WEEK5_FRAME_PARENTS_DAD_DOWN,
 				WEEK5_FRAME_PARENTS_DAD_UP, WEEK5_FRAME_PARENTS_DAD_RIGHT
 			};
+			static const uint8_t parents_mom_alt[4] = {
+				WEEK5_FRAME_PARENTS_MOM_LEFT_ALT, WEEK5_FRAME_PARENTS_MOM_DOWN_ALT,
+				WEEK5_FRAME_PARENTS_MOM_UP_ALT, WEEK5_FRAME_PARENTS_MOM_RIGHT_ALT
+			};
+			static const uint8_t parents_dad_alt[4] = {
+				WEEK5_FRAME_PARENTS_DAD_LEFT_ALT, WEEK5_FRAME_PARENTS_DAD_DOWN_ALT,
+				WEEK5_FRAME_PARENTS_DAD_UP_ALT, WEEK5_FRAME_PARENTS_DAD_RIGHT_ALT
+			};
 			static const uint8_t monster_sing[4] = {
 				WEEK5_FRAME_MONSTER_LEFT, WEEK5_FRAME_MONSTER_DOWN,
 				WEEK5_FRAME_MONSTER_UP, WEEK5_FRAME_MONSTER_RIGHT
 			};
+			static const uint8_t monster_alt[4] = { WEEK5_FRAME_MONSTER_LEFT_ALT,
+				WEEK5_FRAME_MONSTER_DOWN_ALT, WEEK5_FRAME_MONSTER_UP_ALT, WEEK5_FRAME_MONSTER_RIGHT_ALT };
 			if (active_song->opponent_kind == PS1_OPPONENT_MONSTER)
-				opponent_frame = monster_sing[dad_visual_lane & 3u];
+				opponent_frame = beat_pose(beat_q16, 2u) ? monster_alt[lane] : monster_sing[lane];
 			else
-				opponent_frame = (active_song_index == 14u ? parents_dad : parents_mom)[dad_visual_lane & 3u];
+				opponent_frame = beat_pose(beat_q16, 2u) ?
+					(active_song_index == 14u ? parents_dad_alt : parents_mom_alt)[lane] :
+					(active_song_index == 14u ? parents_dad : parents_mom)[lane];
 		} else if (active_song->opponent_kind == PS1_OPPONENT_MONSTER) {
-			opponent_frame = WEEK5_FRAME_MONSTER_IDLE;
+			static const uint8_t monster_idle[3] = { WEEK5_FRAME_MONSTER_IDLE,
+				WEEK5_FRAME_MONSTER_IDLE_1, WEEK5_FRAME_MONSTER_IDLE_2 };
+			opponent_frame = monster_idle[beat_pose(beat_q16, 3u)];
+		} else if (beat_pose(beat_q16, 2u)) {
+			opponent_frame = WEEK5_FRAME_PARENTS_IDLE_1;
 		}
 		draw_week5_visual_frame(opponent_frame,
 			BOPEEBO_WEEK5_OPP_X - 32, BOPEEBO_WEEK5_OPP_Y - 64,
 			camera_x, camera_y, zoom_q8, 256);
 	} else if (week4) {
-		unsigned mom_frame = WEEK4_FRAME_MOM_IDLE;
+		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
+			WEEK4_FRAME_MOM_IDLE_1, WEEK4_FRAME_MOM_IDLE_2 };
+		unsigned mom_frame = mom_idle[beat_pose(beat_q16, 3u)];
 		if (samples < dad_visual_until) {
 			static const uint8_t sing[4] = {
 				WEEK4_FRAME_MOM_LEFT, WEEK4_FRAME_MOM_DOWN,
 				WEEK4_FRAME_MOM_UP, WEEK4_FRAME_MOM_RIGHT
 			};
-			mom_frame = sing[dad_visual_lane & 3u];
+			static const uint8_t sing_alt[4] = { WEEK4_FRAME_MOM_LEFT_ALT,
+				WEEK4_FRAME_MOM_DOWN_ALT, WEEK4_FRAME_MOM_UP_ALT, WEEK4_FRAME_MOM_RIGHT_ALT };
+			unsigned lane = dad_visual_lane & 3u;
+			mom_frame = beat_pose(beat_q16, 2u) ? sing_alt[lane] : sing[lane];
 		}
 		draw_week4_visual_frame(mom_frame,
 			BOPEEBO_WEEK4_MOM_X - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_W / 2u),

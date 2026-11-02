@@ -1602,3 +1602,9 @@ Les gains chiffrés dans l’audit sont des calculs à partir des appels CD et G
 ## Poses de chant additionnelles (v142)
 
 Les poses échantillonnées de BF couvrant déjà W1–W5 s'étendent à la Week 6 (BF pixel), Week 7 (BF) et Weekend 1 (Pico joueur sur les pistes classiques). Les rigs sont animés depuis l'horloge audio à 15 images/s avec le nombre de poses réellement distinctes disponible. Blazin reste intact. Aucun changement de composition, chart, règles ou mixage. Détails : [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md). CUE compilé, test DuckStation encore attendu.
+## Animations Weeks 4–7 et Weekend 1 (v143, essai)
+
+Ajoute des poses officielles échantillonnées pour GF (cycles de 10 cels), les idles et chants de Mom/Parents/Monster, Senpai, Tankman, Pico et Darnell là où les rigs donnent des poses distinctes. Les cycles suivent la position audio. Weeks 1–3 gardent leurs cycles existants; Blazin reste inchangé. Spirit n’a pas de poses supplémentaires distinctes exploitables dans le rig empaqueté. Aucun changement de chart, gameplay, caméra, composition ou audio. Détails : [`PS1_ANIMATIONS_V143.md`](PS1_ANIMATIONS_V143.md).
+
+Build PSn00bSDK/GCC compilé et prêt; le CUE à tester manuellement est `ps1/build/v143-animation-pass/delivery-v143-week-animations-rootfix/funkin-ps1-v143-week-animations.cue`. La compilation n’est pas une validation visuelle : DuckStation n’a pas été exécuté sur v143 et le retour utilisateur est attendu. Aucun test console réelle.
+
