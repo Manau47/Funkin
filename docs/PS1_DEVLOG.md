@@ -539,3 +539,17 @@ Compilation PSn00bSDK 0.24 / GCC MIPS 12.3 à jour; dry-run final sans tâche. L
 
 **État :** build et contrôles statiques réussis. DuckStation n’a pas été lancé; les animations ne sont pas observées sur ce build. Essai manuel requis sur W4–W7 et Weekend 1, avec les retours idle et contrôle stabilité audio. Pas de test console réelle.
 
+
+## Retry W4 après Game Over — v144 (2 novembre 2026)
+
+Le signalement utilisateur concerne un retry après game over sur MILF : la piste avait joué avant la défaite, puis DuckStation a affiché « SPU STREAM ERROR / CODE » sans valeur lisible. La capture confirme le titre, mais ne permet pas de relever le numéro ni les compteurs.
+
+**Cause identifiée par inspection du code :** `begin_retry_countdown()` restaure la palette de la scène active et conserve `vram_scene_owner_stage` à l’identifiant de sa semaine. À la fin du décompte, `enter_bopeebo()` appelle `load_song_stage_visuals()`, qui n’acceptait que le propriétaire 1 (base Freeplay/W1). Pour MILF, le propriétaire légitime est 4 : le chargeur déclenchait `FAIL_ASSET_LOAD` (code 10) avant de démarrer le nouveau flux. La capture ne montre pas le code numérique, donc ce code attendu par le chemin n’est pas revendiqué comme observation utilisateur.
+
+**Correction :** si la VRAM appartient déjà à la semaine de la chanson active, le chargement de scène est sauté. Au retry, la palette est restaurée et les pages sont conservées ; depuis Freeplay, l’acquisition habituelle du paquet de semaine reste inchangée. Aucun changement au gameplay, aux animations, aux scènes, aux charts ou à l’audio.
+
+**Diagnostics :** `show_error()` utilisait `FntPrint(-1)`, dont la zone par défaut ne rendait pas les lignes de détails dans le cadre visible. Une région 304×224 est maintenant ouverte après `FntLoad`; les erreurs et données CD/SPU s’affichent dans cette zone. Le titre est devenu générique car toutes les erreurs ne viennent pas du flux SPU.
+
+**Build v144 :** compilation incrémentale PSn00bSDK 0.24/GCC 12.3. Le dry-run prévoyait seulement trois tâches : compilation de `spu_probe.c`, lien ELF et fabrication de l’image disque ; aucune conversion d’assets. Les anciens artefacts v143 et le cache/configuration ont été copiés avant génération dans `ps1/build/v144-milf-retry-fix/archive-v143-before-fix/`. Contrôle statique ISO : `SYSTEM.CNF` puis `FUNKIN.EXE` dans les deux premières entrées racine, en-tête PS-X EXE reconnu, et EXE extrait identique à l’EXE lié.
+
+**Résultats :** compilation et contrôles ISO réussis. Le CUE v144 n’a pas encore été exécuté dans DuckStation ; le retry MILF reste à confirmer par l’utilisateur. Pas de validation console réelle.
