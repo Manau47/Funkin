@@ -118,13 +118,17 @@ def png_size(source: pathlib.Path) -> tuple[int, int]:
 
 
 def fit_anchored_rig(rig: Rig, frame_ids: list[int], out_w: int, out_h: int,
-                     canvas: int = 1200) -> dict[int, bytearray]:
+                     canvas: int = 1200,
+                     anchor_frame_ids: list[int] | None = None) -> dict[int, bytearray]:
     """Fit a rig's poses together, keeping their source-space origin and floor."""
     rendered = {frame: rig.render_positioned(frame, canvas) for frame in frame_ids}
-    min_x = min(item[0] for item in rendered.values())
-    max_x = max(item[0] + item[2] for item in rendered.values())
-    min_y = min(item[1] for item in rendered.values())
-    floor_y = max(item[1] + item[3] for item in rendered.values())
+    anchor_ids = anchor_frame_ids if anchor_frame_ids is not None else frame_ids
+    anchors = [rendered[frame] if frame in rendered else rig.render_positioned(frame, canvas)
+               for frame in anchor_ids]
+    min_x = min(item[0] for item in anchors)
+    max_x = max(item[0] + item[2] for item in anchors)
+    min_y = min(item[1] for item in anchors)
+    floor_y = max(item[1] + item[3] for item in anchors)
     union_w, union_h = max_x - min_x, floor_y - min_y
     scale = min((out_w - 4) / union_w, (out_h - 2) / union_h)
     scaled_union_w = max(1, round(union_w * scale))

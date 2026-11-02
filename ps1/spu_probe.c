@@ -901,7 +901,7 @@ static void load_week7_visuals(bool enable)
 		DrawSync(0);
 		uint32_t *page_data = (uint32_t *)malloc(65536u);
 		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
-		/* Week 7 leases only the first three 8bpp pages; restore them on exit. */
+		/* Week 7 leases four 8bpp pages (two stage, actor atlas, BF pose page). */
 		for (unsigned i = 0; i < BOPEEBO_WEEK7_PAGE_COUNT; i++) {
 			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
 			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
@@ -2871,7 +2871,16 @@ static void draw_week6_scene(uint32_t samples)
 	} else if (bf_visual_state == 1u) {
 		static const uint8_t sing[4] = { WEEK6_FRAME_BF_LEFT, WEEK6_FRAME_BF_DOWN,
 			WEEK6_FRAME_BF_UP, WEEK6_FRAME_BF_RIGHT };
-		bf_frame = sing[bf_visual_lane & 3u];
+		static const uint8_t middle[4] = { WEEK6_FRAME_BF_LEFT_MID, WEEK6_FRAME_BF_DOWN_MID,
+			WEEK6_FRAME_BF_UP_MID, WEEK6_FRAME_BF_RIGHT_MID };
+		static const uint8_t final[4] = { WEEK6_FRAME_BF_LEFT_END, WEEK6_FRAME_BF_DOWN_END,
+			WEEK6_FRAME_BF_UP_END, WEEK6_FRAME_BF_RIGHT_END };
+		uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
+		if (!pose_period) pose_period = 1u;
+		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+		unsigned pose = (unsigned)((elapsed / pose_period) % 3u);
+		unsigned lane = bf_visual_lane & 3u;
+		bf_frame = pose == 1u ? middle[lane] : pose == 2u ? final[lane] : sing[lane];
 	} else bf_frame = WEEK6_FRAME_BF_IDLE;
 	draw_week6_visual_frame(bf_frame, 220, 135, 76, 76);
 }
@@ -2895,7 +2904,18 @@ static void draw_week7_scene(uint32_t samples)
 		WEEK7_FRAME_BF_LEFT, WEEK7_FRAME_BF_DOWN,
 		WEEK7_FRAME_BF_UP, WEEK7_FRAME_BF_RIGHT
 	};
-	unsigned bf = samples < bf_visual_until ? bf_sing[bf_visual_lane & 3u] : WEEK7_FRAME_BF_IDLE;
+	static const uint8_t bf_alt[4] = {
+		WEEK7_FRAME_BF_LEFT_ALT, WEEK7_FRAME_BF_DOWN_ALT,
+		WEEK7_FRAME_BF_UP_ALT, WEEK7_FRAME_BF_RIGHT_ALT
+	};
+	unsigned lane = bf_visual_lane & 3u;
+	uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
+	if (!pose_period) pose_period = 1u;
+	uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+	unsigned phase = (unsigned)((elapsed / pose_period) & 1u);
+	unsigned bf = samples < bf_visual_until ?
+		(phase ? bf_alt[lane] : bf_sing[lane]) :
+		WEEK7_FRAME_BF_IDLE;
 	draw_week7_visual_frame(bf, 214, 128, 76, 84);
 }
 
@@ -2909,9 +2929,18 @@ static void draw_weekend1_scene(uint32_t samples)
 	if (!blazin) {
 		static const unsigned pico_sing[4] = { WEND_FRAME_PICO_LEFT, WEND_FRAME_PICO_DOWN,
 			WEND_FRAME_PICO_UP, WEND_FRAME_PICO_RIGHT };
+		static const unsigned pico_alt[4] = { WEND_FRAME_PICO_LEFT_ALT, WEND_FRAME_PICO_DOWN_ALT,
+			WEND_FRAME_PICO_UP_ALT, WEND_FRAME_PICO_RIGHT_ALT };
 		static const unsigned darnell_sing[4] = { WEND_FRAME_DARNELL_LEFT, WEND_FRAME_DARNELL_DOWN,
 			WEND_FRAME_DARNELL_UP, WEND_FRAME_DARNELL_RIGHT };
-		unsigned pico = samples < bf_visual_until ? pico_sing[bf_visual_lane & 3u] : WEND_FRAME_PICO_IDLE;
+		uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
+		if (!pose_period) pose_period = 1u;
+		uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+		unsigned phase = (unsigned)((elapsed / pose_period) & 1u);
+		unsigned lane = bf_visual_lane & 3u;
+		unsigned pico = samples < bf_visual_until ?
+			(phase ? pico_alt[lane] : pico_sing[lane]) :
+			WEND_FRAME_PICO_IDLE;
 		unsigned darnell = samples < dad_visual_until ? darnell_sing[dad_visual_lane & 3u] : WEND_FRAME_DARNELL_IDLE;
 		draw_weekend1_visual_frame(darnell, 43, 92, 79, 99);
 		draw_weekend1_visual_frame(pico, 217, 129, 72, 90);

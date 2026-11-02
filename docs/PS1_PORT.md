@@ -1597,3 +1597,8 @@ Les modifications v137 retirent les réécritures immédiatement remplacées : l
 
 Les gains chiffrés dans l’audit sont des calculs à partir des appels CD et GPU et ne sont pas des mesures d’exécution. v137b a été compilée et vérifiée statiquement; les détails de dry-run, configuration, BIN/CUE, hashes et contrôle ISO sont dans [`PS1_VRAM_LOADING_V137.md`](PS1_VRAM_LOADING_V137.md). Attendre le retour utilisateur après plusieurs cycles Freeplay → semaines différentes → Game Over/Retry avant toute conclusion de stabilité/corruption. Aucun test console réelle n’est revendiqué.
 
+
+
+## Poses de chant additionnelles (v142)
+
+Les poses échantillonnées de BF couvrant déjà W1–W5 s'étendent à la Week 6 (BF pixel), Week 7 (BF) et Weekend 1 (Pico joueur sur les pistes classiques). Les rigs sont animés depuis l'horloge audio à 15 images/s avec le nombre de poses réellement distinctes disponible. Blazin reste intact. Aucun changement de composition, chart, règles ou mixage. Détails : [`PS1_SINGING_POSES_V142.md`](PS1_SINGING_POSES_V142.md). CUE compilé, test DuckStation encore attendu.
