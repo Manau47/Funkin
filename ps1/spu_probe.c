@@ -197,7 +197,6 @@ static int menu_detail_font_id = -1;
 static int menu_hint_font_id = -1;
 static int menu_song_font_id = -1;
 static int menu_button_anim_loaded = -1;
-static int error_font_id = -1;
 typedef enum { DEATH_INTRO, DEATH_LOOP, DEATH_CONFIRM } DeathPhase;
 static DeathPhase death_phase;
 static uint32_t death_phase_start_frame;
@@ -403,6 +402,7 @@ static StreamReadContext read_ctx;
 static volatile unsigned underruns;
 static volatile unsigned read_errors;
 static int failure_code;
+static int error_font_id = -1;
 static bool stream_initialized;
 #if TEST_CHANNELS >= 4
 #define PAD_BYTES 34
