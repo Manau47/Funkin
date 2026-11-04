@@ -1633,3 +1633,10 @@ Le paquet de scène actif fait 393 728 octets, soit +131 072 octets (+2 pages 8b
 Les planches base/W1, Weeks 2–7, Weekend 1 et les pages statiques menu/Freeplay/game over couvrent les ressources intégrées. L’audit documente séparément les pixels d’index zéro, unions/chevauchements des rectangles et espaces récupérables. Deux atlas sont réempaquetés sans perte : Week 4 et Week 7 récupèrent chacun une page 8bpp. Les palettes et pixels indexés restent appariés; poses, dimensions, séquences et durées restent inchangées. Pas de reconversion générale.
 
 Voir [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md) pour les hashes, budgets RAM/VRAM/CD, commandes de reproduction et limites. BIN/CUE v146 compilé et contrôlé statiquement; essai utilisateur DuckStation en attente. Le retry validé antérieurement est conservé.
+
+
+## Week 4 — composition Mother v7 (v147, essai)
+
+Le paquet Week 4 reprend la composition v7 : sky officiel, limousine distante agrandie, quatre danseurs au-dessus de la limousine principale. Les danseurs restent sur une pose fixe. Les acteurs principaux, caméras, gameplay, charts et audio ne changent pas.
+
+Le paquet reste à cinq pages 8bpp / 328 192 octets; seules les deux pages de décor sont remplacées. Le script reproductible et les hashes figurent dans [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le CUE est livré pour test manuel dans DuckStation; aucun résultat d’exécution n’est revendiqué.

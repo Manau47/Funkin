@@ -575,3 +575,10 @@ Le paquet Week 4 passe de 262 656 à 393 728 octets (+131 072, deux pages 8bpp).
 L’outil d’audit couvre les pages base/W1, Weeks 2–7, Weekend 1, ainsi que les pages statiques titre/menu, Freeplay/DJ, icônes, capsules et game over. Les planches et mesures détaillées sont conservées dans `ps1/build/atlas-audit-v146/` (ignoré par Git); les scripts reproductibles et le rapport sont [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md). Les gains viennent du réempaquetage indexé sans changement de texels : −1 page 8bpp pour W4 et −1 pour W7, CLUT et décors byte-identiques. Aucun autre atlas n’est réduit dans cette passe.
 
 Le build PSn00bSDK/GCC est compilé et contrôlé statiquement. W4/W7 représentent ensemble −131 072 octets utiles sur disque et dans les transferts page GPU calculés; image BIN raw −150 528 octets. Le retry précédemment confirmé par l’utilisateur est préservé. Le CUE v146 est en attente de l’essai DuckStation utilisateur; aucune validation d’image runtime ou console réelle n’est revendiquée.
+
+
+## Week 4 — composition Mother v7 (v147, build d’essai)
+
+Intègre le décor v7 de la Week 4 avec les assets officiels : limousine lointaine agrandie et quatre danseurs henchmen, derrière la limousine principale. Les danseurs utilisent une pose fixe dans cette passe. Les placements des personnages, caméras, animations existantes, charts, gameplay et audio sont conservés.
+
+Le script reproductible est [compose_week4_background.py](../ps1/compose_week4_background.py) et le manifeste de build est [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le paquet de scène conserve cinq pages 8bpp et sa CLUT; seules les deux pages de décor changent. Build PSn00bSDK/GCC et contrôles statiques ISO réussis; le test DuckStation attend le chargement manuel utilisateur. Aucun test console réelle.
