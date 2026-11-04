@@ -568,3 +568,10 @@ Le paquet Week 4 passe de 262 656 à 393 728 octets (+131 072, deux pages 8bpp).
 **État :** compilé et vérifié statiquement; DuckStation attend le chargement manuel et le retour utilisateur. La prévisualisation convertie n’est pas une observation d’exécution. Les couches mobiles `bgLimo`/`limo` restent statiques dans cette étape; audio, charts, caméra et gameplay ne changent pas. Aucun test console réelle. Détails : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md).
 
 
+
+
+## Audit global des atlas et compactage sans perte (v146, 4 novembre 2026)
+
+L’outil d’audit couvre les pages base/W1, Weeks 2–7, Weekend 1, ainsi que les pages statiques titre/menu, Freeplay/DJ, icônes, capsules et game over. Les planches et mesures détaillées sont conservées dans `ps1/build/atlas-audit-v146/` (ignoré par Git); les scripts reproductibles et le rapport sont [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md). Les gains viennent du réempaquetage indexé sans changement de texels : −1 page 8bpp pour W4 et −1 pour W7, CLUT et décors byte-identiques. Aucun autre atlas n’est réduit dans cette passe.
+
+Le build PSn00bSDK/GCC est compilé et contrôlé statiquement. W4/W7 représentent ensemble −131 072 octets utiles sur disque et dans les transferts page GPU calculés; image BIN raw −150 528 octets. Le retry précédemment confirmé par l’utilisateur est préservé. Le CUE v146 est en attente de l’essai DuckStation utilisateur; aucune validation d’image runtime ou console réelle n’est revendiquée.
