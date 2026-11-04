@@ -603,3 +603,10 @@ Build PSn00bSDK 0.24/GCC terminé. Le dry-run prévoyait une génération exista
 ### v149b — correction du gel au logo Sony
 
 Retour utilisateur : v149 reste au logo Sony/PlayStation. Comparaison ISO v148/v149 : l’entrée fichier `SYSTEM.CNF;1` est la 93e de v149, contre la première entrée fichier du disque v148 qui démarre. L’EXE et le contenu de `SYSTEM.CNF` sont présents et valides; la cause isolée est l’ordre des entrées racine. v149b applique uniquement le réordonnancement ISO déjà utilisé par les builds de démarrage validés. Pas de recompilation ou reconversion; l’EXE v149 reste identique. Les quatre secteurs du répertoire racine sont les seuls secteurs modifiés. BIN/CUE et hashes : [`PS1_WEEK4_V149B_BOOT_FIX.md`](PS1_WEEK4_V149B_BOOT_FIX.md). Contrôle statique réussi; démarrage DuckStation v149b attendu du test utilisateur, sans validation console réelle.
+
+
+### v150b — Week 4 BF atlas page collision fix (2026-11-05)
+
+Le retour sur v149b signale que GF est meilleure mais BF a disparu. Cause isolée : le chargeur Week 4 écrivait sa page logique 7 sur la page VRAM physique 7, utilisée par les poses BF de l'atlas commun. v150b réserve la page 7 au BF et mappe la page Week 4 sur la page physique 8. Le chemin de rendu utilise la même correspondance. Au retry depuis Game Over, la page Week 8 empruntée est rechargée depuis `W4SCENE.BIN` avant le décompte.
+
+La composition reste inchangée. Les paquets et données source ont été réutilisés. Compilation et vérifications statiques du BIN/ISO réussies; la structure ISO place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête. L'EXE fait 1 028 096 octets, entrée `0x800255f0`, hash SHA-256 `0DB81AE9F156415570C1CF3AC52D9A7BBA11B9F8BC60B412D0D0B0BD1E8F4972`. BIN SHA-256 `B33E8AB3CCBFB08BF2F7B8FDBA534315A8243514866C28781258282502D6683A`; CUE SHA-256 `9102F11219009D9D2544D6AA021741BC7851519A75FC5C6155107EC9EA60F970`. Aucun test DuckStation/console réel pour v150b; attente de l'essai utilisateur. Détails : [PS1_WEEK4_V150B_BF_PAGE_FIX.md](PS1_WEEK4_V150B_BF_PAGE_FIX.md).
