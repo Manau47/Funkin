@@ -1626,3 +1626,10 @@ Le fond Week 4 est séparé correctement en pages gauche/droite (copie par rang�
 Le paquet de scène actif fait 393 728 octets, soit +131 072 octets (+2 pages 8bpp) par rapport au paquet pré-v145. Le buffer de transfert reste 64 Kio. Audio, charts, placements, caméra et règles inchangés. BIN/CUE distinct et manifeste : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md). Build et contrôle ISO statiques réussis; test DuckStation utilisateur en attente. Les couches de limousine ne sont pas animées dans ce jalon.
 
 
+
+
+## Audit global des atlas graphiques — v146
+
+Les planches base/W1, Weeks 2–7, Weekend 1 et les pages statiques menu/Freeplay/game over couvrent les ressources intégrées. L’audit documente séparément les pixels d’index zéro, unions/chevauchements des rectangles et espaces récupérables. Deux atlas sont réempaquetés sans perte : Week 4 et Week 7 récupèrent chacun une page 8bpp. Les palettes et pixels indexés restent appariés; poses, dimensions, séquences et durées restent inchangées. Pas de reconversion générale.
+
+Voir [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md) pour les hashes, budgets RAM/VRAM/CD, commandes de reproduction et limites. BIN/CUE v146 compilé et contrôlé statiquement; essai utilisateur DuckStation en attente. Le retry validé antérieurement est conservé.
