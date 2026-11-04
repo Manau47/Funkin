@@ -1640,3 +1640,10 @@ Voir [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md) pour les hashes, budge
 Le paquet Week 4 reprend la composition v7 : sky officiel, limousine distante agrandie, quatre danseurs au-dessus de la limousine principale. Les danseurs restent sur une pose fixe. Les acteurs principaux, caméras, gameplay, charts et audio ne changent pas.
 
 Le paquet reste à cinq pages 8bpp / 328 192 octets; seules les deux pages de décor sont remplacées. Le script reproductible et les hashes figurent dans [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le CUE est livré pour test manuel dans DuckStation; aucun résultat d’exécution n’est revendiqué.
+
+
+## Week 4 — correction v148
+
+v147 réduisait à tort la limousine distante et les danseurs par leurs dimensions d’extraction (222×39 et 29×22). v148 utilise 455×79 et 40×32, en gardant les placements approuvés et le premier plan. GF passait de rectangles 87×79 à 64×64 pendant sa danse; le dessin utilise maintenant une destination constante de 87×79 et conserve les UV de chaque pose. Les timings, caméras, gameplay et atlas actifs ne changent pas; aucun espace RAM/VRAM supplémentaire.
+
+Build et vérification statique ISO réussis; BIN/CUE dans `ps1/build/week4-composition-v148/delivery-v148-mother-composition/`. Le test DuckStation v148 reste en attente. Voir [PS1_WEEK4_V148_FIX.md](PS1_WEEK4_V148_FIX.md).

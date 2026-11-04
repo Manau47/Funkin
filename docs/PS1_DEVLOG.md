@@ -582,3 +582,10 @@ Le build PSn00bSDK/GCC est compilé et contrôlé statiquement. W4/W7 représent
 Intègre le décor v7 de la Week 4 avec les assets officiels : limousine lointaine agrandie et quatre danseurs henchmen, derrière la limousine principale. Les danseurs utilisent une pose fixe dans cette passe. Les placements des personnages, caméras, animations existantes, charts, gameplay et audio sont conservés.
 
 Le script reproductible est [compose_week4_background.py](../ps1/compose_week4_background.py) et le manifeste de build est [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le paquet de scène conserve cinq pages 8bpp et sa CLUT; seules les deux pages de décor changent. Build PSn00bSDK/GCC et contrôles statiques ISO réussis; le test DuckStation attend le chargement manuel utilisateur. Aucun test console réelle.
+
+
+## Week 4 — correction de composition et d’échelle GF (v148, essai)
+
+Retour utilisateur sur v147 : composition non conforme et GF changeant visiblement de taille au fil de la mesure. Causes statiques relevées : le décor lointain était extrait en 222×39 au lieu d’environ 455×79; les danseurs henchmen de 517×410 étaient réduits à 29×22; les poses GF de 64×64 étaient dessinées à cette taille tandis que les poses originales font 87×79. v148 corrige les tailles d’extraction du décor et impose une enveloppe d’affichage GF fixe de 87×79, sans changer les timings ni ajouter de pages. Le placement du premier plan reste inchangé.
+
+Build séparé et ISO racine vérifié; paquet W4 toujours cinq pages / 328 192 octets. BIN/CUE et hashes : [PS1_WEEK4_V148_FIX.md](PS1_WEEK4_V148_FIX.md). DuckStation et console réelle non testés; attendre le retour utilisateur avant de conclure sur le rendu.

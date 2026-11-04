@@ -1239,6 +1239,20 @@ static void draw_menu_texture_sprite(unsigned u, unsigned v, unsigned source_w, 
 	DrawPrim((uint32_t *)p);
 }
 
+static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
+		zoom_q8, scale_q8, 0u, 0u);
+}
+
+static void draw_week4_gf_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
+		zoom_q8, scale_q8, 87u, 79u);
+}
+
 static int freeplay_letter_index(char letter)
 {
 	static const char letters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -2357,8 +2371,9 @@ static void draw_week2_room_tile(unsigned frame, int world_x, int world_y,
 	DrawPrim((uint32_t *)p);
 }
 
-static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
-	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+static void draw_week4_visual_frame_sized(unsigned frame, int world_x,
+	int world_y, int camera_x, int camera_y, unsigned zoom_q8,
+	unsigned scale_q8, unsigned draw_w, unsigned draw_h)
 {
 	if (visual_prim_count >= visual_prim_limit) {
 		visual_prim_rejected++;
@@ -2372,8 +2387,10 @@ static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
 	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
-	int w = ((int)visual->w * (int)combined_scale) / 256;
-	int h = ((int)visual->h * (int)combined_scale) / 256;
+	/* Keep GF's 64x64 sampled poses in the same 87x79 destination box as
+	   her original cels; use each frame's own dimensions for UV sampling. */
+	int w = ((int)(draw_w ? draw_w : visual->w) * (int)combined_scale) / 256;
+	int h = ((int)(draw_h ? draw_h : visual->h) * (int)combined_scale) / 256;
 	setPolyFT4(p);
 	setRGB0(p, 128, 128, 128);
 	setXY4(p, x0, y0, x0 + w, y0, x0, y0 + h, x0 + w, y0 + h);
@@ -3378,7 +3395,7 @@ static void draw_scene(uint32_t samples)
 			WEEK4_FRAME_GF_DANCE_V143_4, WEEK4_FRAME_GF_DANCE_V143_5,
 			WEEK4_FRAME_GF_DANCE_V143_6, WEEK4_FRAME_GF_DANCE_V143_7
 		};
-		draw_week4_visual_frame(dance[gf_dance_pose(beat_q16)],
+		draw_week4_gf_frame(dance[gf_dance_pose(beat_q16)],
 			BOPEEBO_WEEK4_GF_X - 43, BOPEEBO_WEEK4_GF_Y - 79,
 			camera_x, camera_y, zoom_q8, 256);
 	}
