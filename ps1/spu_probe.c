@@ -179,6 +179,8 @@ static unsigned week3_light_color_index;
 static uint32_t week3_light_random_state;
 static uint32_t week3_light_clut_upload;
 static bool week4_visuals_loaded;
+#define WEEK4_VRAM_PAGE_SLOT(logical_page) \
+	((BOPEEBO_WEEK4_PAGE_COUNT > 7u && (logical_page) == 7u) ? 8u : (logical_page))
 static bool week5_visuals_loaded;
 static bool week6_visuals_loaded;
 static bool week7_visuals_loaded;
@@ -782,7 +784,9 @@ static void load_week4_visuals(bool enable)
 		uint32_t *page_data = (uint32_t *)malloc(65536u);
 		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
 		for (unsigned i = 0; i < BOPEEBO_WEEK4_PAGE_COUNT; i++) {
-			unsigned page_index = i; /* Week 4 leases its package pages while active. */
+			/* Keep base page 7 resident: the shared BF actor atlas lives there.
+			   Week 4's eighth page borrows page 8 (the inactive menu/logo slot). */
+			unsigned page_index = WEEK4_VRAM_PAGE_SLOT(i);
 			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
 			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
 			if (enable) {
@@ -1034,6 +1038,26 @@ static bool restore_song_stage_after_game_over(void)
 	case 9u: palette_path = "\\WEND1.BIN"; palette_sector = BOPEEBO_WEEKEND1_PAGE_COUNT * 32u; break;
 	default: break;
 	}
+
+#if BOPEEBO_WEEK4_PAGE_COUNT > 7u
+	if (stage_id == 4u) {
+		const unsigned logical_page = 7u;
+		const unsigned physical_page = WEEK4_VRAM_PAGE_SLOT(logical_page);
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+		const BopeeboVisualPage *page = &bopeebo_visual_page_table[physical_page];
+		RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+		bool read_ok = read_cd_file_range("\\W4SCENE.BIN", logical_page * 32u,
+			32u, page_data);
+		if (read_ok) {
+			DrawSync(0);
+			LoadImage(&rect, page_data);
+			DrawSync(0);
+		}
+		free(page_data);
+		if (!read_ok) { failure_code = FAIL_ASSET_LOAD; return false; }
+	}
+#endif
 
 	if (stage_id == 3u) {
 		unsigned source_page = bopeebo_visual_frames[VIS_BF_IDLE_0].page;
@@ -2381,7 +2405,8 @@ static void draw_week4_visual_frame_sized(unsigned frame, int world_x,
 	}
 	if (frame >= WEEK4_VISUAL_FRAME_COUNT) return;
 	const Week4VisualFrame *visual = &week4_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
+		WEEK4_VRAM_PAGE_SLOT(visual->page)];
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
@@ -2416,7 +2441,8 @@ static void draw_week4_stage_tile(unsigned frame, int world_x, int world_y,
 		return;
 	}
 	const Week4VisualFrame *visual = &week4_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
+		WEEK4_VRAM_PAGE_SLOT(visual->page)];
 	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256;
 	int width = ((int)visual->w * (int)zoom_q8) / 256;
