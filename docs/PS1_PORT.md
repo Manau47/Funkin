@@ -1647,3 +1647,8 @@ Le paquet reste à cinq pages 8bpp / 328 192 octets; seules les deux pages de d�
 v147 réduisait à tort la limousine distante et les danseurs par leurs dimensions d’extraction (222×39 et 29×22). v148 utilise 455×79 et 40×32, en gardant les placements approuvés et le premier plan. GF passait de rectangles 87×79 à 64×64 pendant sa danse; le dessin utilise maintenant une destination constante de 87×79 et conserve les UV de chaque pose. Les timings, caméras, gameplay et atlas actifs ne changent pas; aucun espace RAM/VRAM supplémentaire.
 
 Build et vérification statique ISO réussis; BIN/CUE dans `ps1/build/week4-composition-v148/delivery-v148-mother-composition/`. Le test DuckStation v148 reste en attente. Voir [PS1_WEEK4_V148_FIX.md](PS1_WEEK4_V148_FIX.md).
+
+
+## Week 4 — GF v149
+
+Le build d’essai restaure les 30 cellules officielles de danse GF à 87×79 au lieu des 10 poses précédentes, dont huit petites images étirées. L’animation suit l’horloge audio à raison d’une moitié de 15 poses par beat. Le paquet W4 utilise 8 pages (contre 5), CLUT conservée; composition, caméra, audio et gameplay inchangés. Compilation et contrôles statiques réussis, pas encore exécuté par l’utilisateur dans DuckStation. BIN/CUE et hashes : [`PS1_WEEK4_V149_GF.md`](PS1_WEEK4_V149_GF.md).
