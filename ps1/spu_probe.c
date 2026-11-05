@@ -109,6 +109,9 @@
 #ifndef GAME_SCENE_DEMO_DEFAULT
 #define GAME_SCENE_DEMO_DEFAULT 0
 #endif
+#ifndef GAME_WEEK4_COMPOSITION_EDITOR
+#define GAME_WEEK4_COMPOSITION_EDITOR 0
+#endif
 #ifndef GAME_HEALTH_BAR_TEST_DEFAULT
 #define GAME_HEALTH_BAR_TEST_DEFAULT 0
 #endif
@@ -179,8 +182,25 @@ static unsigned week3_light_color_index;
 static uint32_t week3_light_random_state;
 static uint32_t week3_light_clut_upload;
 static bool week4_visuals_loaded;
-#define WEEK4_VRAM_PAGE_SLOT(logical_page) \
-	((BOPEEBO_WEEK4_PAGE_COUNT > 7u && (logical_page) == 7u) ? 8u : (logical_page))
+static const BopeeboVisualPage week4_far_dancer_page = { 896, 0, 1 };
+
+static const BopeeboVisualPage *week4_visual_page_info(unsigned logical_page)
+{
+	/* W4 page 7 borrows the menu/logo 8bpp slot while gameplay owns VRAM.
+	   Page 8 is the far-dancer atlas in the spare top-right page. The far-limo
+	   frames are packed into W4 page 7 so the BF atlas at base page 7 stays live. */
+	if (logical_page == 7u) return &bopeebo_visual_page_table[8];
+	if (logical_page == 8u) return &week4_far_dancer_page;
+	if (logical_page >= BOPEEBO_VISUAL_PAGE_COUNT) return 0;
+	return &bopeebo_visual_page_table[logical_page];
+}
+
+static int week4_base_page_for_logical(unsigned logical_page)
+{
+	if (logical_page == 7u) return 8;
+	if (logical_page == 8u) return -1; /* spare page; no base owner to restore */
+	return (int)logical_page;
+}
 static bool week5_visuals_loaded;
 static bool week6_visuals_loaded;
 static bool week7_visuals_loaded;
@@ -332,6 +352,57 @@ static uint8_t camera_focus_display;
 static bool camera_transitioning;
 static bool dad_lanes_visible;
 static bool diagnostics_visible;
+enum {
+	W4_EDIT_STAGE = 0,
+	W4_EDIT_CAMERA,
+	W4_EDIT_FAR_LIMO,
+	W4_EDIT_FAR_DANCERS,
+	W4_EDIT_GF,
+	W4_EDIT_FRONT_LIMO,
+	W4_EDIT_MOM,
+	W4_EDIT_BF,
+	W4_EDIT_LAYER_COUNT
+};
+/* Default Week 4 transforms captured from the user's v157 scene-editor pass.
+   Keep these active in normal builds; the editor mutates the same values only
+   when its optional controls are compiled in. */
+static int16_t week4_edit_dx[W4_EDIT_LAYER_COUNT] = {
+	18, 6, -14, 16, -39, 4, -17, -45
+};
+static int16_t week4_edit_dy[W4_EDIT_LAYER_COUNT] = {
+	0, 0, -8, -30, 8, 26, 0, 22
+};
+static uint16_t week4_edit_scale_q8[W4_EDIT_LAYER_COUNT] = {
+	256u, 256u, 512u, 256u, 256u, 256u, 256u, 256u
+};
+static int week4_edit_x(unsigned layer, int x)
+{
+	return x + (int)week4_edit_dx[layer];
+}
+
+static int week4_edit_y(unsigned layer, int y)
+{
+	return y + (int)week4_edit_dy[layer];
+}
+
+static unsigned week4_edit_zoom(unsigned layer, unsigned zoom)
+{
+	return zoom * week4_edit_scale_q8[layer] / 256u;
+}
+
+static unsigned week4_edit_art_scale(unsigned layer, unsigned scale)
+{
+	return scale * week4_edit_scale_q8[layer] / 256u;
+}
+
+#if GAME_WEEK4_COMPOSITION_EDITOR
+static uint8_t week4_edit_layer;
+static bool week4_editor_visible;
+static bool week4_editor_paused;
+static bool week4_editor_summary;
+static uint16_t week4_edit_repeat_button;
+static uint32_t week4_edit_repeat_at;
+#endif
 static unsigned hud_display_health_percent;
 static unsigned hud_actual_health_percent;
 static int hud_health_boundary_x;
@@ -448,6 +519,7 @@ static void release_song_chart(void);
 static bool start_stream_from_disc(void);
 #if TEST_PLAYABLE_BOPEEBO
 static bool feed_stream(void);
+static bool resume_paused_stream(void);
 static bool start_stream_file(const char *path, unsigned expected_channels,
 	bool loop, bool menu_music);
 static bool upload_menu_sfx(void);
@@ -554,6 +626,10 @@ static void init_video(void)
 		GAME_HEALTH_BAR_TEST_DEFAULT ? 288 : 304,
 		GAME_HEALTH_BAR_TEST_DEFAULT ? 24 : 48, 0,
 		GAME_HEALTH_BAR_TEST_DEFAULT ? 80 : 160);
+#if GAME_WEEK4_COMPOSITION_EDITOR
+	/* Reuse the already-open error font for the tuner panel. PSn00bSDK 0.24
+	   keeps only eight FntOpen streams; a ninth call corrupts its stream table. */
+#endif
 	menu_font_id = FntOpen(8, 191, 304, 45, 0, 96);
 	menu_header_font_id = FntOpen(164, 15, 152, 10, 0, 24);
 	menu_detail_font_id = FntOpen(24, 177, 272, 34, 0, 64);
@@ -784,18 +860,27 @@ static void load_week4_visuals(bool enable)
 		uint32_t *page_data = (uint32_t *)malloc(65536u);
 		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
 		for (unsigned i = 0; i < BOPEEBO_WEEK4_PAGE_COUNT; i++) {
-			/* Keep base page 7 resident: the shared BF actor atlas lives there.
-			   Week 4's eighth page borrows page 8 (the inactive menu/logo slot). */
-			unsigned page_index = WEEK4_VRAM_PAGE_SLOT(i);
-			const BopeeboVisualPage *page = &bopeebo_visual_page_table[page_index];
+			/* Page 7 contains the foreground limo plus its four far-limo cels;
+			   page 8 is the separate higher-resolution dancer atlas. The BF page
+			   remains untouched; page 8 leases the previously spare upper-right slot. */
+			const BopeeboVisualPage *page = week4_visual_page_info(i);
+			if (!page) { free(page_data); failure_code = FAIL_ASSET_LOAD; return; }
 			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
 			if (enable) {
 				if (!read_cd_file_range("\\W4SCENE.BIN", i * 32u, 32u, page_data)) {
 					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
 				}
 				LoadImage(&rect, page_data);
-			} else if (!load_visual_page_from_disc(page_index, page_data)) {
-				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+			} else {
+				int base_page = week4_base_page_for_logical(i);
+				if (base_page >= 0) {
+					if (!load_visual_page_from_disc((unsigned)base_page, page_data)) {
+						free(page_data); failure_code = FAIL_ASSET_LOAD; return;
+					}
+				} else {
+					memset(page_data, 0, 65536u);
+					LoadImage(&rect, page_data);
+				}
 			}
 			DrawSync(0);
 		}
@@ -1039,26 +1124,6 @@ static bool restore_song_stage_after_game_over(void)
 	default: break;
 	}
 
-#if BOPEEBO_WEEK4_PAGE_COUNT > 7u
-	if (stage_id == 4u) {
-		const unsigned logical_page = 7u;
-		const unsigned physical_page = WEEK4_VRAM_PAGE_SLOT(logical_page);
-		uint32_t *page_data = (uint32_t *)malloc(65536u);
-		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
-		const BopeeboVisualPage *page = &bopeebo_visual_page_table[physical_page];
-		RECT rect = { (short)page->x, (short)page->y, 128, 256 };
-		bool read_ok = read_cd_file_range("\\W4SCENE.BIN", logical_page * 32u,
-			32u, page_data);
-		if (read_ok) {
-			DrawSync(0);
-			LoadImage(&rect, page_data);
-			DrawSync(0);
-		}
-		free(page_data);
-		if (!read_ok) { failure_code = FAIL_ASSET_LOAD; return false; }
-	}
-#endif
-
 	if (stage_id == 3u) {
 		unsigned source_page = bopeebo_visual_frames[VIS_BF_IDLE_0].page;
 		unsigned destination_page = bopeebo_visual_frames[VIS_MENU_LOGO].page;
@@ -1078,6 +1143,26 @@ static bool restore_song_stage_after_game_over(void)
 		free(page_data);
 		if (!read_ok) { failure_code = FAIL_ASSET_LOAD; return false; }
 	}
+/* Week 4 borrows menu/death pages for its appended far-limo/dancer atlases.
+   Restore all borrowed pages after Game Over before retrying. */
+#if BOPEEBO_WEEK4_PAGE_COUNT > 7u
+	if (stage_id == 4u) {
+		uint32_t *page_data = (uint32_t *)malloc(65536u);
+		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return false; }
+		for (unsigned logical_page = 7u; logical_page < BOPEEBO_WEEK4_PAGE_COUNT; logical_page++) {
+			if (week4_base_page_for_logical(logical_page) < 0) continue;
+			const BopeeboVisualPage *page = week4_visual_page_info(logical_page);
+			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
+			if (!read_cd_file_range("\\W4SCENE.BIN", logical_page * 32u, 32u, page_data)) {
+				free(page_data); failure_code = FAIL_ASSET_LOAD; return false;
+			}
+			DrawSync(0);
+			LoadImage(&rect, page_data);
+			DrawSync(0);
+		}
+		free(page_data);
+	}
+#endif
 
 	if (!palette_path) {
 		RECT palette = { 0, 496, 256, 1 };
@@ -1261,69 +1346,6 @@ static void draw_menu_texture_sprite(unsigned u, unsigned v, unsigned source_w, 
 	p->tpage = getTPage(page->depth, 0, page->x, page->y);
 	setClut(p, 0, 496);
 	DrawPrim((uint32_t *)p);
-}
-
-static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
-	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
-{
-	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
-		zoom_q8, scale_q8, 0u, 0u);
-}
-
-/* Draw a stage prop with independent parallax and art scale. Week 4's
-   official distant limo/dancers use 0.4 scroll; the main limo uses 1.0. */
-static void draw_week4_visual_prop(unsigned frame, int world_x, int world_y,
-	int camera_x, int camera_y, unsigned zoom_q8, unsigned scroll_q8,
-	unsigned art_scale_q8)
-{
-	if (visual_prim_count >= visual_prim_limit) {
-		visual_prim_rejected++;
-		return;
-	}
-	if (frame >= WEEK4_VISUAL_FRAME_COUNT || !zoom_q8) return;
-	const Week4VisualFrame *visual = &week4_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
-		WEEK4_VRAM_PAGE_SLOT(visual->page)];
-	int parallax_x = SCREEN_W / 2 +
-		(camera_x - SCREEN_W / 2) * (int)scroll_q8 / 256;
-	int parallax_y = SCREEN_H / 2 +
-		(camera_y - SCREEN_H / 2) * (int)scroll_q8 / 256;
-	int x0 = SCREEN_W / 2 + ((world_x - parallax_x) * (int)zoom_q8) / 256;
-	int y0 = SCREEN_H / 2 + ((world_y - parallax_y) * (int)zoom_q8) / 256;
-	unsigned geometry_q8 = zoom_q8 * art_scale_q8 / 256u;
-	int width = ((int)visual->w * (int)geometry_q8) / 256;
-	int height = ((int)visual->h * (int)geometry_q8) / 256;
-	if (width <= 0 || height <= 0) return;
-	int x1 = x0 + width, y1 = y0 + height;
-	int draw_x0 = x0 < 0 ? 0 : x0;
-	int draw_y0 = y0 < 0 ? 0 : y0;
-	int draw_x1 = x1 > SCREEN_W ? SCREEN_W : x1;
-	int draw_y1 = y1 > SCREEN_H ? SCREEN_H : y1;
-	if (draw_x0 >= draw_x1 || draw_y0 >= draw_y1) return;
-	unsigned u0 = visual->u + (unsigned)((int64_t)(draw_x0 - x0) * visual->w / width);
-	unsigned v0 = visual->v + (unsigned)((int64_t)(draw_y0 - y0) * visual->h / height);
-	unsigned u1 = visual->u + (unsigned)(((int64_t)(draw_x1 - x0) * visual->w + width - 1) / width) - 1u;
-	unsigned v1 = visual->v + (unsigned)(((int64_t)(draw_y1 - y0) * visual->h + height - 1) / height) - 1u;
-	if (u1 > (unsigned)visual->u + visual->w - 1u) u1 = visual->u + visual->w - 1u;
-	if (v1 > (unsigned)visual->v + visual->h - 1u) v1 = visual->v + visual->h - 1u;
-	if (u0 > u1 || v0 > v1 || u1 > 255u || v1 > 255u) return;
-	POLY_FT4 *p = &visual_prims[visual_prim_count++];
-	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
-	setPolyFT4(p);
-	setRGB0(p, 128, 128, 128);
-	setXY4(p, draw_x0, draw_y0, draw_x1, draw_y0,
-		draw_x0, draw_y1, draw_x1, draw_y1);
-	setUV4(p, u0, v0, u1, v0, u0, v1, u1, v1);
-	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	setClut(p, 0, 496);
-	DrawPrim((uint32_t *)p);
-}
-
-static void draw_week4_gf_frame(unsigned frame, int world_x, int world_y,
-	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
-{
-	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
-		zoom_q8, scale_q8, 87u, 79u);
 }
 
 static int freeplay_letter_index(char letter)
@@ -1761,19 +1783,40 @@ static bool poll_bopeebo4_controls(void)
 	} else {
 		game_pressed = (uint16_t)(previous_pad_buttons & (uint16_t)~buttons);
 #if TEST_PLAYABLE_BOPEEBO
+	#if GAME_WEEK4_COMPOSITION_EDITOR
+		if (game_screen == SCREEN_GAMEPLAY && active_song && active_song->stage_id == 4u &&
+		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT)) {
+			week4_editor_visible = !week4_editor_visible;
+		}
+	#endif
 		if (game_screen == SCREEN_GAMEPLAY &&
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		    !week4_editor_visible &&
+#endif
 		    (previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
 		if (game_screen == SCREEN_GAMEPLAY &&
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		    false &&
+#endif
 		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT))
 			diagnostics_visible = !diagnostics_visible;
 		if (game_screen == SCREEN_GAMEPLAY &&
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		    !week4_editor_visible &&
+#endif
 		    (previous_pad_buttons & PAD_TRIANGLE) && !(buttons & PAD_TRIANGLE))
 			dad_lanes_visible = !dad_lanes_visible;
 		if (game_screen == SCREEN_GAMEPLAY &&
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		    !week4_editor_visible &&
+#endif
 		    (previous_pad_buttons & PAD_L1) && !(buttons & PAD_L1) && pan_width)
 			pan_width--;
 		if (game_screen == SCREEN_GAMEPLAY &&
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		    !week4_editor_visible &&
+#endif
 		    (previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
 			pan_width++;
 #else
@@ -1795,6 +1838,110 @@ static bool poll_bopeebo4_controls(void)
 	set_voice_pan();
 	return true;
 }
+
+#if GAME_WEEK4_COMPOSITION_EDITOR
+static void update_week4_composition_editor(void)
+{
+	if (!week4_editor_visible || !active_song || active_song->stage_id != 4u ||
+	    game_screen != SCREEN_GAMEPLAY) return;
+	if (game_pressed & PAD_TRIANGLE) {
+		week4_editor_summary = !week4_editor_summary;
+		return;
+	}
+	if (week4_editor_summary) return;
+	int dx = week4_edit_dx[week4_edit_layer];
+	int dy = week4_edit_dy[week4_edit_layer];
+	int scale = week4_edit_scale_q8[week4_edit_layer];
+	bool fast = (game_buttons & PAD_R2) != 0;
+	int move_step = fast ? 10 : 2;
+	int scale_step = fast ? 32 : 16;
+	if (game_pressed & PAD_UP)
+		week4_edit_layer = (uint8_t)((week4_edit_layer + W4_EDIT_LAYER_COUNT - 1u) % W4_EDIT_LAYER_COUNT);
+	else if (game_pressed & PAD_DOWN)
+		week4_edit_layer = (uint8_t)((week4_edit_layer + 1u) % W4_EDIT_LAYER_COUNT);
+	else if ((game_pressed & PAD_LEFT) ||
+		((game_buttons & PAD_LEFT) == 0 && week4_edit_repeat_button == PAD_LEFT &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_LEFT;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dx > -128) week4_edit_dx[week4_edit_layer] = (int16_t)(dx - move_step);
+	}
+	else if ((game_pressed & PAD_RIGHT) ||
+		((game_buttons & PAD_RIGHT) == 0 && week4_edit_repeat_button == PAD_RIGHT &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_RIGHT;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dx < 128) week4_edit_dx[week4_edit_layer] = (int16_t)(dx + move_step);
+	}
+	else if ((game_pressed & PAD_L1) ||
+		((game_buttons & PAD_L1) == 0 && week4_edit_repeat_button == PAD_L1 &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_L1;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dy > -128) week4_edit_dy[week4_edit_layer] = (int16_t)(dy - move_step);
+	}
+	else if ((game_pressed & PAD_R1) ||
+		((game_buttons & PAD_R1) == 0 && week4_edit_repeat_button == PAD_R1 &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_R1;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dy < 128) week4_edit_dy[week4_edit_layer] = (int16_t)(dy + move_step);
+	}
+	else if ((game_pressed & PAD_CROSS) ||
+		((game_buttons & PAD_CROSS) == 0 && week4_edit_repeat_button == PAD_CROSS &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_CROSS;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (scale < 1024) week4_edit_scale_q8[week4_edit_layer] =
+			(uint16_t)(scale + scale_step > 1024 ? 1024 : scale + scale_step);
+	}
+	else if ((game_pressed & PAD_CIRCLE) ||
+		((game_buttons & PAD_CIRCLE) == 0 && week4_edit_repeat_button == PAD_CIRCLE &&
+		 gameplay_frame_counter >= week4_edit_repeat_at)) {
+		week4_edit_repeat_button = PAD_CIRCLE;
+		week4_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (scale > 128) week4_edit_scale_q8[week4_edit_layer] =
+			(uint16_t)(scale - scale_step < 128 ? 128 : scale - scale_step);
+	}
+	else if (game_pressed & PAD_SQUARE) {
+		week4_edit_dx[week4_edit_layer] = 0;
+		week4_edit_dy[week4_edit_layer] = 0;
+		week4_edit_scale_q8[week4_edit_layer] = 256u;
+	}
+	else if (game_buttons & (PAD_LEFT | PAD_RIGHT | PAD_L1 | PAD_R1 | PAD_CROSS | PAD_CIRCLE))
+		week4_edit_repeat_button = 0;
+}
+
+static void draw_week4_editor_panel(void)
+{
+	static const char *const names[W4_EDIT_LAYER_COUNT] = {
+		"STAGE", "CAMERA", "FAR LIMO", "FAR DANCERS", "GF",
+		"FRONT LIMO", "MOM", "BF"
+	};
+	if (error_font_id < 0 || !week4_editor_visible || !active_song ||
+	    active_song->stage_id != 4u || game_screen != SCREEN_GAMEPLAY) return;
+	if (week4_editor_summary) {
+		FntPrint(error_font_id, "W4 TRANSFORMS - SCREENSHOT THIS PAGE\n");
+		for (unsigned i = 0; i < W4_EDIT_LAYER_COUNT; i++)
+			FntPrint(error_font_id, "%s X%+d Y%+d Z%u%%\n", names[i],
+				(int)week4_edit_dx[i], (int)week4_edit_dy[i],
+				(unsigned)(week4_edit_scale_q8[i] * 100u / 256u));
+		FntPrint(error_font_id, "TRIANGLE:EDIT  START:%s  SELECT:CLOSE",
+			week4_editor_paused ? "RESUME" : "PAUSE");
+		FntFlush(error_font_id);
+		return;
+	}
+	FntPrint(error_font_id, "W4 %s X%+d Y%+d Z%u%%\n",
+		names[week4_edit_layer], (int)week4_edit_dx[week4_edit_layer],
+		(int)week4_edit_dy[week4_edit_layer],
+		(unsigned)(week4_edit_scale_q8[week4_edit_layer] * 100u / 256u));
+	FntPrint(error_font_id, "%s  UP/DOWN LAYER  LEFT/RIGHT X\nL1/R1 Y  CROSS/CIRCLE SIZE  R2 FAST\nTRI SUMMARY  SQUARE RESET  START:%s",
+		week4_editor_paused ? "PAUSED" : "RUNNING",
+		week4_editor_paused ? "RESUME" : "PAUSE");
+	FntPrint(error_font_id, "SELECT CLOSE");
+	FntFlush(error_font_id);
+}
+#endif
 #else
 static bool poll_voice_toggle(void)
 {
@@ -2392,6 +2539,11 @@ static void draw_bf_sing_extra_frame(unsigned extra_index, int center_x, int flo
 		full_width = (BOPEEBO_BF_FRAME_W * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
 		full_height = (BOPEEBO_BF_FRAME_H * WEEK3_CHARACTER_REFERENCE_ZOOM_Q8 + zoom_q8 / 2u) / zoom_q8;
 	}
+	if (!week3 && active_song && active_song->stage_id == 4u) {
+		center_x = week4_edit_x(W4_EDIT_BF, center_x);
+		floor_y = week4_edit_y(W4_EDIT_BF, floor_y);
+		zoom_q8 = week4_edit_zoom(W4_EDIT_BF, zoom_q8);
+	}
 	unsigned page_override = week3 ? bopeebo_visual_frames[VIS_MENU_LOGO].page :
 		BOPEEBO_VISUAL_PAGE_COUNT;
 	draw_visual_record_scaled_on_page(visual,
@@ -2454,15 +2606,17 @@ static void draw_week4_visual_frame_sized(unsigned frame, int world_x,
 	}
 	if (frame >= WEEK4_VISUAL_FRAME_COUNT) return;
 	const Week4VisualFrame *visual = &week4_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
-		WEEK4_VRAM_PAGE_SLOT(visual->page)];
+	const BopeeboVisualPage *page = week4_visual_page_info(visual->page);
+	if (!page) return;
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
 	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
-	/* Keep GF's 64x64 sampled poses in the same 87x79 destination box as
-	   her original cels; use each frame's own dimensions for UV sampling. */
+	/* A few sampled GF dance cels use a compact 64x64 source rectangle while
+	   the original poses use an 87x79 rectangle. Keep a shared destination
+	   envelope for the whole cycle so her apparent size cannot pulse with the
+	   selected atlas frame. UVs below still cover each frame's own rectangle. */
 	int w = ((int)(draw_w ? draw_w : visual->w) * (int)combined_scale) / 256;
 	int h = ((int)(draw_h ? draw_h : visual->h) * (int)combined_scale) / 256;
 	setPolyFT4(p);
@@ -2478,6 +2632,71 @@ static void draw_week4_visual_frame_sized(unsigned frame, int world_x,
 	DrawPrim((uint32_t *)p);
 }
 
+static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
+		zoom_q8, scale_q8, 0u, 0u);
+}
+
+/* Draw a stage prop with an independent camera scroll factor and art scale.
+   Week 4's official distant limo/dancers scroll at 0.4 while the main limo
+   uses 1.0. Keep camera zoom for position, independently scale the baked
+   half-size far-plane texture, and clip its UVs to the screen. */
+static void draw_week4_visual_prop(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scroll_q8,
+	unsigned art_scale_q8)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= WEEK4_VISUAL_FRAME_COUNT || !zoom_q8) return;
+	const Week4VisualFrame *visual = &week4_visual_frames[frame];
+	const BopeeboVisualPage *page = week4_visual_page_info(visual->page);
+	if (!page) return;
+	int parallax_x = SCREEN_W / 2 +
+		(camera_x - SCREEN_W / 2) * (int)scroll_q8 / 256;
+	int parallax_y = SCREEN_H / 2 +
+		(camera_y - SCREEN_H / 2) * (int)scroll_q8 / 256;
+	int x0 = SCREEN_W / 2 + ((world_x - parallax_x) * (int)zoom_q8) / 256;
+	int y0 = SCREEN_H / 2 + ((world_y - parallax_y) * (int)zoom_q8) / 256;
+	unsigned geometry_q8 = zoom_q8 * art_scale_q8 / 256u;
+	int width = ((int)visual->w * (int)geometry_q8) / 256;
+	int height = ((int)visual->h * (int)geometry_q8) / 256;
+	if (width <= 0 || height <= 0) return;
+	int x1 = x0 + width, y1 = y0 + height;
+	int draw_x0 = x0 < 0 ? 0 : x0;
+	int draw_y0 = y0 < 0 ? 0 : y0;
+	int draw_x1 = x1 > SCREEN_W ? SCREEN_W : x1;
+	int draw_y1 = y1 > SCREEN_H ? SCREEN_H : y1;
+	if (draw_x0 >= draw_x1 || draw_y0 >= draw_y1) return;
+	unsigned u0 = visual->u + (unsigned)((int64_t)(draw_x0 - x0) * visual->w / width);
+	unsigned v0 = visual->v + (unsigned)((int64_t)(draw_y0 - y0) * visual->h / height);
+	unsigned u1 = visual->u + (unsigned)(((int64_t)(draw_x1 - x0) * visual->w + width - 1) / width) - 1u;
+	unsigned v1 = visual->v + (unsigned)(((int64_t)(draw_y1 - y0) * visual->h + height - 1) / height) - 1u;
+	if (u1 > (unsigned)visual->u + visual->w - 1u) u1 = visual->u + visual->w - 1u;
+	if (v1 > (unsigned)visual->v + visual->h - 1u) v1 = visual->v + visual->h - 1u;
+	if (u0 > u1 || v0 > v1 || u1 > 255u || v1 > 255u) return;
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, draw_x0, draw_y0, draw_x1, draw_y0,
+		draw_x0, draw_y1, draw_x1, draw_y1);
+	setUV4(p, u0, v0, u1, v0, u0, v1, u1, v1);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
+static void draw_week4_gf_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
+{
+	draw_week4_visual_frame_sized(frame, world_x, world_y, camera_x, camera_y,
+		zoom_q8, scale_q8, 87u, 79u);
+}
+
 /* Week 4's 2.05x camera makes each 256x256 background tile exceed the PS1
    viewport on both axes. Clip the quad and its UVs on the CPU, as for Week 2,
    so the GPU never receives the oversized off-screen background primitive. */
@@ -2490,8 +2709,8 @@ static void draw_week4_stage_tile(unsigned frame, int world_x, int world_y,
 		return;
 	}
 	const Week4VisualFrame *visual = &week4_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
-		WEEK4_VRAM_PAGE_SLOT(visual->page)];
+	const BopeeboVisualPage *page = week4_visual_page_info(visual->page);
+	if (!page) return;
 	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256;
 	int width = ((int)visual->w * (int)zoom_q8) / 256;
@@ -2534,8 +2753,8 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
-	int x0 = 160 + ((world_x - camera_x) * (int)combined_scale) / 256;
-	int y0 = 120 + ((world_y - camera_y) * (int)combined_scale) / 256;
+	int x0 = 160 + ((world_x + visual->dx - camera_x) * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y + visual->dy - camera_y) * (int)combined_scale) / 256;
 	int w = ((int)visual->w * (int)combined_scale) / 256;
 	int h = ((int)visual->h * (int)combined_scale) / 256;
 	setPolyFT4(p);
@@ -2548,6 +2767,17 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	p->tpage = getTPage(page->depth, 0, page->x, page->y);
 	setClut(p, 0, 496);
 	DrawPrim((uint32_t *)p);
+}
+
+/* Convert a target screen-space top-left into world coordinates while
+   retaining the stage prop's official scroll fraction during camera focus. */
+static int week5_layer_world_pos(int screen_pos, int center, int camera_pos,
+	int base_camera_pos, unsigned combined_scale, unsigned scroll_q8)
+{
+	int base = base_camera_pos + ((screen_pos - center) * 256) /
+		(int)combined_scale;
+	int delta = camera_pos - base_camera_pos;
+	return base + delta * (int)(256u - scroll_q8) / 256;
 }
 
 static void draw_week6_visual_frame(unsigned frame, int x, int y, int width, int height)
@@ -2831,16 +3061,24 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 	if (active_song->stage_id == 4u) {
 		switch (focus) {
 		case 1:
-			*x = BOPEEBO_WEEK4_MOM_X + BOPEEBO_WEEK4_MOM_CAMERA_X;
-			*y = BOPEEBO_WEEK4_MOM_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u) +
-				BOPEEBO_WEEK4_MOM_CAMERA_Y; break;
+			*x = week4_edit_x(W4_EDIT_MOM,
+				BOPEEBO_WEEK4_MOM_X + BOPEEBO_WEEK4_MOM_CAMERA_X);
+			*y = week4_edit_y(W4_EDIT_MOM,
+				BOPEEBO_WEEK4_MOM_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u) +
+				BOPEEBO_WEEK4_MOM_CAMERA_Y);
+			break;
 		case 0:
-			*x = BOPEEBO_WEEK4_BF_X + BOPEEBO_WEEK4_BF_CAMERA_X;
-			*y = BOPEEBO_WEEK4_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
-				BOPEEBO_WEEK4_BF_CAMERA_Y; break;
+			*x = week4_edit_x(W4_EDIT_BF,
+				BOPEEBO_WEEK4_BF_X + BOPEEBO_WEEK4_BF_CAMERA_X);
+			*y = week4_edit_y(W4_EDIT_BF,
+				BOPEEBO_WEEK4_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
+				BOPEEBO_WEEK4_BF_CAMERA_Y);
+			break;
 		case 2:
-			*x = BOPEEBO_WEEK4_GF_X;
-			*y = BOPEEBO_WEEK4_GF_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u); break;
+			*x = week4_edit_x(W4_EDIT_GF, BOPEEBO_WEEK4_GF_X);
+			*y = week4_edit_y(W4_EDIT_GF,
+				BOPEEBO_WEEK4_GF_Y - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_H / 2u));
+			break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
 		}
 		return;
@@ -3289,6 +3527,12 @@ static void draw_scene(uint32_t samples)
 	uint32_t smooth = t * t * (768u - 2u * t) / 65536u;
 	int camera_x = from_x + (to_x - from_x) * (int)smooth / 256;
 	int camera_y = from_y + (to_y - from_y) * (int)smooth / 256;
+	if (week4) {
+		/* Persist the user-tuned camera placement in normal builds too. */
+		camera_x = week4_edit_x(W4_EDIT_CAMERA, camera_x);
+		camera_y = week4_edit_y(W4_EDIT_CAMERA, camera_y);
+		zoom_q8 = week4_edit_zoom(W4_EDIT_CAMERA, zoom_q8);
+	}
 	camera_focus_display = (uint8_t)target_focus;
 	camera_transitioning = event_index && elapsed < transition;
 
@@ -3355,20 +3599,107 @@ static void draw_scene(uint32_t samples)
 		draw_visual_frame(VIS_WEEK3_STAGE_FRONT_1, BOPEEBO_WEEK3_STAGE_X + 256,
 			BOPEEBO_WEEK3_STAGE_Y, camera_x, camera_y, zoom_q8, 256);
 	} else if (week4) {
-		draw_week4_stage_tile(WEEK4_FRAME_STAGE_0, BOPEEBO_WEEK4_STAGE_X,
-			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
-		draw_week4_stage_tile(WEEK4_FRAME_STAGE_1, BOPEEBO_WEEK4_STAGE_X + 256,
-			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
-		/* Keep the distant limo and dancers at the stage's official 0.4 scroll. */
-		draw_week4_visual_prop(WEEK4_FRAME_FAR_PLANE,
-			BOPEEBO_WEEK4_FAR_X, BOPEEBO_WEEK4_FAR_Y,
-			camera_x, camera_y, zoom_q8, 102u, 128u);
+		unsigned stage_zoom = week4_edit_zoom(W4_EDIT_STAGE, zoom_q8);
+		int stage_x = week4_edit_x(W4_EDIT_STAGE, BOPEEBO_WEEK4_STAGE_X);
+		int stage_y = week4_edit_y(W4_EDIT_STAGE, BOPEEBO_WEEK4_STAGE_Y);
+		draw_week4_stage_tile(WEEK4_FRAME_STAGE_0, stage_x,
+			stage_y, camera_x, camera_y, stage_zoom);
+		draw_week4_stage_tile(WEEK4_FRAME_STAGE_1, stage_x + 256,
+			stage_y, camera_x, camera_y, stage_zoom);
+		/* The official 0.4-parallax bgLimo and henchmen have separate animation
+		   frames. These tuned transforms are active even with the editor removed. */
+		int far_limo_x = week4_edit_x(W4_EDIT_FAR_LIMO, BOPEEBO_WEEK4_FAR_X);
+		int far_limo_y = week4_edit_y(W4_EDIT_FAR_LIMO, BOPEEBO_WEEK4_FAR_Y);
+		int far_dancers_x = week4_edit_x(W4_EDIT_FAR_DANCERS, BOPEEBO_WEEK4_FAR_X);
+		int far_dancers_y = week4_edit_y(W4_EDIT_FAR_DANCERS, BOPEEBO_WEEK4_FAR_Y);
+		unsigned far_limo_scale = week4_edit_art_scale(W4_EDIT_FAR_LIMO, 128u);
+		unsigned far_dancers_scale = week4_edit_art_scale(W4_EDIT_FAR_DANCERS, 213u);
+		unsigned far_dancer_spacing_scale = week4_edit_scale_q8[W4_EDIT_FAR_DANCERS];
+		unsigned limo_frame = (unsigned)(((uint64_t)samples * WEEK4_FAR_LIMO_FRAME_RATE /
+			(rate ? rate : BOPEEBO_CHART_RATE)) & 3u);
+		draw_week4_visual_prop(WEEK4_FRAME_FAR_LIMO_0 + limo_frame,
+			far_limo_x, far_limo_y + 22, camera_x, camera_y, zoom_q8, 102u,
+			far_limo_scale);
+		unsigned tempo_index = 0;
+		while (tempo_index + 1u < active_chart->tempo_count &&
+			active_chart->tempos[tempo_index + 1u].sample <= samples)
+			tempo_index++;
+		uint32_t dancer_bpm_centi = active_chart->tempos[tempo_index].bpm_centi;
+		unsigned dancer_frame_step = dancer_bpm_centi ?
+			(unsigned)(((uint64_t)beat_phase * 144000u) /
+			((uint64_t)dancer_bpm_centi * 65536u)) : 0u;
+		if (dancer_frame_step >= WEEK4_HENCH_SEQUENCE_LENGTH / 2u)
+			dancer_frame_step = WEEK4_HENCH_SEQUENCE_LENGTH / 2u - 1u;
+		static const int16_t far_dancer_offsets[4] = {4, 64, 136, 196};
+		for (unsigned dancer = 0; dancer < 4u; dancer++) {
+			/* First two source props start on danceRight; the next two on
+			   danceLeft. Their 15-entry Sparrow sequences include held cels. */
+			unsigned right_sequence = ((beat + (dancer >= 2u ? 1u : 0u)) & 1u) == 0u;
+			unsigned sequence_index = (right_sequence ? 15u : 0u) + dancer_frame_step;
+			unsigned pose = week4_hench_dance_sequence[sequence_index];
+			int spacing = (int)((int32_t)far_dancer_offsets[dancer] *
+				(int32_t)far_dancer_spacing_scale / 256);
+			draw_week4_visual_prop(WEEK4_FRAME_HENCH_0 + pose,
+				far_dancers_x + spacing, far_dancers_y,
+				camera_x, camera_y, zoom_q8, 102u, far_dancers_scale);
+		}
 	} else if (week5) {
-		unsigned stage_frame = active_song->opponent_kind == PS1_OPPONENT_MONSTER ?
-			WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
-		/* Keep the compact 4:3 mall backdrop full-frame while the song camera
-		   follows the singer; characters and notes retain their own transforms. */
-		draw_week5_visual_frame(stage_frame, camera_x - 160, camera_y - 120,
+		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		int camera_dx = camera_x - BOPEEBO_WEEK5_BASE_CAMERA_X;
+		int camera_dy = camera_y - BOPEEBO_WEEK5_BASE_CAMERA_Y;
+		/* Background plates deliberately overscan the 4:3 viewport by 32x24
+		   so focus pans never reveal the atlas edge. Original stage scroll is .2. */
+		int bg_x = camera_x - 128 + camera_dx * 205 / 256;
+		int bg_y = camera_y - 96 + camera_dy * 205 / 256;
+		unsigned bg_frame = evil_mall ? WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
+		draw_week5_visual_frame(bg_frame, bg_x, bg_y,
+			camera_x, camera_y, 256u, 384u);
+		if (!evil_mall) {
+			/* Keep the mall architecture as distinct official layers: escalator
+			   and tree sit behind the singer sprites, with .3/.4 parallax. */
+			unsigned prop_scale = 320u;
+			unsigned prop_combined = prop_scale;
+			int escalator_x = week5_layer_world_pos(42, 160, camera_x,
+				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 77u);
+			int escalator_y = week5_layer_world_pos(72, 120, camera_y,
+				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 77u);
+			int tree_x = week5_layer_world_pos(245, 160, camera_x,
+				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 102u);
+			int tree_y = week5_layer_world_pos(24, 120, camera_y,
+				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 102u);
+			draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
+				camera_x, camera_y, 256u, prop_scale);
+			draw_week5_visual_frame(WEEK5_FRAME_TREE_XMAS, tree_x, tree_y,
+				camera_x, camera_y, 256u, prop_scale);
+
+			/* Crowd source frames are still driven by the 24fps audio clock.
+			   Sprite sizes follow their source proportions; they are not stretched
+			   to fill the screen as in the previous extraction. */
+			static const uint8_t crowd_sequence[13] = {
+				0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3
+			};
+			unsigned anim = (unsigned)(((uint64_t)samples * 24u / rate) % 13u);
+			unsigned crowd_pose = crowd_sequence[anim];
+			int upper_x = week5_layer_world_pos(66, 160, camera_x,
+				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 72u);
+			int upper_y = week5_layer_world_pos(43, 120, camera_y,
+				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 72u);
+			int lower_x = week5_layer_world_pos(54, 160, camera_x,
+				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 230u);
+			int lower_y = week5_layer_world_pos(157, 120, camera_y,
+				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 230u);
+			draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
+				upper_x, upper_y, camera_x, camera_y, 256u, prop_scale);
+			draw_week5_visual_frame(WEEK5_FRAME_CROWD_LOWER_0 + crowd_pose,
+				lower_x, lower_y, camera_x, camera_y, 256u, prop_scale);
+		}
+		/* Snow is an official foreground layer, before the stage characters. */
+		unsigned snow_frame = evil_mall ? WEEK5_FRAME_SNOW_EVIL : WEEK5_FRAME_SNOW_XMAS;
+		int snow_x = week5_layer_world_pos(34, 160, camera_x,
+			BOPEEBO_WEEK5_BASE_CAMERA_X, 320u, 256u);
+		int snow_y = week5_layer_world_pos(210, 120, camera_y,
+			BOPEEBO_WEEK5_BASE_CAMERA_Y, 320u, 256u);
+		draw_week5_visual_frame(snow_frame, snow_x, snow_y,
 			camera_x, camera_y, 256u, 320u);
 	} else {
 		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
@@ -3464,57 +3795,48 @@ static void draw_scene(uint32_t samples)
 			WEEK5_FRAME_GF_DANCE_V143_6, WEEK5_FRAME_GF_DANCE_V143_7
 		};
 		draw_week5_visual_frame(dance[gf_dance_pose(beat_q16)],
-			BOPEEBO_WEEK5_GF_X - 32, BOPEEBO_WEEK5_GF_Y - 64,
-			camera_x, camera_y, zoom_q8, 256);
+			BOPEEBO_WEEK5_GF_X, BOPEEBO_WEEK5_GF_Y,
+			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t dance[30] = {
 			WEEK4_FRAME_GF_DANCE_0,
-			WEEK4_FRAME_GF_DANCE_FULL_01,
-			WEEK4_FRAME_GF_DANCE_FULL_02,
-			WEEK4_FRAME_GF_DANCE_FULL_03,
-			WEEK4_FRAME_GF_DANCE_FULL_04,
-			WEEK4_FRAME_GF_DANCE_FULL_05,
-			WEEK4_FRAME_GF_DANCE_FULL_06,
-			WEEK4_FRAME_GF_DANCE_FULL_07,
-			WEEK4_FRAME_GF_DANCE_FULL_08,
-			WEEK4_FRAME_GF_DANCE_FULL_09,
-			WEEK4_FRAME_GF_DANCE_FULL_10,
-			WEEK4_FRAME_GF_DANCE_FULL_11,
-			WEEK4_FRAME_GF_DANCE_FULL_12,
-			WEEK4_FRAME_GF_DANCE_FULL_13,
-			WEEK4_FRAME_GF_DANCE_FULL_14,
+			WEEK4_FRAME_GF_DANCE_FULL_01, WEEK4_FRAME_GF_DANCE_FULL_02,
+			WEEK4_FRAME_GF_DANCE_FULL_03, WEEK4_FRAME_GF_DANCE_FULL_04,
+			WEEK4_FRAME_GF_DANCE_FULL_05, WEEK4_FRAME_GF_DANCE_FULL_06,
+			WEEK4_FRAME_GF_DANCE_FULL_07, WEEK4_FRAME_GF_DANCE_FULL_08,
+			WEEK4_FRAME_GF_DANCE_FULL_09, WEEK4_FRAME_GF_DANCE_FULL_10,
+			WEEK4_FRAME_GF_DANCE_FULL_11, WEEK4_FRAME_GF_DANCE_FULL_12,
+			WEEK4_FRAME_GF_DANCE_FULL_13, WEEK4_FRAME_GF_DANCE_FULL_14,
 			WEEK4_FRAME_GF_DANCE_1,
-			WEEK4_FRAME_GF_DANCE_FULL_16,
-			WEEK4_FRAME_GF_DANCE_FULL_17,
-			WEEK4_FRAME_GF_DANCE_FULL_18,
-			WEEK4_FRAME_GF_DANCE_FULL_19,
-			WEEK4_FRAME_GF_DANCE_FULL_20,
-			WEEK4_FRAME_GF_DANCE_FULL_21,
-			WEEK4_FRAME_GF_DANCE_FULL_22,
-			WEEK4_FRAME_GF_DANCE_FULL_23,
-			WEEK4_FRAME_GF_DANCE_FULL_24,
-			WEEK4_FRAME_GF_DANCE_FULL_25,
-			WEEK4_FRAME_GF_DANCE_FULL_26,
-			WEEK4_FRAME_GF_DANCE_FULL_27,
-			WEEK4_FRAME_GF_DANCE_FULL_28,
-			WEEK4_FRAME_GF_DANCE_FULL_29
+			WEEK4_FRAME_GF_DANCE_FULL_16, WEEK4_FRAME_GF_DANCE_FULL_17,
+			WEEK4_FRAME_GF_DANCE_FULL_18, WEEK4_FRAME_GF_DANCE_FULL_19,
+			WEEK4_FRAME_GF_DANCE_FULL_20, WEEK4_FRAME_GF_DANCE_FULL_21,
+			WEEK4_FRAME_GF_DANCE_FULL_22, WEEK4_FRAME_GF_DANCE_FULL_23,
+			WEEK4_FRAME_GF_DANCE_FULL_24, WEEK4_FRAME_GF_DANCE_FULL_25,
+			WEEK4_FRAME_GF_DANCE_FULL_26, WEEK4_FRAME_GF_DANCE_FULL_27,
+			WEEK4_FRAME_GF_DANCE_FULL_28, WEEK4_FRAME_GF_DANCE_FULL_29
 		};
 		unsigned dance_frame = (((beat_q16 >> 16) & 1u) * 15u) +
 			beat_pose(beat_q16, 15u);
 		draw_week4_visual_frame(dance[dance_frame],
-			BOPEEBO_WEEK4_GF_X - 43, BOPEEBO_WEEK4_GF_Y - 79,
-			camera_x, camera_y, zoom_q8, 256);
+			week4_edit_x(W4_EDIT_GF, BOPEEBO_WEEK4_GF_X - 43),
+			week4_edit_y(W4_EDIT_GF, BOPEEBO_WEEK4_GF_Y - 79),
+			camera_x, camera_y, week4_edit_zoom(W4_EDIT_GF, zoom_q8), 256);
 	}
 	else draw_visual_frame(gf_frame,
 		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
 		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
 		camera_x, camera_y, zoom_q8, 256);
-	/* In Week 4 GF sits behind the foreground limo. Its frame is packed into
-	   the otherwise unused Mom-icon page, leaving the shared BF page untouched. */
-	if (week4)
+	/* In Week 4 the girlfriend sits behind the foreground limousine. Keep its
+	   texture on the unused Mom-icon page and draw the foreground after GF but
+	   before Mom and BF, so the limo roof/body provide the intended occlusion. */
+	if (week4) {
 		draw_week4_visual_prop(WEEK4_FRAME_LIMO_FRONT,
-			BOPEEBO_WEEK4_LIMO_X, BOPEEBO_WEEK4_LIMO_Y,
-			camera_x, camera_y, zoom_q8, 256u, 256u);
+			week4_edit_x(W4_EDIT_FRONT_LIMO, BOPEEBO_WEEK4_LIMO_X),
+			week4_edit_y(W4_EDIT_FRONT_LIMO, BOPEEBO_WEEK4_LIMO_Y),
+			camera_x, camera_y, zoom_q8, 256u,
+			week4_edit_art_scale(W4_EDIT_FRONT_LIMO, 256u));
+	}
 	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
 	if (week2) {
 		unsigned opponent_frame;
@@ -3619,8 +3941,8 @@ static void draw_scene(uint32_t samples)
 			opponent_frame = WEEK5_FRAME_PARENTS_IDLE_1;
 		}
 		draw_week5_visual_frame(opponent_frame,
-			BOPEEBO_WEEK5_OPP_X - 32, BOPEEBO_WEEK5_OPP_Y - 64,
-			camera_x, camera_y, zoom_q8, 256);
+			BOPEEBO_WEEK5_OPP_X, BOPEEBO_WEEK5_OPP_Y,
+			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
 			WEEK4_FRAME_MOM_IDLE_1, WEEK4_FRAME_MOM_IDLE_2 };
@@ -3650,14 +3972,25 @@ static void draw_scene(uint32_t samples)
 			mom_frame = sing[lane][pose];
 		}
 		draw_week4_visual_frame(mom_frame,
-			BOPEEBO_WEEK4_MOM_X - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_W / 2u),
-			BOPEEBO_WEEK4_MOM_Y - (int)BOPEEBO_WEEK4_CHARACTER_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
+			week4_edit_x(W4_EDIT_MOM, BOPEEBO_WEEK4_MOM_X - (int)(BOPEEBO_WEEK4_CHARACTER_FRAME_W / 2u)),
+			week4_edit_y(W4_EDIT_MOM, BOPEEBO_WEEK4_MOM_Y - (int)BOPEEBO_WEEK4_CHARACTER_FRAME_H),
+			camera_x, camera_y, week4_edit_zoom(W4_EDIT_MOM, zoom_q8), 256);
 	} else if (active_song->opponent_kind == PS1_OPPONENT_DAD)
 		draw_visual_frame(dad_frame,
 			BOPEEBO_DAD_X - (int)(BOPEEBO_DAD_FRAME_W / 2u),
 			BOPEEBO_DAD_Y - (int)BOPEEBO_DAD_FRAME_H,
 			camera_x, camera_y, zoom_q8, 256);
+
+	/* Official Santa prop at Mall Christmas z=210: it sits in front of Parents,
+	   behind BF, and is omitted from Winter Horrorland. */
+	if (week5 && active_song->opponent_kind != PS1_OPPONENT_MONSTER) {
+		int santa_x = week5_layer_world_pos(18, 160, camera_x,
+			BOPEEBO_WEEK5_BASE_CAMERA_X, 320u, 256u);
+		int santa_y = week5_layer_world_pos(225, 120, camera_y,
+			BOPEEBO_WEEK5_BASE_CAMERA_Y, 320u, 256u);
+		draw_week5_visual_frame(WEEK5_FRAME_SANTA, santa_x, santa_y,
+			camera_x, camera_y, 256u, 320u);
+	}
 
 	unsigned bf_frame = VIS_BF_IDLE_0;
 	int bf_extra_pose = -1;
@@ -3690,12 +4023,45 @@ static void draw_scene(uint32_t samples)
 		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
 		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
-	if (bf_extra_pose >= 0)
+	if (week5) {
+		static const uint8_t bf_sing[4][2] = {
+			{ WEEK5_FRAME_BF_LEFT_0, WEEK5_FRAME_BF_LEFT_1 },
+			{ WEEK5_FRAME_BF_DOWN_0, WEEK5_FRAME_BF_DOWN_1 },
+			{ WEEK5_FRAME_BF_UP_0, WEEK5_FRAME_BF_UP_1 },
+			{ WEEK5_FRAME_BF_RIGHT_0, WEEK5_FRAME_BF_RIGHT_1 }
+		};
+		static const uint8_t bf_miss[4] = {
+			WEEK5_FRAME_BF_MISS_LEFT, WEEK5_FRAME_BF_MISS_DOWN,
+			WEEK5_FRAME_BF_MISS_UP, WEEK5_FRAME_BF_MISS_RIGHT
+		};
+		unsigned christmas_bf_frame;
+		if (bf_visual_state == 2u) {
+			christmas_bf_frame = bf_miss[bf_visual_lane & 3u];
+		} else if (bf_visual_state == 1u) {
+			uint32_t elapsed = samples >= bf_visual_start ? samples - bf_visual_start : 0u;
+			uint32_t pose_period = BOPEEBO_CHART_RATE / 15u;
+			if (!pose_period) pose_period = 1u;
+			christmas_bf_frame = bf_sing[bf_visual_lane & 3u][(elapsed / pose_period) & 1u];
+		} else {
+			unsigned idle_step = (unsigned)((uint64_t)beat_phase * BOPEEBO_BF_IDLE_SEQUENCE_LENGTH >> 16);
+			if (idle_step >= BOPEEBO_BF_IDLE_SEQUENCE_LENGTH)
+				idle_step = BOPEEBO_BF_IDLE_SEQUENCE_LENGTH - 1u;
+			christmas_bf_frame = WEEK5_FRAME_BF_IDLE_0 +
+				(bopeebo_bf_idle_sequence[idle_step] & 1u);
+		}
+		draw_week5_visual_frame(christmas_bf_frame, bf_world_x, bf_world_y,
+			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
+	} else if (bf_extra_pose >= 0)
 		draw_bf_sing_extra_frame((unsigned)bf_extra_pose,
 			bf_world_x, bf_world_y, camera_x, camera_y, zoom_q8, week3);
 	else if (week3)
 		draw_week3_character_frame(bf_frame, bf_world_x, bf_world_y,
 			camera_x, camera_y, zoom_q8);
+	else if (week4)
+		draw_visual_frame(bf_frame,
+			week4_edit_x(W4_EDIT_BF, bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u)),
+			week4_edit_y(W4_EDIT_BF, bf_world_y - (int)BOPEEBO_BF_FRAME_H),
+			camera_x, camera_y, week4_edit_zoom(W4_EDIT_BF, zoom_q8), 256);
 	else
 		draw_visual_frame(bf_frame,
 			bf_world_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
@@ -4368,6 +4734,10 @@ static bool enter_bopeebo(void)
 	if (failure_code == FAIL_ASSET_LOAD) return false;
 	reset_game_state();
 	song_finished = false;
+#if GAME_WEEK4_COMPOSITION_EDITOR
+	week4_editor_paused = false;
+	week4_editor_summary = false;
+#endif
 	if (!start_stream_from_disc()) return false;
 	game_screen = SCREEN_GAMEPLAY;
 	return true;
@@ -4464,10 +4834,28 @@ static void run_playable_frontend(void)
 				song_finished = true;
 			}
 			if (samples > active_song->sample_count) samples = active_song->sample_count;
+#if GAME_WEEK4_COMPOSITION_EDITOR
+			update_week4_composition_editor();
+#endif
 			if (game_pressed & PAD_START) {
-				abort_cd_read();
-				Stream_Stop();
-				game_screen = SCREEN_PAUSE;
+	#if GAME_WEEK4_COMPOSITION_EDITOR
+				if (active_song && active_song->stage_id == 4u &&
+				    (week4_editor_visible || week4_editor_paused)) {
+					/* PSn00bSDK's cdstream example uses Stop/Start(resume) for pause.
+					   Keep the gameplay state and sample-driven camera frozen in place. */
+					if (week4_editor_paused) {
+						if (!Stream_Start(&stream, true)) show_error(FAIL_STREAM_START);
+						week4_editor_paused = false;
+					} else {
+						Stream_Stop();
+						week4_editor_paused = true;
+					}
+				} else
+	#endif
+				{
+					Stream_Stop();
+					game_screen = SCREEN_PAUSE;
+				}
 			} else if (!song_finished) {
 #if GAME_SCENE_DEMO_DEFAULT
 				update_scene_demo_visuals(samples);
@@ -4511,9 +4899,16 @@ static void run_playable_frontend(void)
 				!enter_bopeebo())
 				show_error(failure_code ? failure_code : FAIL_CD_READ);
 		} else if (game_screen == SCREEN_PAUSE) {
+			/* Keep the CD-to-RAM ring topped up while SPU playback is stopped.
+			   An in-flight read is allowed to finish and its callback feeds the
+			   exact sectors already reserved by feed_stream(). */
+			(void)feed_stream();
+			if (read_ctx.read_error)
+				show_error(FAIL_CD_READ);
 			if (game_pressed & PAD_CROSS) {
 				play_menu_sfx(1u);
-				if (!Stream_Start(&stream, true)) show_error(FAIL_STREAM_START);
+				if (!resume_paused_stream())
+					show_error(failure_code ? failure_code : FAIL_STREAM_START);
 				game_screen = SCREEN_GAMEPLAY;
 			} else if (game_pressed & PAD_CIRCLE) {
 				play_menu_sfx(2u);
@@ -4872,6 +5267,44 @@ static bool feed_stream(void)
 	return true;
 }
 
+/* Stream_Stop() freezes the audio sample clock but leaves the decoded RAM
+   ring intact. Wait for enough queued ADPCM to absorb the first CD read after
+   resume. The pause loop pumps this same feeder, so a quick resume also starts
+   from a safe buffer level instead of draining the last partial chunk. */
+static bool resume_paused_stream(void)
+{
+	if (read_ctx.read_error) {
+		failure_code = FAIL_CD_READ;
+		return false;
+	}
+	unsigned chunk_bytes = (unsigned)stream.config.interleave * read_ctx.channels;
+	unsigned target = REFILL_THRESHOLD + chunk_bytes;
+	if (target > stream.config.buffer_size)
+		target = stream.config.buffer_size;
+	unsigned frame;
+	for (frame = 0; frame < MAX_WAIT_FRAMES; frame++) {
+		if (read_ctx.read_error)
+			break;
+		(void)feed_stream();
+		if (stream.buffer.length >= target)
+			break;
+		VSync(0);
+	}
+	if (read_ctx.read_error) {
+		failure_code = FAIL_CD_READ;
+		return false;
+	}
+	if (frame == MAX_WAIT_FRAMES || stream.buffer.length < chunk_bytes) {
+		failure_code = FAIL_BUFFER_TIMEOUT;
+		return false;
+	}
+	if (!Stream_Start(&stream, true)) {
+		failure_code = FAIL_STREAM_START;
+		return false;
+	}
+	return true;
+}
+
 static bool valid_header(const VAG_Header *header, unsigned expected_channels,
 	unsigned *channels_out,
 	unsigned *interleave_out, unsigned *sample_rate_out, unsigned *chunks_out,
@@ -5208,10 +5641,12 @@ int main(void)
 		/* Keep the production HUD compact; camera QA is explicitly labelled. */
 #if GAME_SCENE_DEMO_DEFAULT
 		{
+#if !GAME_WEEK4_COMPOSITION_EDITOR
 			static const char *const focus_names[] = { "BF", "DAD", "GF", "STATIC" };
 			unsigned focus_index = camera_focus_display <= 2u ? camera_focus_display : 3u;
 		FntPrint(hud_font_id, "CAMERA DEMO %s %02u.%03u\n", focus_names[focus_index],
 				milliseconds / 1000u, milliseconds % 1000u);
+#endif
 		}
 #else
 		draw_score_display();
@@ -5256,6 +5691,9 @@ int main(void)
 			FntFlush(diagnostics_font_id);
 #endif
 		}
+#if GAME_WEEK4_COMPOSITION_EDITOR
+		draw_week4_editor_panel();
+#endif
 #else
 		if (active_song->stage_id == 8u || active_song->stage_id == 9u)
 			FntPrint(-1, "WEEKEND 1  INST / DARNELL-L / PICO-R\n");

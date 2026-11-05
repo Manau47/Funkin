@@ -194,6 +194,9 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT "Load popup palette at known-working BF CLUT address for diagnosis" OFF)
 	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT "Test popup palette in a free neighboring CLUT slot" OFF)
 	option(FUNKIN_PS1_SCENE_DEMO_DEFAULT "Build a camera-only scene demo without gameplay penalties" OFF)
+	option(FUNKIN_PS1_WEEK4_COMPOSITION_EDITOR "Enable the temporary in-memory Week 4 layer tuner" OFF)
+	set(FUNKIN_PS1_REUSE_BF_POSE_DIR "" CACHE PATH
+		"Reuse bf_sing_pose_data.h and week1-scene-bf-poses.bin from an existing build directory")
 	option(FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT "Build a visual-only health bar calibration disc" OFF)
 	option(FUNKIN_PS1_STARTUP_MAIN_MARKER "Stop the playable executable at main entry and display a fixed white GPU frame" OFF)
 	option(FUNKIN_PS1_STARTUP_AFTER_BSS_MARKER "Replace the PSn00bSDK startup entry and stop after the real executable BSS clear" OFF)
@@ -432,22 +435,34 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	# Add only four sampled official BF sing frames to the free area of the
 	# existing Week 1 8bpp atlas page. This is independent from the full visual
 	# converter, so builds that reuse converted packages stay incremental.
-	add_custom_command(
-		OUTPUT "${_bf_pose_header}" "${_week1_bf_pose_payload}"
-		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/augment_bf_sing_poses.py"
-			--assets "${FUNKIN_PS1_ASSETS_DIR}"
-			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
-			--base-header "${_playable_visual_header}"
-			--base-scene "${_week1_visual_payload}"
-			--output-header "${_bf_pose_header}"
-			--output-scene "${_week1_bf_pose_payload}"
-		DEPENDS augment_bf_sing_poses.py convert_bopeebo_visuals.py
-			"${_playable_visual_header}" "${_week1_visual_payload}"
-			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.png"
-			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml"
-		VERBATIM
-	)
-	add_custom_target(funkin-ps1-bf-sing-poses DEPENDS "${_bf_pose_header}" "${_week1_bf_pose_payload}")
+	if(FUNKIN_PS1_REUSE_BF_POSE_DIR AND
+	   EXISTS "${FUNKIN_PS1_REUSE_BF_POSE_DIR}/bf_sing_pose_data.h" AND
+	   EXISTS "${FUNKIN_PS1_REUSE_BF_POSE_DIR}/week1-scene-bf-poses.bin")
+		# Copy these two generated products byte-for-byte from an identified prior
+		# build. This mode skips the pose augmentation script entirely.
+		configure_file("${FUNKIN_PS1_REUSE_BF_POSE_DIR}/bf_sing_pose_data.h"
+			"${_bf_pose_header}" COPYONLY)
+		configure_file("${FUNKIN_PS1_REUSE_BF_POSE_DIR}/week1-scene-bf-poses.bin"
+			"${_week1_bf_pose_payload}" COPYONLY)
+		set(_reuse_bf_pose_outputs TRUE)
+	else()
+		add_custom_command(
+			OUTPUT "${_bf_pose_header}" "${_week1_bf_pose_payload}"
+			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/augment_bf_sing_poses.py"
+				--assets "${FUNKIN_PS1_ASSETS_DIR}"
+				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+				--base-header "${_playable_visual_header}"
+				--base-scene "${_week1_visual_payload}"
+				--output-header "${_bf_pose_header}"
+				--output-scene "${_week1_bf_pose_payload}"
+			DEPENDS augment_bf_sing_poses.py convert_bopeebo_visuals.py
+				"${_playable_visual_header}" "${_week1_visual_payload}"
+				"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.png"
+				"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/BOYFRIEND.xml"
+			VERBATIM
+		)
+		add_custom_target(funkin-ps1-bf-sing-poses DEPENDS "${_bf_pose_header}" "${_week1_bf_pose_payload}")
+	endif()
 	set(_song_catalog_dependencies
 		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
 		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py")
@@ -652,6 +667,10 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilBG.png"
 			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilTree.png"
 			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/evilSnow.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/upperBop.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/upperBop.xml"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/bottomBop.png"
+			"${FUNKIN_PS1_ASSETS_DIR}/week5/images/christmas/bottomBop.xml"
 			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/Animation.json"
 			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/spritemap1.json"
 			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/parents-christmas/spritemap1.png"
@@ -972,7 +991,9 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	add_custom_target(funkin-ps1-menu-audio DEPENDS "${_menu_audio_header}" "${_menu_audio_vagi}"
 		"${_gameover_loop_vagi}" "${_gameover_end_vagi}")
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-menu-audio)
-	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bf-sing-poses)
+	if(NOT _reuse_bf_pose_outputs)
+		add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-bf-sing-poses)
+	endif()
 	add_custom_target(funkin-ps1-week5-assets DEPENDS "${_week5_header}"
 		"${_week5_visual_header}" "${_week5_scene}" ${_week5_audio_outputs} ${_week5_chart_outputs})
 	add_dependencies(funkin-ps1-bopeebo-playable funkin-ps1-week5-assets)
@@ -1000,6 +1021,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		GAME_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_RELOCATE_PROBE_DEFAULT}>
 		GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT}>
 		GAME_SCENE_DEMO_DEFAULT=$<BOOL:${FUNKIN_PS1_SCENE_DEMO_DEFAULT}>
+		GAME_WEEK4_COMPOSITION_EDITOR=$<BOOL:${FUNKIN_PS1_WEEK4_COMPOSITION_EDITOR}>
 		GAME_HEALTH_BAR_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT}>
 		GAME_STARTUP_MAIN_MARKER=$<BOOL:${FUNKIN_PS1_STARTUP_MAIN_MARKER}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
@@ -1059,3 +1081,4 @@ if(DEFINED _week1_visual_payload)
 			"${_week1_visual_payload}" "${_playable_visual_header}"
 	)
 endif()
+

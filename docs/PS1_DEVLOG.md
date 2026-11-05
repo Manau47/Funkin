@@ -568,27 +568,25 @@ Le paquet Week 4 passe de 262 656 à 393 728 octets (+131 072, deux pages 8bpp).
 **État :** compilé et vérifié statiquement; DuckStation attend le chargement manuel et le retour utilisateur. La prévisualisation convertie n’est pas une observation d’exécution. Les couches mobiles `bgLimo`/`limo` restent statiques dans cette étape; audio, charts, caméra et gameplay ne changent pas. Aucun test console réelle. Détails : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md).
 
 
-
-
 ## Audit global des atlas et compactage sans perte (v146, 4 novembre 2026)
 
 L’outil d’audit couvre les pages base/W1, Weeks 2–7, Weekend 1, ainsi que les pages statiques titre/menu, Freeplay/DJ, icônes, capsules et game over. Les planches et mesures détaillées sont conservées dans `ps1/build/atlas-audit-v146/` (ignoré par Git); les scripts reproductibles et le rapport sont [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md). Les gains viennent du réempaquetage indexé sans changement de texels : −1 page 8bpp pour W4 et −1 pour W7, CLUT et décors byte-identiques. Aucun autre atlas n’est réduit dans cette passe.
 
 Le build PSn00bSDK/GCC est compilé et contrôlé statiquement. W4/W7 représentent ensemble −131 072 octets utiles sur disque et dans les transferts page GPU calculés; image BIN raw −150 528 octets. Le retry précédemment confirmé par l’utilisateur est préservé. Le CUE v146 est en attente de l’essai DuckStation utilisateur; aucune validation d’image runtime ou console réelle n’est revendiquée.
 
+## Week 4 — intégration de la composition Mother v7 (v147, essai)
 
-## Week 4 — composition Mother v7 (v147, build d’essai)
+Intègre dans les deux pages de décor le ciel officiel, la limousine lointaine agrandie et les quatre danseurs henchmen aux positions de la maquette v7. La pose officielle de danse utilisée pour les quatre instances est fixe dans cette passe. L’ordre dans les pages est limousine lointaine → danseurs → limousine principale. Mom, GF et BF gardent leur placement et leurs tailles du moteur, ainsi que les caméras, animations, chart, gameplay et audio.
 
-Intègre le décor v7 de la Week 4 avec les assets officiels : limousine lointaine agrandie et quatre danseurs henchmen, derrière la limousine principale. Les danseurs utilisent une pose fixe dans cette passe. Les placements des personnages, caméras, animations existantes, charts, gameplay et audio sont conservés.
+Le script [`../ps1/compose_week4_background.py`](../ps1/compose_week4_background.py) repart du paquet v146 sans le modifier. Il remplace uniquement les texels des deux pages de décor, garde les trois pages d’acteurs et la CLUT identiques, et projette les coordonnées v7 vers le monde Week 4 au zoom existant. Les couleurs ajoutées sont rapprochées de la CLUT existante; leur correspondance est approximative.
 
-Le script reproductible est [compose_week4_background.py](../ps1/compose_week4_background.py) et le manifeste de build est [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le paquet de scène conserve cinq pages 8bpp et sa CLUT; seules les deux pages de décor changent. Build PSn00bSDK/GCC et contrôles statiques ISO réussis; le test DuckStation attend le chargement manuel utilisateur. Aucun test console réelle.
-
+Le paquet reste à 328 192 octets / cinq pages 8bpp; VRAM et volume de transfert CD ne changent pas. Le BIN/CUE v147 a été compilé et le système de fichiers vérifié statiquement. **DuckStation n’a pas encore été testé**; l’utilisateur chargera le CUE. Aucun test sur console réelle. Détails, hashes et limites : [`PS1_WEEK4_V147_COMPOSITION.md`](PS1_WEEK4_V147_COMPOSITION.md).
 
 ## Week 4 — correction de composition et d’échelle GF (v148, essai)
 
 Retour utilisateur sur v147 : composition non conforme et GF changeant visiblement de taille au fil de la mesure. Causes statiques relevées : le décor lointain était extrait en 222×39 au lieu d’environ 455×79; les danseurs henchmen de 517×410 étaient réduits à 29×22; les poses GF de 64×64 étaient dessinées à cette taille tandis que les poses originales font 87×79. v148 corrige les tailles d’extraction du décor et impose une enveloppe d’affichage GF fixe de 87×79, sans changer les timings ni ajouter de pages. Le placement du premier plan reste inchangé.
 
-Build séparé et ISO racine vérifié; paquet W4 toujours cinq pages / 328 192 octets. BIN/CUE et hashes : [PS1_WEEK4_V148_FIX.md](PS1_WEEK4_V148_FIX.md). DuckStation et console réelle non testés; attendre le retour utilisateur avant de conclure sur le rendu.
+Build séparé et ISO racine vérifié; paquet W4 toujours cinq pages / 328 192 octets. BIN/CUE et hashes : [`PS1_WEEK4_V148_FIX.md`](PS1_WEEK4_V148_FIX.md). DuckStation et console réelle non testés; attendre le retour utilisateur avant de conclure sur le rendu.
 
 
 ## Week 4 — restauration des détails et poses GF (v149, build d’essai)
@@ -599,30 +597,25 @@ Le réempaquetage vérifié garde la CLUT byte-identique et les pages décor byt
 
 Build PSn00bSDK 0.24/GCC terminé. Le dry-run prévoyait une génération existante des poses BF (relancée à cause du chemin du nouveau dossier de build), la compilation C, le lien et l’image CD; aucune reconversion audio, chart ou source de scène W4. Le paquet W1 réémis a le même hash que v148. Exécutable SHA-256 `3ce926cb2571d30ad024d24d0abc48095857f45b10aec6d6b5a3089e1a32a249`; BIN `a86a3083217c2f45358a2436cdc79b5e367cef11a007bffdcfb1a27ad5630e0d`; CUE `8579eef0e6966afd78659f364593e560c8384148e9258d14fa88b196a842b340`. Livraison : `ps1/build/week4-composition-v149/delivery-v149-gf-animation/`. L’utilisateur doit encore exécuter le CUE dans DuckStation; aucun test console réelle. Détails : [`PS1_WEEK4_V149_GF.md`](PS1_WEEK4_V149_GF.md).
 
-
 ### v149b — correction du gel au logo Sony
 
 Retour utilisateur : v149 reste au logo Sony/PlayStation. Comparaison ISO v148/v149 : l’entrée fichier `SYSTEM.CNF;1` est la 93e de v149, contre la première entrée fichier du disque v148 qui démarre. L’EXE et le contenu de `SYSTEM.CNF` sont présents et valides; la cause isolée est l’ordre des entrées racine. v149b applique uniquement le réordonnancement ISO déjà utilisé par les builds de démarrage validés. Pas de recompilation ou reconversion; l’EXE v149 reste identique. Les quatre secteurs du répertoire racine sont les seuls secteurs modifiés. BIN/CUE et hashes : [`PS1_WEEK4_V149B_BOOT_FIX.md`](PS1_WEEK4_V149B_BOOT_FIX.md). Contrôle statique réussi; démarrage DuckStation v149b attendu du test utilisateur, sans validation console réelle.
 
+### v150b — préserver l’atlas BF pendant Week 4
 
-### v150b — Week 4 BF atlas page collision fix (2026-11-05)
+Retour utilisateur après v149b : GF est meilleure, mais BF a disparu et la composition Week 4 reste à revoir. L’audit des descripteurs confirme que les poses BF utilisent la page 8bpp physique 7 (`x=768,y=256`); le chargeur v149 écrivait pourtant les huit pages Week 4 dans les slots 0–7. La page Week 4 logique 7 (icône Mom) remplaçait donc l’atlas BF. v150b garde la page physique 7, mappe les sept premières pages W4 aux slots 0–6 et la dernière au slot 8, puis restaure ce slot après déchargement. Comme l’écran Game Over utilise aussi le slot 8, le retry recharge la page W4 empruntée avant le compte à rebours.
 
-Le retour sur v149b signale que GF est meilleure mais BF a disparu. Cause isolée : le chargeur Week 4 écrivait sa page logique 7 sur la page VRAM physique 7, utilisée par les poses BF de l'atlas commun. v150b réserve la page 7 au BF et mappe la page Week 4 sur la page physique 8. Le chemin de rendu utilise la même correspondance. Au retry depuis Game Over, la page Week 8 empruntée est rechargée depuis `W4SCENE.BIN` avant le décompte.
-
-La composition reste inchangée. Les paquets et données source ont été réutilisés. Compilation et vérifications statiques du BIN/ISO réussies; la structure ISO place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête. L'EXE fait 1 028 096 octets, entrée `0x800255f0`, hash SHA-256 `0DB81AE9F156415570C1CF3AC52D9A7BBA11B9F8BC60B412D0D0B0BD1E8F4972`. BIN SHA-256 `B33E8AB3CCBFB08BF2F7B8FDBA534315A8243514866C28781258282502D6683A`; CUE SHA-256 `9102F11219009D9D2544D6AA021741BC7851519A75FC5C6155107EC9EA60F970`. Aucun test DuckStation/console réel pour v150b; attente de l'essai utilisateur. Détails : [PS1_WEEK4_V150B_BF_PAGE_FIX.md](PS1_WEEK4_V150B_BF_PAGE_FIX.md).
-
+Les changements n’affectent ni composition/caméra, tailles/animations, charts, règles de jeu ou audio. W4SCENE reste identique (524 800 octets, SHA-256 `A91F0C52422B59E3067A0A006A5C655D5F554B7FD1EB6D6C71E09E9D35F49505`); le sidecar BF W1 régénéré a conservé son hash `D3C6F317C0B108233C5D81774FA97775AFE2B2D40D98F46528EAD70543B67310`. Compilation et image réussies; le dry-run final ne prévoit que compilation C, lien et ISO. SYSTEM.CNF et FUNKIN.EXE ont été replacés aux deux premières entrées fichier. BIN/CUE et limites : [`PS1_WEEK4_V150B_BF_PAGE_FIX.md`](PS1_WEEK4_V150B_BF_PAGE_FIX.md). Essai DuckStation utilisateur requis; ni composition validée ni console réelle testée.
 
 ### v151 — correction de la composition Week 4 (2026-11-05)
 
-Retour utilisateur : le correctif BF v150b est satisfaisant, mais la composition reste incorrecte. L'inspection du pipeline révèle trois causes : la limousine lointaine extraite en 455×79 était compositée dans une boîte de 222×39; la limousine principale était écrasée dans une cible 44×88; enfin, GF était dessinée par-dessus le décor aplati, empêchant la limousine de la masquer.
+Retour utilisateur : la correction BF v150b est satisfaisante, mais la composition reste incorrecte. L'inspection du pipeline révèle trois causes : la limousine lointaine extraite en 455×79 était compositée dans une boîte de 222×39; la limousine principale était écrasée dans une cible 44×88; enfin, GF était dessinée par-dessus le décor aplati, empêchant la limousine de la masquer.
 
 Le script `ps1/compose_week4_layers_v151.py` repart du paquet W4 v149 et de la révision d'assets épinglée. Il corrige la taille de composition de la limousine lointaine et des danseurs, puis range la limousine de premier plan en 240×76 dans l'espace inutilisé de la page logique 7, avec la CLUT existante. L'ordre GPU devient décor lointain/danseurs → GF → limousine avant-plan → Mom → BF. Le mapping v150b garde l'atlas BF intact et utilise la page physique 8 pour cette page W4; aucune page ou lecture CD supplémentaire n'est ajoutée. Le paquet reste à 8 pages et 524 800 octets. Les pages d'acteurs 2–6, la CLUT et l'icône Mom restent identiques; seuls les deux pages du décor et le rectangle de limousine sur page 7 changent. La position scène, chart, caméra, timings d'animation, gameplay et audio restent inchangés.
 
 PSn00bSDK 0.24 / GCC MIPS 12.3 : dry-run de 5 actions, sans reconversion audio, chart ou conversions générales de graphismes; compilation, lien et création de l'image disque réussis. La comparaison statique confirme le paquet W4 attendu et l'ordre ISO `SYSTEM.CNF;1`, puis `FUNKIN.EXE;1`. BIN SHA-256 `CF400E0915039BF69FE9790337DEC6ADF2282D0DE467D9B26C723B3CA2D57871`; CUE SHA-256 `A8DFF2001A5344E38916D95FE451A8307E574A1CB7165A36C9A2F20E90FCC3B7`. Manifeste livré avec le disque et rapport [`PS1_WEEK4_V151_COMPOSITION.md`](PS1_WEEK4_V151_COMPOSITION.md).
 
 **État :** build et contrôles statiques réussis; le rendu intégré n'a pas été observé dans DuckStation. Le CUE attend le test manuel de l'utilisateur; la composition v151 n'est donc pas déclarée validée. Les danseurs lointains restent statiques; roues, cheveux au vent et effets de passage restent différés. Console réelle non testée.
-
-
 ### v152 — ancrage officiel de la limousine Week 4 (2026-11-05)
 
 Retour utilisateur sur les captures v151 : la composition reste incorrecte. Les captures montrent la limousine principale coupant le bas du cadre et ne servant pas de support visuel clair à Mom/BF. Le code v151 la plaçait en `(16,152)`. Dans le JSON officiel épinglé `limoRide.json`, sa position est `(-120,528)`. Les coordonnées PS1 des personnages suivent déjà le facteur 1/6 (par exemple Mom 329,5/913 → 55/152, GF 787/779 → 131/130, BF 1217,5/592 → 203/99). La position de la voiture cohérente dans cet espace est donc `(-20,88)`. Avec le zoom 524/256, l’ancien ancrage la plaçait d’environ 74 px trop à droite et 131 px trop bas à l’écran.
@@ -631,10 +624,9 @@ Le script `ps1/compose_week4_layers_v152.py` vérifie la position officielle pui
 
 Le build final reprend la configuration `Debug` de v151. Une première configuration non-Debug a été identifiée par comparaison avant livraison; elle est archivée séparément et n’est pas le disque fourni. Le dry-run du build final prévoyait 5 actions : génération connue du sidecar BF sans changement de hash, compilation de deux objets C, lien et ISO; aucune conversion chart/audio ou conversion générale de graphismes. Compilation PSn00bSDK 0.24/GCC MIPS 12.3 réussie. Les exécutables v151/v152 font chacun 1 028 096 octets et ne diffèrent que sur 3 octets correspondant aux coordonnées. Le paquet W4 garde 8 pages, 524 800 octets et la même CLUT. `SYSTEM.CNF;1` et `FUNKIN.EXE;1` sont les deux premières entrées racine du disque livré.
 
-BIN SHA-256 `44CDD729D30F920FA7F77CAB30E29932EB2EE6ABB0DB311E57808E49BF72698C`; CUE SHA-256 `4998D0C3DA85740DFE82B5154918BAF34259EE8BED181F29F1445AE36FC87EB6`. Manifeste de configuration livré avec l’image; détails : [`PS1_WEEK4_V152_OFFICIAL_ANCHOR.md`](PS1_WEEK4_V152_OFFICIAL_ANCHOR.md).
+BIN SHA-256 `44CDD729D30F920FA7F77CAB30E29932EB2EE6ABB0DB311E57808E49BF72698C`; CUE SHA-256 `4998D0C3DA85740DFE82B5154918BAF34259EE8BED181F29F1445AE36FC87EB6`. Manifeste et détail : [`PS1_WEEK4_V152_OFFICIAL_ANCHOR.md`](PS1_WEEK4_V152_OFFICIAL_ANCHOR.md).
 
 **État :** compilation et contrôles statiques réussis. Aucun lancement DuckStation ni essai console pour v152; test manuel utilisateur requis. Les captures précédentes motivent le changement mais ne valident pas ce nouveau rendu.
-
 
 ## Week 4 v153 — séparation du plan lointain
 
@@ -642,15 +634,268 @@ Après la comparaison avec `limoRide.json` épinglé et les captures, la cause d
 
 Le paquet demeure à 8 pages 8bpp + CLUT, 524 800 octets; aucune page, lecture CD, palette, chart ou donnée audio supplémentaire. Le script reproductible est `ps1/compose_week4_layers_v153.py`; les assets épinglés et FFmpeg restent hors Git. Rapport et hashes : `docs/PS1_WEEK4_V153_PARALLAX.md`.
 
-Build PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja réussi en réutilisant les ressources préconverties. BIN 339 346 560 octets, 144 280 secteurs; CUE et BIN livrés localement sous `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. BIN SHA-256 `3482B62297B81AFEB7A57FFDBB8C7CD067FCD7589ADA08CD67D0959E97BA8699`.
+Build PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja réussi en réutilisant les ressources préconverties. BIN 339 346 560 octets, 144 280 secteurs; CUE et BIN livrés sous `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. BIN SHA-256 `3482B62297B81AFEB7A57FFDBB8C7CD067FCD7589ADA08CD67D0959E97BA8699`.
 
 Compilation et contrôles statiques uniquement. DuckStation attend le chargement utilisateur; aucun rendu, démarrage, audio ou stabilité n’est encore validé sur v153. Console réelle non testée.
 
-
 ### v153 rootfix — gel au logo PlayStation
 
-Retour utilisateur : le CUE v153 reste bloqué au logo PlayStation. L'analyse directe de l'ISO livré révèle que son répertoire racine a été trié par nom : `SYSTEM.CNF;1` était la 93e entrée fichier et `FUNKIN.EXE;1` la 36e. Le v152 place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête et constitue la comparaison de démarrage disponible. Le XML v153 listait bien les fichiers de boot au début, mais cela n'a pas garanti cet ordre dans les enregistrements ISO.
+Retour utilisateur : le CUE v153 reste bloqué au logo PlayStation. L’analyse directe de l’ISO livré révèle que son répertoire racine a été trié par nom : `SYSTEM.CNF;1` était la 93e entrée fichier et `FUNKIN.EXE;1` la 36e. Le v152 place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête et constitue la comparaison de démarrage disponible. Le XML v153 listait bien les fichiers de boot au début, mais cela n’a pas garanti cet ordre dans les enregistrements ISO.
 
-Correction limitée au disque : `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` a réordonné les enregistrements racine et recalculé les contrôles EDC/ECC des secteurs touchés. Le nouvel artefact est séparé dans `ps1/build/week4-composition-v153/delivery-v153-rootfix/`. Aucun code, asset, audio, chart ou exécutable n'a été modifié ni recompilé. Vérification statique : `SYSTEM.CNF;1` fichier 1, `FUNKIN.EXE;1` fichier 2; les extents des fichiers restent identiques au BIN v153 initial. L'en-tête PS-X EXE v153 (entrée `0x80025cbc`, chargement `0x80010000`, taille `0x000fb000`) correspond à l'exécutable lié. Une annonce antérieure d'en-tête trop court était erronée : elle résultait d'une extraction absente et d'octets v152 réutilisés par erreur.
+Correction limitée au disque : `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` a réordonné les enregistrements racine et recalculé les contrôles EDC/ECC des secteurs touchés. Le nouvel artefact est séparé dans `ps1/build/week4-composition-v153/delivery-v153-rootfix/`. Aucun code, asset, audio, chart ou exécutable n’a été modifié ni recompilé. Vérification statique : `SYSTEM.CNF;1` fichier 1, `FUNKIN.EXE;1` fichier 2; les secteurs des fichiers restent identiques au BIN v153 initial. L’en-tête PS-X EXE v153 (entrée `0x80025cbc`, chargement `0x80010000`, taille `0x000fb000`) correspond à l’exécutable lié. Une annonce antérieure d’en-tête trop court était erronée : elle résultait d’une extraction absente et d’octets v152 réutilisés par erreur.
 
-BIN rootfix SHA-256 `1CF2554D7DFEB70221B10EDAC45094CD3D5FCD91755A71631C532D9EFB3C66FB`; CUE SHA-256 `D9C9FB58E5CBD6762A26C3CE149AD0B74A107A8B7F8BCA4BCCBBF9E39A6DA2B9`. Le répertoire ISO a 117 fichiers; seules ses zones racine (LBA 22–24) diffèrent du BIN v153 initial. Contrôle statique réussi. L'utilisateur doit charger le nouveau CUE; son démarrage n'est pas encore validé. Pas de test console réelle.
+BIN rootfix SHA-256 `1CF2554D7DFEB70221B10EDAC45094CD3D5FCD91755A71631C532D9EFB3C66FB`; CUE SHA-256 `D9C9FB58E5CBD6762A26C3CE149AD0B74A107A8B7F8BCA4BCCBBF9E39A6DA2B9`. Le répertoire ISO a 117 fichiers; seules ses zones racine (LBA 22–24) diffèrent du BIN v153 initial. Contrôle statique réussi. L’utilisateur doit charger le nouveau CUE; son démarrage n’est pas encore validé. Pas de test console réelle.
+
+### Week 4 v155 — première passe de valeurs utilisateur (2026-11-05)
+
+L’utilisateur a proposé ses premiers réglages de composition et a autorisé
+l’utilisation de l’Analyzer mémoire DuckStation pour les relever. Le scanner a
+lu les trois tableaux du tuner v154e en RAM : Stage `(18,0,100%)`, Camera
+`(6,0,100%)`, Far Limo `(-14,-8,200%)`, GF `(-24,6,100%)`, Front Limo
+`(4,26,100%)`, Mom `(-2,0,100%)`, BF `(-30,22,100%)`. Ces nombres sont des
+offsets et échelles par couche, pas des coordonnées d’écran absolues. Aucun
+octet n’a été écrit dans la mémoire de DuckStation.
+
+Le build v155 initialise le tuner avec ces valeurs. Le seul changement source
+est l’initialisation de ses trois tableaux; les scènes, caméra, gameplay,
+charts, graphismes convertis et audio sont réutilisés. Le dry-run annonçait
+uniquement une compilation C, le lien et la création ISO. Aucun convertisseur
+d’assets/chart/audio n’a été lancé. Le contrôle statique de l’image finale
+confirme `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête des 117 fichiers.
+
+L’audit explique aussi pourquoi le plan lointain reste peu défini malgré son
+zoom : le convertisseur v153 réduit la cel officielle de limousine (2199×379)
+à 240×42 et les danseurs (394×394) à 40×32, puis les regroupe dans un seul
+rectangle 240×64. La prochaine passe pourra ré-exporter ces deux ressources et
+les séparer, après mesure du budget d’atlas/VRAM. v155 ne modifie pas ces pixels
+ni le facteur de parallaxe `102/256`.
+
+Compilation réussie. Le CUE v155 est livré séparément sous
+`week4-composition-tuner-v154/delivery-v155-values/`. Le nouveau build n’a pas
+encore été exécuté dans DuckStation : il attend le chargement et le retour de
+l’utilisateur. Les valeurs proviennent bien d’une session v154e observée dans
+l’émulateur, ce qui ne valide pas le rendu de v155. Console réelle non testée.
+Voir [`PS1_WEEK4_V155_VALUES_TEST.md`](PS1_WEEK4_V155_VALUES_TEST.md).
+
+### Week 4 v156c — limousine et danseurs lointains séparés
+
+À partir du snapshot v155, la limousine lointaine et les quatre danseurs sont
+ré-exportés depuis les assets officiels épinglés dans deux pages 8bpp distinctes.
+La limousine utilise 4 cels à 24 fps; les danseurs reprennent les séquences gauche/
+droite officielles (6 poses distinctes par direction et 15 pas temporisés par beat).
+Le tuner de scène expose désormais Far Limo et Far Dancers comme couches séparées.
+Select ouvre l’éditeur, Start fige/reprend l’horloge audio, Triangle affiche les
+valeurs X/Y/échelle; les couches s’ajustent indépendamment. La démo de scène évite
+que santé et game over interrompent le réglage.
+
+Le paquet W4 passe de 524 800 à 655 872 octets (+128 Kio, +64 secteurs CD); les
+8 anciennes pages et la CLUT sont inchangées. Le scratch RAM reste à 64 Kio. Deux
+pages supplémentaires sont chargées dans des emplacements prêtés/réservés et
+restaurées à la sortie/retry. Dry-run ciblé: compilation C, lien, création ISO,
+sans reconversion chart/audio/graphismes. Compilation et vérification statique ISO
+réussies (SYSTEM.CNF fichier 1, FUNKIN.EXE fichier 2, EXE embarqué identique).
+
+Le BIN/CUE est livré sous `C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/delivery-v156c/`;
+les sources/config/hashes sont archivés hors dépôt dans `source-v156c/`. Le test
+DuckStation utilisateur reste en attente; aucune validation runtime ou console réelle
+n’est revendiquée. Voir `PS1_WEEK4_V156C_FAR_LAYERS_EDITOR.md`.
+
+### Week 4 v157 — textures lointaines et page BF
+
+L’utilisateur a indiqué que les couches lointaines semblaient encore trop réduites,
+que l’éditeur plafonnait trop tôt et que BF affichait le mauvais sprite; les positions
+de scène actuelles sont à conserver. L’audit a trouvé que le pack v156c plaçait la
+limousine lointaine sur la page VRAM 7, également utilisée par l’atlas BF. Le paquet
+v157 repacke les quatre cels de limousine dans la page Week 4 existante avec la
+limousine avant, et réserve la page libre `(896,0)` aux danseurs. Le BF n’est donc
+plus écrasé pendant le chargement W4.
+
+Les danseurs officiels passent de 48×38 à 72×57 par cel, avec 12 poses distinctes
+et le même timing; le plafond de zoom de l’éditeur passe de 200 % à 400 %. Les offsets
+de scène restent inchangés. Les pages 0–6 et la CLUT sont identiques à v156c; le
+paquet W4 baisse de 65 536 octets (32 secteurs CD). Dry-run ciblé: compilation C,
+lien et image ISO uniquement. Compilation et contrôle statique ISO réussis;
+l’affichage BF et les nouvelles tailles restent à tester par l’utilisateur dans
+DuckStation. Aucun test console réelle. Détails et livraison dans
+`PS1_WEEK4_V157_FAR_ART_BF_PAGE_FIX.md`.
+
+The final CUE for the next manual test is v157b at `C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/delivery-v157b/`. It is the build matched by the archived `source-v157b/manifest-v157b.json`; no DuckStation run has been made.
+
+### Week 4 v158 — front limousine restored
+
+The user reported the foreground limousine missing, requested the distant dancers
+about 20 pixels higher, and asked to remove the scene editor. The missing sprite
+was traced to the v157 exporter copying from an empty destination page; v158
+restores the converted front-limo rectangle from the preserved v156c package.
+Only that indexed rectangle and the Week 4 dancer Y anchor change. Dancers move
+up 10 world units (~20 screen pixels at the current zoom); their animation and
+texture data are reused. The editor and camera-demo build modes are disabled.
+
+Dry-run: two C object builds, link and ISO only; no asset conversions. Build
+completed. The final ISO reorder verified 117 root files, with SYSTEM.CNF at
+index 1 and the game EXE at index 2, and validated sector EDC/ECC. The
+front-limo rectangle contains 12,531 nonzero indices after restoration.
+DuckStation execution and the visual result are awaiting the user; no console
+test is claimed. BIN/CUE, code/config snapshot and hashes are archived outside
+Git in `C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/`.
+Reproduction details: [`PS1_WEEK4_V158_FRONT_LIMO_DANCERS.md`](PS1_WEEK4_V158_FRONT_LIMO_DANCERS.md).
+
+### Week 4 v159 — composition transforms retained without editor
+
+The user reported that all expected elements were present in v158, but their
+layout was wrong. Comparing v157's editor state with the normal build showed
+the cause: the transform values were applied only inside
+`GAME_WEEK4_COMPOSITION_EDITOR`; turning that feature off also discarded the
+saved scene offsets and far-limo scale. v159 keeps the editor disabled and
+applies its saved transform values in the normal Week 4 render path. This
+restores the composition/camera offsets, doubled far-limo scale, and the
+GF/Mom/BF/front-limo positions; the dancers remain raised by 10 world units
+(about 20 screen pixels at the current camera scale). No chart, timing,
+animation, audio, gameplay, or texture conversion changed.
+
+The incremental dry-run contained only the changed C object, link, and ISO
+creation. Build and static ISO checks passed; `SYSTEM.CNF` is root entry 1 and
+the executable root entry 2. The temporary scene editor, demo, and startup
+diagnostics remain off. The composition still awaits the user's DuckStation
+test; no runtime or console validation is claimed. Artifacts and exact source,
+configuration, and hashes are archived under
+`C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/source-v159/`
+and `delivery-v159-ordered/`. See
+[`PS1_WEEK4_V159_LAYOUT_BAKED.md`](PS1_WEEK4_V159_LAYOUT_BAKED.md).
+
+### Week 4 v160 — characters left, dancers up
+
+Following the v159 composition report, the user requested that the four distant
+dancers rise another 40 screen pixels and Mom, GF, and BF shift left 30 pixels.
+At the saved W4 zoom 524/256 (2.046875×), this is implemented as `dy=-20` world
+units for dancers and `dx=-15` for each character (about 40.9/30.7 screen
+pixels). Mom/BF camera focus targets deliberately retain their original X
+anchors so following the moved singers does not cancel the visible move. Other
+layer transforms remain as v159; no assets, animations, gameplay, charts, or
+audio changed.
+
+The normal build keeps editor/demo/diagnostics off. Build, static ISO order and
+sector checks are recorded in the v160 manifest. The user still needs to test
+the composition in DuckStation; no runtime or console validation is claimed.
+Source and artifact hashes are archived under
+`C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/source-v160/`;
+the CUE/BIN are in `delivery-v160-ordered/`. See
+[`PS1_WEEK4_V160_LAYOUT_NUDGE.md`](PS1_WEEK4_V160_LAYOUT_NUDGE.md).
+
+### Week 4 v161 — camera focus follows adjusted characters
+
+The user reports v160's object placements are right but the cameras did not
+move with them. W4 focus X targets for Mom, GF, and BF now use the same tuned
+anchor offsets as their visible sprites; GF focus also uses its existing Y
+offset. The v160 placement values, dancer lift, camera zoom/translation tuning,
+and all other layers remain unchanged. No assets, animation, chart, gameplay,
+or audio changed. The normal build keeps editor/demo/diagnostics off. Build and
+static ISO checks are recorded in the v161 manifest; DuckStation validation is
+pending. Source and artifacts are archived under
+`C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/source-v161/`
+and `delivery-v161-ordered/`. See
+[`PS1_WEEK4_V161_CAMERA_FOLLOWS.md`](PS1_WEEK4_V161_CAMERA_FOLLOWS.md).
+
+### Week 4 v162 — GF lower, distant dancers right
+
+From v161, GF moves down approximately 4 screen pixels and the far dancers move
+right approximately 40. With W4 zoom 524/256 (2.046875×), these are GF `dy=+2`
+and dancers `dx=+20` world units. GF's camera target remains attached to her
+updated anchor. Other v161 placements and camera settings, animations, audio,
+charts, and gameplay are unchanged. The normal build keeps editor/demo and
+diagnostic overlays disabled. Compilation and ISO checks are recorded in the
+manifest; user DuckStation validation remains pending. Source and delivery are
+archived at `source-v162/` and `delivery-v162-ordered/` under the external build
+archive root. See [`PS1_WEEK4_V162_GF_DANCERS_NUDGE.md`](PS1_WEEK4_V162_GF_DANCERS_NUDGE.md).
+
+### Week 4 v163 — dancers 10 pixels farther right
+
+The user requested another 10-pixel right shift for the dancers. At the W4
+zoom this is `dx=+5` world units; their cumulative X offset is +11. GF and all
+other v162 placements remain unchanged. The incremental build and static ISO
+checks passed without resource conversion. Awaiting the user's DuckStation
+test. See [`PS1_WEEK4_V163_DANCERS_NUDGE.md`](PS1_WEEK4_V163_DANCERS_NUDGE.md).
+
+### Week 4 v164 — dancers 10 pixels farther right
+
+The dancers move another ~10.2 screen pixels to the right from v163 (`dx=+5`
+world units at 524/256 zoom); their cumulative X offset is +16. All other
+v163 settings are preserved. Incremental build and static ISO checks passed,
+with converted resources reused. Awaiting the user's DuckStation test. See
+[`PS1_WEEK4_V164_DANCERS_NUDGE.md`](PS1_WEEK4_V164_DANCERS_NUDGE.md).
+
+### Week 5 v165 — Mall extraction and composition pass
+
+The user accepted the current Week 4 scene and moved work to Week 5, which was
+reported as visually very poor. Inspection found that the old W5 extractor
+made a small static composite and did not extract the official upper/lower
+Mall crowd animations. It also clipped most of the baked snow layer at runtime
+and left a horizontal gap in the 320x240 background fit.
+
+The v165 Week 5-only package re-extracts the official Mall/evil Mall plates,
+keeps the escalator, tree and Santa proportional, adds four sampled source
+cels for each official Mall crowd prop, and draws separate Christmas/evil snow
+foreground cels. Crowd animation is driven from the audio sample clock at
+24fps and uses separate 0.28/0.90 parallax factors. The Week 5 visual package
+uses seven 8bpp pages including existing sampled character animations (two
+pages more than the previous five-page package). Charts, catalog, music, audio
+quality, gameplay and Week 4 are unchanged.
+
+Package extraction, build and static ISO checks succeeded. The incremental
+dry-run showed only C compilation, link and ISO creation; no audio/chart or
+other-week conversion ran. The user must still load the new CUE in DuckStation
+to validate the scene, parallax, animation, streaming and transitions. No
+runtime or console validation is claimed. Details and reproduction command are
+in [`PS1_WEEK5_V165_SCENE.md`](PS1_WEEK5_V165_SCENE.md); the exact package and
+binary hashes are in the external v165 archive.
+
+### Week 5 v166 — pause/resume starvation fix
+
+The user reported `FUNKIN PS1 ERROR / CODE 8` after pausing and resuming a
+song. The supplied diagnostic frame shows zero CD errors, 78 SPU underruns and
+an empty stream buffer. Source inspection found that the pause path aborted an
+asynchronous CD read after its sectors had already been reserved and advanced
+in `next_sector`; the pause screen also did not feed the ring. On resume this
+could exhaust the partial buffer and skip the cancelled range. v166 no longer
+aborts the pending read, keeps feeding while paused, and waits for a bounded
+refill threshold plus one interleave chunk before resuming the SPU stream.
+
+Only `spu_probe.c` was recompiled; the v165 preconverted scene/audio/chart
+package was reused. Compilation and ISO creation succeeded, and the ISO
+reorder check placed `SYSTEM.CNF` first and `FUNKIN.EXE` second. DuckStation
+verification remains pending. This build deliberately leaves the v165 scene
+composition and character extraction unchanged so the pause fix can be tested
+separately. The Drive reference was returned as metadata but could not be
+opened as video frames through the available connector path; request a directly
+attached/local copy before changing composition or sprite resolution.
+
+### Week 5 v167 — split scene layers and official character frames
+
+The user reports that v166 appears to resolve the pause issue and asks to focus
+on the Week 5 scene, providing the attached video `Screen_Recording_20261105_210840.mp4`.
+The local recording was inspected: the Mall layout separates the stage/crowd,
+escalator/tree and snow layers, with Santa at the left and GF on speakers behind
+the singers. The pinned official assets revision remains
+`724eba9de9e76761d9cefd52169926bc51c760a5`.
+
+The new Week 5-only extraction script emits separate Christmas/Evil stage,
+prop, crowd and snow frames; Parents, Monster and GF use 80x96 source frames
+with trim offsets. The renderer applies the layer scroll factors to camera
+movement, samples the four crowd cels on the audio sample clock at 24fps,
+draws Santa as a separate Christmas prop, and uses official BF Christmas idle,
+singing and miss frames. Charts and audio packages were reused; no scene
+composition, gameplay rule, chart or audio-quality work was done in other weeks.
+
+Build: `ps1-bopeebo-playable-disc`, PSn00bSDK 0.24 / GCC MIPS toolchain / Ninja.
+The successful incremental build contains only C compilation, link and disc
+creation; no resource conversion was scheduled. Week 5 payload is 9 8bpp pages
+plus one 512-byte CLUT (590,336 bytes); the runtime scene loader uses a 65,536
+byte page scratch buffer and reads 288 sectors before starting music. Static
+budgets are not runtime measurements.
+
+The ordered BIN/CUE is in the external v167 delivery folder, with
+`SYSTEM.CNF` and `FUNKIN.EXE` at root entries 1 and 2. Compilation and static
+ISO reorder checks passed. DuckStation and real-console execution have not been
+performed; the user must load the CUE and report composition, animation, pause,
+audio and transition behavior. See [`PS1_WEEK5_V167_SCENE.md`](PS1_WEEK5_V167_SCENE.md).
+
