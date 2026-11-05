@@ -634,3 +634,14 @@ Le build final reprend la configuration `Debug` de v151. Une première configura
 BIN SHA-256 `44CDD729D30F920FA7F77CAB30E29932EB2EE6ABB0DB311E57808E49BF72698C`; CUE SHA-256 `4998D0C3DA85740DFE82B5154918BAF34259EE8BED181F29F1445AE36FC87EB6`. Manifeste de configuration livré avec l’image; détails : [`PS1_WEEK4_V152_OFFICIAL_ANCHOR.md`](PS1_WEEK4_V152_OFFICIAL_ANCHOR.md).
 
 **État :** compilation et contrôles statiques réussis. Aucun lancement DuckStation ni essai console pour v152; test manuel utilisateur requis. Les captures précédentes motivent le changement mais ne valident pas ce nouveau rendu.
+
+
+## Week 4 v153 — séparation du plan lointain
+
+Après la comparaison avec `limoRide.json` épinglé et les captures, la cause du manque de profondeur est isolée : le sunset, la limousine distante et les danseurs partageaient une même texture de fond et recevaient donc le même scroll caméra. v153 repart du paquet converti v152, laisse le sunset seul sur les pages de fond, et place la limousine distante avec quatre cels officiels dans une zone libre de la page logique 7. Cette primitive utilise le scroll officiel `0.4`; la limousine principale reste à `1.0`. Son ancrage, sa taille, l’ordre de dessin et les personnages restent inchangés.
+
+Le paquet demeure à 8 pages 8bpp + CLUT, 524 800 octets; aucune page, lecture CD, palette, chart ou donnée audio supplémentaire. Le script reproductible est `ps1/compose_week4_layers_v153.py`; les assets épinglés et FFmpeg restent hors Git. Rapport et hashes : `docs/PS1_WEEK4_V153_PARALLAX.md`.
+
+Build PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja réussi en réutilisant les ressources préconverties. BIN 339 346 560 octets, 144 280 secteurs; CUE et BIN livrés localement sous `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. BIN SHA-256 `3482B62297B81AFEB7A57FFDBB8C7CD067FCD7589ADA08CD67D0959E97BA8699`.
+
+Compilation et contrôles statiques uniquement. DuckStation attend le chargement utilisateur; aucun rendu, démarrage, audio ou stabilité n’est encore validé sur v153. Console réelle non testée.
