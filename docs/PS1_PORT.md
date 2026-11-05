@@ -1659,3 +1659,8 @@ Le build d’essai restaure les 30 cellules officielles de danse GF à 87×79 au
 Le paquet de décor W4 conserve huit pages 8bpp et sa CLUT. La texture de fond contient maintenant le coucher de soleil seul; la limousine lointaine et quatre cels henchmen sont dessinés comme une couche séparée avec scroll `0.4`, tandis que la limousine principale conserve scroll `1.0` et sa composition/ancre v152. Cela ajoute une primitive, sans page VRAM ni lecture CD additionnelle. L’image reste à 524 800 octets. Voir `docs/PS1_WEEK4_V153_PARALLAX.md` pour la comparaison, la recette, les hashes, les budgets et limites de validation.
 
 Le BIN/CUE normal se trouve localement dans `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. Compilation et contrôles statiques réussis; exécution utilisateur DuckStation en attente. Aucun test console réelle.
+
+
+## Week 5 composition build v168
+
+This build fixes the Week 5 stage plate origin and layering based on the pinned Mall JSON and user reference: the transparent Evil Mall backdrop now has its declared solid fill and tree, while Christmas Mall upper/lower crowd, escalator/tree, and snow-under layers follow their depth order. Camera targets apply adapted Dad/BF stage offsets. Audio/gameplay/data are unchanged. Compilation and ISO packaging succeeded; emulator/user test is pending. See [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).

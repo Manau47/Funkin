@@ -66,6 +66,8 @@
 #include "menu_audio_data.h"
 #include "week5_catalog.h"
 #include "week5_visual_data.h"
+#define WEEK5_COMPOSITION_BASE_CAMERA_X (BOPEEBO_WEEK5_OPP_X + 19)
+#define WEEK5_COMPOSITION_BASE_CAMERA_Y (BOPEEBO_WEEK5_OPP_Y - 13)
 #include "week6_catalog.h"
 #include "week6_visual_data.h"
 #include "week7_catalog.h"
@@ -3051,8 +3053,9 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 {
 	if (active_song->stage_id == 5u) {
 		switch (focus) {
-		case 1: *x = BOPEEBO_WEEK5_OPP_X; *y = BOPEEBO_WEEK5_OPP_Y - 28; break;
-		case 0: *x = BOPEEBO_WEEK5_BF_X; *y = BOPEEBO_WEEK5_BF_Y - 28; break;
+		/* Source stage camera offsets adapted to the converted Week 5 coordinates. */
+		case 1: *x = BOPEEBO_WEEK5_OPP_X + 19; *y = BOPEEBO_WEEK5_OPP_Y - 13; break;
+		case 0: *x = BOPEEBO_WEEK5_BF_X - 38; *y = BOPEEBO_WEEK5_BF_Y - 25; break;
 		case 2: *x = BOPEEBO_WEEK5_GF_X; *y = BOPEEBO_WEEK5_GF_Y - 28; break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
 		}
@@ -3645,60 +3648,73 @@ static void draw_scene(uint32_t samples)
 		}
 	} else if (week5) {
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
-		int camera_dx = camera_x - BOPEEBO_WEEK5_BASE_CAMERA_X;
-		int camera_dy = camera_y - BOPEEBO_WEEK5_BASE_CAMERA_Y;
-		/* Background plates deliberately overscan the 4:3 viewport by 32x24
-		   so focus pans never reveal the atlas edge. Original stage scroll is .2. */
-		int bg_x = camera_x - 128 + camera_dx * 205 / 256;
-		int bg_y = camera_y - 96 + camera_dy * 205 / 256;
+		int camera_dx = camera_x - WEEK5_COMPOSITION_BASE_CAMERA_X;
+		int camera_dy = camera_y - WEEK5_COMPOSITION_BASE_CAMERA_Y;
+		/* 384x288 overscan plate: center it at (-32,-24) in the 320x240 viewport. */
+		if (evil_mall) draw_rect(0, 0, SCREEN_W, SCREEN_H, 35, 6, 45);
+		int bg_x = camera_x - 192 + camera_dx * 205 / 256;
+		int bg_y = camera_y - 144 + camera_dy * 205 / 256;
 		unsigned bg_frame = evil_mall ? WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
 		draw_week5_visual_frame(bg_frame, bg_x, bg_y,
 			camera_x, camera_y, 256u, 384u);
+
+		unsigned prop_scale = 320u;
+		static const uint8_t crowd_sequence[13] = {
+			0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3
+		};
+		unsigned anim = (unsigned)(((uint64_t)samples * 24u / rate) % 13u);
+		unsigned crowd_pose = crowd_sequence[anim];
 		if (!evil_mall) {
-			/* Keep the mall architecture as distinct official layers: escalator
-			   and tree sit behind the singer sprites, with .3/.4 parallax. */
-			unsigned prop_scale = 320u;
-			unsigned prop_combined = prop_scale;
+			/* Official z=20 upper crowd behind z=30 escalator and z=40 tree. */
+			int upper_x = week5_layer_world_pos(66, 160, camera_x,
+				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 72u);
+			int upper_y = week5_layer_world_pos(43, 120, camera_y,
+				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 72u);
+			draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
+				upper_x, upper_y, camera_x, camera_y, 256u, prop_scale);
+
 			int escalator_x = week5_layer_world_pos(42, 160, camera_x,
-				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 77u);
+				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 77u);
 			int escalator_y = week5_layer_world_pos(72, 120, camera_y,
-				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 77u);
+				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 77u);
 			int tree_x = week5_layer_world_pos(245, 160, camera_x,
-				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 102u);
+				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 102u);
 			int tree_y = week5_layer_world_pos(24, 120, camera_y,
-				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 102u);
+				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 102u);
 			draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
 				camera_x, camera_y, 256u, prop_scale);
 			draw_week5_visual_frame(WEEK5_FRAME_TREE_XMAS, tree_x, tree_y,
 				camera_x, camera_y, 256u, prop_scale);
 
-			/* Crowd source frames are still driven by the 24fps audio clock.
-			   Sprite sizes follow their source proportions; they are not stretched
-			   to fill the screen as in the previous extraction. */
-			static const uint8_t crowd_sequence[13] = {
-				0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3
-			};
-			unsigned anim = (unsigned)(((uint64_t)samples * 24u / rate) % 13u);
-			unsigned crowd_pose = crowd_sequence[anim];
-			int upper_x = week5_layer_world_pos(66, 160, camera_x,
-				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 72u);
-			int upper_y = week5_layer_world_pos(43, 120, camera_y,
-				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 72u);
 			int lower_x = week5_layer_world_pos(54, 160, camera_x,
-				BOPEEBO_WEEK5_BASE_CAMERA_X, prop_combined, 230u);
+				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 230u);
 			int lower_y = week5_layer_world_pos(157, 120, camera_y,
-				BOPEEBO_WEEK5_BASE_CAMERA_Y, prop_combined, 230u);
-			draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
-				upper_x, upper_y, camera_x, camera_y, 256u, prop_scale);
+				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 230u);
 			draw_week5_visual_frame(WEEK5_FRAME_CROWD_LOWER_0 + crowd_pose,
 				lower_x, lower_y, camera_x, camera_y, 256u, prop_scale);
+		} else {
+			/* Winter Horrorland uses an explicit solid beneath its transparent plate. */
+			int tree_x = week5_layer_world_pos(238, 160, camera_x,
+				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 51u);
+			int tree_y = week5_layer_world_pos(20, 120, camera_y,
+				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 51u);
+			draw_week5_visual_frame(WEEK5_FRAME_TREE_EVIL, tree_x, tree_y,
+				camera_x, camera_y, 256u, prop_scale);
 		}
-		/* Snow is an official foreground layer, before the stage characters. */
+
+		/* Christmas snowUnder (#F3F4F5) is z=59; fgSnow is z=60. */
 		unsigned snow_frame = evil_mall ? WEEK5_FRAME_SNOW_EVIL : WEEK5_FRAME_SNOW_XMAS;
 		int snow_x = week5_layer_world_pos(34, 160, camera_x,
-			BOPEEBO_WEEK5_BASE_CAMERA_X, 320u, 256u);
+			WEEK5_COMPOSITION_BASE_CAMERA_X, 320u, 256u);
 		int snow_y = week5_layer_world_pos(210, 120, camera_y,
-			BOPEEBO_WEEK5_BASE_CAMERA_Y, 320u, 256u);
+			WEEK5_COMPOSITION_BASE_CAMERA_Y, 320u, 256u);
+		if (!evil_mall) {
+			int snow_screen_y = 120 + ((snow_y - camera_y) * (int)prop_scale) / 256;
+			if (snow_screen_y < 0) snow_screen_y = 0;
+			if (snow_screen_y < SCREEN_H)
+				draw_rect(0, snow_screen_y, SCREEN_W, SCREEN_H - snow_screen_y,
+					243, 244, 245);
+		}
 		draw_week5_visual_frame(snow_frame, snow_x, snow_y,
 			camera_x, camera_y, 256u, 320u);
 	} else {
@@ -3985,9 +4001,9 @@ static void draw_scene(uint32_t samples)
 	   behind BF, and is omitted from Winter Horrorland. */
 	if (week5 && active_song->opponent_kind != PS1_OPPONENT_MONSTER) {
 		int santa_x = week5_layer_world_pos(18, 160, camera_x,
-			BOPEEBO_WEEK5_BASE_CAMERA_X, 320u, 256u);
+			WEEK5_COMPOSITION_BASE_CAMERA_X, 320u, 256u);
 		int santa_y = week5_layer_world_pos(225, 120, camera_y,
-			BOPEEBO_WEEK5_BASE_CAMERA_Y, 320u, 256u);
+			WEEK5_COMPOSITION_BASE_CAMERA_Y, 320u, 256u);
 		draw_week5_visual_frame(WEEK5_FRAME_SANTA, santa_x, santa_y,
 			camera_x, camera_y, 256u, 320u);
 	}

@@ -899,3 +899,8 @@ ISO reorder checks passed. DuckStation and real-console execution have not been
 performed; the user must load the CUE and report composition, animation, pause,
 audio and transition behavior. See [`PS1_WEEK5_V167_SCENE.md`](PS1_WEEK5_V167_SCENE.md).
 
+
+
+## v168 — Week 5 composition recheck
+
+Compared the v167 screenshots to the pinned Week 5 stage data and supplied reference video. Corrected the overscan plate origin, Winter Horrorland backing fill/tree, Christmas Mall depth order and snow-under fill, and Dad/BF focus offsets. No assets, audio, charts, gameplay, or animation timing changed. Incremental compile and ISO generation succeeded; no asset converters ran. BIN SHA-256: `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`. DuckStation and console testing remain pending. Full notes: [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
