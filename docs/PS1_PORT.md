@@ -1652,3 +1652,10 @@ Build et vérification statique ISO réussis; BIN/CUE dans `ps1/build/week4-comp
 ## Week 4 — GF v149
 
 Le build d’essai restaure les 30 cellules officielles de danse GF à 87×79 au lieu des 10 poses précédentes, dont huit petites images étirées. L’animation suit l’horloge audio à raison d’une moitié de 15 poses par beat. Le paquet W4 utilise 8 pages (contre 5), CLUT conservée; composition, caméra, audio et gameplay inchangés. Compilation et contrôles statiques réussis, pas encore exécuté par l’utilisateur dans DuckStation. BIN/CUE et hashes : [`PS1_WEEK4_V149_GF.md`](PS1_WEEK4_V149_GF.md).
+
+
+### Week 4 v153 — plan lointain indépendant
+
+Le paquet de décor W4 conserve huit pages 8bpp et sa CLUT. La texture de fond contient maintenant le coucher de soleil seul; la limousine lointaine et quatre cels henchmen sont dessinés comme une couche séparée avec scroll `0.4`, tandis que la limousine principale conserve scroll `1.0` et sa composition/ancre v152. Cela ajoute une primitive, sans page VRAM ni lecture CD additionnelle. L’image reste à 524 800 octets. Voir `docs/PS1_WEEK4_V153_PARALLAX.md` pour la comparaison, la recette, les hashes, les budgets et limites de validation.
+
+Le BIN/CUE normal se trouve localement dans `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. Compilation et contrôles statiques réussis; exécution utilisateur DuckStation en attente. Aucun test console réelle.
