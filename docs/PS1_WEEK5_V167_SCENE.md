@@ -31,14 +31,14 @@ The CMake/Ninja dry-run listed only `spu_probe.c` and `cdstream/stream.c` compil
 
 | Resource | v167 static amount | Notes |
 |---|---:|---|
-| Week 5 visual pages | 9 × 65,536 = 589,824 bytes | Nine 8bpp 256×256 pages, same page count as the existing package; one coherent 256-entry RGB555 CLUT follows the pages. |
+| Week 5 visual pages | 9 × 65,536 = 589,824 bytes | Nine 8bpp 256×256 pages; v165 used seven, so this adds two pages (131,072 bytes). One coherent 256-entry RGB555 CLUT follows the pages. |
 | Week 5 payload | 590,336 bytes | Exact generated `W5SCENE.BIN` length: 9 pages plus 512-byte CLUT. |
 | Week 5 frame descriptors | 69 entries | Runtime metadata in generated header; atlas rectangles and trim offsets are shared by frames. |
 | Scene upload scratch RAM | 65,536 bytes | One page-sized temporary buffer in the existing loader; freed after loading. |
 | CD scene reads | 9 × 32 sectors = 288 sectors | Scene is loaded before starting music; no new concurrent CD reads were added. |
 | SPU / music / charts | unchanged | Existing four-channel music and song/chart packages were reused byte-for-byte from the preceding package. |
 
-The 9-page count and payload size are static build facts, not runtime performance measurements. No reduction in VRAM page count is claimed. Actual RAM high-water mark, GPU upload time, audio underruns, and render cadence require runtime observation and have not been measured for v167.
+The 9-page count and payload size are static build facts, not runtime performance measurements. Compared with v165, the larger character cels and separated layers cost two additional 8bpp pages; no VRAM reduction is claimed, and Week 5 now uses the full nine-page scene allocation. Actual RAM high-water mark, GPU upload time, audio underruns, and render cadence require runtime observation and have not been measured for v167.
 
 ## Build artifact
 
