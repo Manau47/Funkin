@@ -1270,6 +1270,55 @@ static void draw_week4_visual_frame(unsigned frame, int world_x, int world_y,
 		zoom_q8, scale_q8, 0u, 0u);
 }
 
+/* Draw a stage prop with independent parallax and art scale. Week 4's
+   official distant limo/dancers use 0.4 scroll; the main limo uses 1.0. */
+static void draw_week4_visual_prop(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8, unsigned scroll_q8,
+	unsigned art_scale_q8)
+{
+	if (visual_prim_count >= visual_prim_limit) {
+		visual_prim_rejected++;
+		return;
+	}
+	if (frame >= WEEK4_VISUAL_FRAME_COUNT || !zoom_q8) return;
+	const Week4VisualFrame *visual = &week4_visual_frames[frame];
+	const BopeeboVisualPage *page = &bopeebo_visual_page_table[
+		WEEK4_VRAM_PAGE_SLOT(visual->page)];
+	int parallax_x = SCREEN_W / 2 +
+		(camera_x - SCREEN_W / 2) * (int)scroll_q8 / 256;
+	int parallax_y = SCREEN_H / 2 +
+		(camera_y - SCREEN_H / 2) * (int)scroll_q8 / 256;
+	int x0 = SCREEN_W / 2 + ((world_x - parallax_x) * (int)zoom_q8) / 256;
+	int y0 = SCREEN_H / 2 + ((world_y - parallax_y) * (int)zoom_q8) / 256;
+	unsigned geometry_q8 = zoom_q8 * art_scale_q8 / 256u;
+	int width = ((int)visual->w * (int)geometry_q8) / 256;
+	int height = ((int)visual->h * (int)geometry_q8) / 256;
+	if (width <= 0 || height <= 0) return;
+	int x1 = x0 + width, y1 = y0 + height;
+	int draw_x0 = x0 < 0 ? 0 : x0;
+	int draw_y0 = y0 < 0 ? 0 : y0;
+	int draw_x1 = x1 > SCREEN_W ? SCREEN_W : x1;
+	int draw_y1 = y1 > SCREEN_H ? SCREEN_H : y1;
+	if (draw_x0 >= draw_x1 || draw_y0 >= draw_y1) return;
+	unsigned u0 = visual->u + (unsigned)((int64_t)(draw_x0 - x0) * visual->w / width);
+	unsigned v0 = visual->v + (unsigned)((int64_t)(draw_y0 - y0) * visual->h / height);
+	unsigned u1 = visual->u + (unsigned)(((int64_t)(draw_x1 - x0) * visual->w + width - 1) / width) - 1u;
+	unsigned v1 = visual->v + (unsigned)(((int64_t)(draw_y1 - y0) * visual->h + height - 1) / height) - 1u;
+	if (u1 > (unsigned)visual->u + visual->w - 1u) u1 = visual->u + visual->w - 1u;
+	if (v1 > (unsigned)visual->v + visual->h - 1u) v1 = visual->v + visual->h - 1u;
+	if (u0 > u1 || v0 > v1 || u1 > 255u || v1 > 255u) return;
+	POLY_FT4 *p = &visual_prims[visual_prim_count++];
+	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
+	setPolyFT4(p);
+	setRGB0(p, 128, 128, 128);
+	setXY4(p, draw_x0, draw_y0, draw_x1, draw_y0,
+		draw_x0, draw_y1, draw_x1, draw_y1);
+	setUV4(p, u0, v0, u1, v0, u0, v1, u1, v1);
+	p->tpage = getTPage(page->depth, 0, page->x, page->y);
+	setClut(p, 0, 496);
+	DrawPrim((uint32_t *)p);
+}
+
 static void draw_week4_gf_frame(unsigned frame, int world_x, int world_y,
 	int camera_x, int camera_y, unsigned zoom_q8, unsigned scale_q8)
 {
@@ -3310,6 +3359,10 @@ static void draw_scene(uint32_t samples)
 			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
 		draw_week4_stage_tile(WEEK4_FRAME_STAGE_1, BOPEEBO_WEEK4_STAGE_X + 256,
 			BOPEEBO_WEEK4_STAGE_Y, camera_x, camera_y, zoom_q8);
+		/* Keep the distant limo and dancers at the stage's official 0.4 scroll. */
+		draw_week4_visual_prop(WEEK4_FRAME_FAR_PLANE,
+			BOPEEBO_WEEK4_FAR_X, BOPEEBO_WEEK4_FAR_Y,
+			camera_x, camera_y, zoom_q8, 102u, 128u);
 	} else if (week5) {
 		unsigned stage_frame = active_song->opponent_kind == PS1_OPPONENT_MONSTER ?
 			WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
@@ -3459,9 +3512,9 @@ static void draw_scene(uint32_t samples)
 	/* In Week 4 GF sits behind the foreground limo. Its frame is packed into
 	   the otherwise unused Mom-icon page, leaving the shared BF page untouched. */
 	if (week4)
-		draw_week4_visual_frame(WEEK4_FRAME_LIMO_FRONT,
+		draw_week4_visual_prop(WEEK4_FRAME_LIMO_FRONT,
 			BOPEEBO_WEEK4_LIMO_X, BOPEEBO_WEEK4_LIMO_Y,
-			camera_x, camera_y, zoom_q8, 256);
+			camera_x, camera_y, zoom_q8, 256u, 256u);
 	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
 	if (week2) {
 		unsigned opponent_frame;
