@@ -3456,6 +3456,12 @@ static void draw_scene(uint32_t samples)
 		BOPEEBO_GF_X - (int)(BOPEEBO_GF_FRAME_W / 2u),
 		BOPEEBO_GF_Y - (int)BOPEEBO_GF_FRAME_H,
 		camera_x, camera_y, zoom_q8, 256);
+	/* In Week 4 GF sits behind the foreground limo. Its frame is packed into
+	   the otherwise unused Mom-icon page, leaving the shared BF page untouched. */
+	if (week4)
+		draw_week4_visual_frame(WEEK4_FRAME_LIMO_FRONT,
+			BOPEEBO_WEEK4_LIMO_X, BOPEEBO_WEEK4_LIMO_Y,
+			camera_x, camera_y, zoom_q8, 256);
 	/* Week 2 replays sampled frames from the pinned Spooky Kids animations. */
 	if (week2) {
 		unsigned opponent_frame;
