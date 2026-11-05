@@ -645,3 +645,12 @@ Le paquet demeure à 8 pages 8bpp + CLUT, 524 800 octets; aucune page, lecture C
 Build PSn00bSDK 0.24 / GCC MIPS 12.3 / CMake-Ninja réussi en réutilisant les ressources préconverties. BIN 339 346 560 octets, 144 280 secteurs; CUE et BIN livrés localement sous `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. BIN SHA-256 `3482B62297B81AFEB7A57FFDBB8C7CD067FCD7589ADA08CD67D0959E97BA8699`.
 
 Compilation et contrôles statiques uniquement. DuckStation attend le chargement utilisateur; aucun rendu, démarrage, audio ou stabilité n’est encore validé sur v153. Console réelle non testée.
+
+
+### v153 rootfix — gel au logo PlayStation
+
+Retour utilisateur : le CUE v153 reste bloqué au logo PlayStation. L'analyse directe de l'ISO livré révèle que son répertoire racine a été trié par nom : `SYSTEM.CNF;1` était la 93e entrée fichier et `FUNKIN.EXE;1` la 36e. Le v152 place `SYSTEM.CNF;1` puis `FUNKIN.EXE;1` en tête et constitue la comparaison de démarrage disponible. Le XML v153 listait bien les fichiers de boot au début, mais cela n'a pas garanti cet ordre dans les enregistrements ISO.
+
+Correction limitée au disque : `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` a réordonné les enregistrements racine et recalculé les contrôles EDC/ECC des secteurs touchés. Le nouvel artefact est séparé dans `ps1/build/week4-composition-v153/delivery-v153-rootfix/`. Aucun code, asset, audio, chart ou exécutable n'a été modifié ni recompilé. Vérification statique : `SYSTEM.CNF;1` fichier 1, `FUNKIN.EXE;1` fichier 2; les extents des fichiers restent identiques au BIN v153 initial. L'en-tête PS-X EXE v153 (entrée `0x80025cbc`, chargement `0x80010000`, taille `0x000fb000`) correspond à l'exécutable lié. Une annonce antérieure d'en-tête trop court était erronée : elle résultait d'une extraction absente et d'octets v152 réutilisés par erreur.
+
+BIN rootfix SHA-256 `1CF2554D7DFEB70221B10EDAC45094CD3D5FCD91755A71631C532D9EFB3C66FB`; CUE SHA-256 `D9C9FB58E5CBD6762A26C3CE149AD0B74A107A8B7F8BCA4BCCBBF9E39A6DA2B9`. Le répertoire ISO a 117 fichiers; seules ses zones racine (LBA 22–24) diffèrent du BIN v153 initial. Contrôle statique réussi. L'utilisateur doit charger le nouveau CUE; son démarrage n'est pas encore validé. Pas de test console réelle.
