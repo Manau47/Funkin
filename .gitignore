@@ -1,5 +1,8 @@
 .DS_STORE
 .haxelib/
+/ps1/build/
+/outputs/
+/work/
 .vs/
 APIStuff.hx
 dump/
@@ -32,6 +35,8 @@ docs/dox/Android.xml
 
 # Exclude JS stuff
 node_modules/
+__pycache__/
+*.py[cod]
 package.json
 package-lock.json
 .aider*

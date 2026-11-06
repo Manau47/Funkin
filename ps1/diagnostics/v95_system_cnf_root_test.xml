@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v95 package-only boot test.
+  It reuses the byte-identical v94 PS-X EXE and ps1/system.cnf.
+  Only those two files are in the ISO root to test BIOS directory lookup.
+  No gameplay assets are required by the v94 startup marker.
+-->
+<iso_project image_name="funkin-ps1-v95-root-scan.bin" cue_sheet="funkin-ps1-v95-root-scan.cue">
+  <track type="data">
+    <identifiers system="PLAYSTATION" application="PLAYSTATION"
+      volume="FNF_V95_ROOT_SCAN" volume_set="FNF_V95_ROOT_SCAN"
+      publisher="Unofficial FNF PS1 diagnostics" data_preparer="PSn00bSDK"
+      copyright="SYSTEM.CNF;1" />
+    <directory_tree>
+      <file name="SYSTEM.CNF" type="data" source="../system.cnf" />
+      <file name="FUNKIN.EXE" type="data"
+        source="../../outputs/FNF-PS1-v94-direct-gp0/funkin-ps1-bopeebo-playable.exe" />
+    </directory_tree>
+  </track>
+</iso_project>
