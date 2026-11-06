@@ -34,3 +34,9 @@ The coordinates are a deliberate 4:3 PS1 adaptation of the pinned data, not a cl
 ## Validation state
 
 Compilation and packaging are observed. No DuckStation execution or console test was performed. The user will load v169; scene placement, character framing, transitions between focus targets, and visual coverage remain pending that check. No visual validation is claimed.
+
+## Final v169b pre-delivery audit
+
+A final source audit found that the generated `BOPEEBO_WEEK5_*_X/Y` macros were already adapted PS1 world coordinates; dividing those values by ten again displaced the characters. v169b now takes character anchors from the pinned `mallXmas.json` / `mallEvil.json` stage positions and maps them once: Dad (42,882)/(290,869), GF (808,854), BF (1177,871)/(1297,871), Xmas/Evil respectively.
+
+Final BIN SHA-256: `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`. CUE SHA-256: `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. Delivery and exact source/configuration snapshot: `C:\\Users\\Manau47\\Documents\\Codex\\week5-scene-v169b-delivery`. Previous v169 preflight is preserved separately. Incremental Ninja confirmed no pending work after successful compilation/package creation; assets were not reconverted. DuckStation and console checks are pending; no visual validation is claimed.
