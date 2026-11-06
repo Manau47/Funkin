@@ -915,3 +915,9 @@ Le paquet converti Week 5 est réutilisé octet pour octet; aucune conversion d'
 ## 2026-11-06 — Week 5 v169b character anchors
 
 Avant livraison, vérification finale : les macros de personnage générées étaient déjà dans l'espace monde PS1 adapté. Leur division par dix une seconde fois déplaçait les personnages. v169b prend les positions depuis mallXmas.json/mallEvil.json et les convertit une fois. Le paquet de scène existant est réutilisé; aucun asset n'est reconverti. Compilation/ISO réussies, invocation Ninja finale sans travail restant. BIN SHA-256 `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE SHA-256 `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. Snapshot source/configuration livré séparément. Test DuckStation par l'utilisateur en attente; aucune validation visuelle/console n'est revendiquée.
+
+## 2026-11-06 — v169b boot hang and v169c ISO root fix
+
+Retour utilisateur : v169b reste au logo Sony. L'ISO place `SYSTEM.CNF;1` en 93e entrée fichier du répertoire racine et `FUNKIN.EXE;1` en 36e. Les deux fichiers et leur contenu sont présents, mais cet ordre reproduit le défaut de démarrage déjà connu.
+
+v169c réordonne uniquement les enregistrements racine avec l'outil vérifié `reorder_iso_system_cnf.py --exe-after-system-cnf`. Le script vérifie les EDC/ECC, place SYSTEM.CNF puis FUNKIN.EXE en tête et confirme qu'aucun octet hors des secteurs du répertoire racine ne change. Pas de recompilation, code ou ressource modifié. BIN SHA-256 `AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`; CUE SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`. L'essai DuckStation est en attente; aucun démarrage réussi n'est revendiqué.
