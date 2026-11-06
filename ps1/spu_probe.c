@@ -66,8 +66,9 @@
 #include "menu_audio_data.h"
 #include "week5_catalog.h"
 #include "week5_visual_data.h"
-#define WEEK5_COMPOSITION_BASE_CAMERA_X (BOPEEBO_WEEK5_OPP_X + 19)
-#define WEEK5_COMPOSITION_BASE_CAMERA_Y (BOPEEBO_WEEK5_OPP_Y - 13)
+/* Stage JSON coordinates are mapped to the PS1 world at 1/10 scale. */
+#define WEEK5_COMPOSITION_BASE_CAMERA_X (BOPEEBO_WEEK5_OPP_X / 10 + 15)
+#define WEEK5_COMPOSITION_BASE_CAMERA_Y (BOPEEBO_WEEK5_OPP_Y / 10 - 10 - 28)
 #include "week6_catalog.h"
 #include "week6_visual_data.h"
 #include "week7_catalog.h"
@@ -2755,8 +2756,12 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
-	int x0 = 160 + ((world_x + visual->dx - camera_x) * (int)combined_scale) / 256;
-	int y0 = 120 + ((world_y + visual->dy - camera_y) * (int)combined_scale) / 256;
+	/* Camera/world coordinates and the asset's local size/trim are separate.
+	   A prop's own scale must not move its scene anchor. */
+	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256 +
+		((int)visual->dx * (int)combined_scale) / 256;
+	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256 +
+		((int)visual->dy * (int)combined_scale) / 256;
 	int w = ((int)visual->w * (int)combined_scale) / 256;
 	int h = ((int)visual->h * (int)combined_scale) / 256;
 	setPolyFT4(p);
@@ -2771,15 +2776,18 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	DrawPrim((uint32_t *)p);
 }
 
-/* Convert a target screen-space top-left into world coordinates while
-   retaining the stage prop's official scroll fraction during camera focus. */
-static int week5_layer_world_pos(int screen_pos, int center, int camera_pos,
-	int base_camera_pos, unsigned combined_scale, unsigned scroll_q8)
+/* Official stage coordinates are scaled into the PS1 world at 1:10.
+   For a prop with scroll s, world = stage + camera*(1-s). */
+static int week5_stage_to_world(int stage_pos)
 {
-	int base = base_camera_pos + ((screen_pos - center) * 256) /
-		(int)combined_scale;
-	int delta = camera_pos - base_camera_pos;
-	return base + delta * (int)(256u - scroll_q8) / 256;
+	return stage_pos / 10;
+}
+
+static int week5_layer_world_pos(int stage_pos, int camera_pos,
+	unsigned scroll_q8)
+{
+	return week5_stage_to_world(stage_pos) +
+		camera_pos * (int)(256u - scroll_q8) / 256;
 }
 
 static void draw_week6_visual_frame(unsigned frame, int x, int y, int width, int height)
@@ -3052,11 +3060,17 @@ static void draw_arrow_diagnostic_sheet(void)
 static void camera_target_for_focus(int focus, int *x, int *y)
 {
 	if (active_song->stage_id == 5u) {
+		bool evil = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		int opp_x = evil ? 290 : 42;
+		int opp_y = evil ? 869 : 882;
+		int bf_x = evil ? 1297 : 1177;
+		int bf_y = 871;
+		/* Pinned mallXmas/mallEvil positions and camera offsets in the
+		   shared 1:10 world mapping. Retain the PS1 framing bias of -28. */
 		switch (focus) {
-		/* Source stage camera offsets adapted to the converted Week 5 coordinates. */
-		case 1: *x = BOPEEBO_WEEK5_OPP_X + 19; *y = BOPEEBO_WEEK5_OPP_Y - 13; break;
-		case 0: *x = BOPEEBO_WEEK5_BF_X - 38; *y = BOPEEBO_WEEK5_BF_Y - 25; break;
-		case 2: *x = BOPEEBO_WEEK5_GF_X; *y = BOPEEBO_WEEK5_GF_Y - 28; break;
+		case 1: *x = opp_x / 10 + 15; *y = opp_y / 10 - 10 - 28; break;
+		case 0: *x = bf_x / 10 - 30; *y = bf_y / 10 - 20 - 28; break;
+		case 2: *x = 808 / 10; *y = 854 / 10 - 28; break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
 		}
 		return;
@@ -3648,75 +3662,72 @@ static void draw_scene(uint32_t samples)
 		}
 	} else if (week5) {
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
-		int camera_dx = camera_x - WEEK5_COMPOSITION_BASE_CAMERA_X;
-		int camera_dy = camera_y - WEEK5_COMPOSITION_BASE_CAMERA_Y;
-		/* 384x288 overscan plate: center it at (-32,-24) in the 320x240 viewport. */
+		int base_camera_x = evil_mall ? 290 / 10 + 15 : 42 / 10 + 15;
+		int base_camera_y = evil_mall ? 869 / 10 - 10 - 28 : 882 / 10 - 10 - 28;
+		int camera_dx = camera_x - base_camera_x;
+		int camera_dy = camera_y - base_camera_y;
+		/* 256x192 at 1.5x is 384x288: center the overscan at (-32,-24).
+		   Across focus shifts the flattened plate moves with official .2 scroll. */
 		if (evil_mall) draw_rect(0, 0, SCREEN_W, SCREEN_H, 35, 6, 45);
-		int bg_x = camera_x - 192 + camera_dx * 205 / 256;
-		int bg_y = camera_y - 144 + camera_dy * 205 / 256;
+		int bg_x = base_camera_x - 192 + camera_dx * 205 / 256;
+		int bg_y = base_camera_y - 144 + camera_dy * 205 / 256;
 		unsigned bg_frame = evil_mall ? WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
 		draw_week5_visual_frame(bg_frame, bg_x, bg_y,
 			camera_x, camera_y, 256u, 384u);
 
-		unsigned prop_scale = 320u;
+		const unsigned crowd_upper_scale = 321u;
+		const unsigned crowd_lower_scale = 288u;
+		const unsigned escalator_scale = 381u;
+		const unsigned xmas_tree_scale = 223u;
+		const unsigned evil_tree_scale = 226u;
+		const unsigned snow_scale = 336u;
 		static const uint8_t crowd_sequence[13] = {
 			0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3
 		};
 		unsigned anim = (unsigned)(((uint64_t)samples * 24u / rate) % 13u);
 		unsigned crowd_pose = crowd_sequence[anim];
 		if (!evil_mall) {
-			/* Official z=20 upper crowd behind z=30 escalator and z=40 tree. */
-			int upper_x = week5_layer_world_pos(66, 160, camera_x,
-				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 72u);
-			int upper_y = week5_layer_world_pos(43, 120, camera_y,
-				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 72u);
+			int upper_x = week5_layer_world_pos(-396, camera_x, 72u);
+			int upper_y = week5_layer_world_pos(-98, camera_y, 72u);
 			draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
-				upper_x, upper_y, camera_x, camera_y, 256u, prop_scale);
+				upper_x, upper_y, camera_x, camera_y, zoom_q8, crowd_upper_scale);
 
-			int escalator_x = week5_layer_world_pos(42, 160, camera_x,
-				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 77u);
-			int escalator_y = week5_layer_world_pos(72, 120, camera_y,
-				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 77u);
-			int tree_x = week5_layer_world_pos(245, 160, camera_x,
-				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 102u);
-			int tree_y = week5_layer_world_pos(24, 120, camera_y,
-				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 102u);
+			int escalator_x = week5_layer_world_pos(-1100, camera_x, 77u);
+			int escalator_y = week5_layer_world_pos(-540, camera_y, 77u);
+			int tree_x = week5_layer_world_pos(370, camera_x, 102u);
+			int tree_y = week5_layer_world_pos(-250, camera_y, 102u);
 			draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
-				camera_x, camera_y, 256u, prop_scale);
+				camera_x, camera_y, zoom_q8, escalator_scale);
 			draw_week5_visual_frame(WEEK5_FRAME_TREE_XMAS, tree_x, tree_y,
-				camera_x, camera_y, 256u, prop_scale);
-
-			int lower_x = week5_layer_world_pos(54, 160, camera_x,
-				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 230u);
-			int lower_y = week5_layer_world_pos(157, 120, camera_y,
-				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 230u);
-			draw_week5_visual_frame(WEEK5_FRAME_CROWD_LOWER_0 + crowd_pose,
-				lower_x, lower_y, camera_x, camera_y, 256u, prop_scale);
+				camera_x, camera_y, zoom_q8, xmas_tree_scale);
 		} else {
-			/* Winter Horrorland uses an explicit solid beneath its transparent plate. */
-			int tree_x = week5_layer_world_pos(238, 160, camera_x,
-				WEEK5_COMPOSITION_BASE_CAMERA_X, prop_scale, 51u);
-			int tree_y = week5_layer_world_pos(20, 120, camera_y,
-				WEEK5_COMPOSITION_BASE_CAMERA_Y, prop_scale, 51u);
+			int tree_x = week5_layer_world_pos(300, camera_x, 51u);
+			int tree_y = week5_layer_world_pos(-300, camera_y, 51u);
 			draw_week5_visual_frame(WEEK5_FRAME_TREE_EVIL, tree_x, tree_y,
-				camera_x, camera_y, 256u, prop_scale);
+				camera_x, camera_y, zoom_q8, evil_tree_scale);
+		}
+		if (!evil_mall) {
+			int lower_x = week5_layer_world_pos(-300, camera_x, 230u);
+			int lower_y = week5_layer_world_pos(120, camera_y, 230u);
+			draw_week5_visual_frame(WEEK5_FRAME_CROWD_LOWER_0 + crowd_pose,
+				lower_x, lower_y, camera_x, camera_y, zoom_q8, crowd_lower_scale);
 		}
 
-		/* Christmas snowUnder (#F3F4F5) is z=59; fgSnow is z=60. */
 		unsigned snow_frame = evil_mall ? WEEK5_FRAME_SNOW_EVIL : WEEK5_FRAME_SNOW_XMAS;
-		int snow_x = week5_layer_world_pos(34, 160, camera_x,
-			WEEK5_COMPOSITION_BASE_CAMERA_X, 320u, 256u);
-		int snow_y = week5_layer_world_pos(210, 120, camera_y,
-			WEEK5_COMPOSITION_BASE_CAMERA_Y, 320u, 256u);
+		int snow_x = week5_layer_world_pos(evil_mall ? -500 : -1150,
+			camera_x, 256u);
+		int snow_y = week5_layer_world_pos(evil_mall ? 700 : 680,
+			camera_y, 256u);
 		if (!evil_mall) {
-			int snow_screen_y = 120 + ((snow_y - camera_y) * (int)prop_scale) / 256;
+			int snow_under_y = week5_layer_world_pos(800, camera_y, 256u);
+			int snow_screen_y = 120 + ((snow_under_y - camera_y) * (int)zoom_q8) / 256;
 			if (snow_screen_y < 0) snow_screen_y = 0;
 			if (snow_screen_y < SCREEN_H)
 				draw_rect(0, snow_screen_y, SCREEN_W, SCREEN_H - snow_screen_y,
 					243, 244, 245);
 		}
 		draw_week5_visual_frame(snow_frame, snow_x, snow_y,
-			camera_x, camera_y, 256u, 320u);
+			camera_x, camera_y, zoom_q8, snow_scale);
 	} else {
 		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
 			camera_x, camera_y, zoom_q8, 256);
@@ -3811,7 +3822,7 @@ static void draw_scene(uint32_t samples)
 			WEEK5_FRAME_GF_DANCE_V143_6, WEEK5_FRAME_GF_DANCE_V143_7
 		};
 		draw_week5_visual_frame(dance[gf_dance_pose(beat_q16)],
-			BOPEEBO_WEEK5_GF_X, BOPEEBO_WEEK5_GF_Y,
+			BOPEEBO_WEEK5_GF_X / 10, BOPEEBO_WEEK5_GF_Y / 10,
 			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t dance[30] = {
@@ -3957,7 +3968,7 @@ static void draw_scene(uint32_t samples)
 			opponent_frame = WEEK5_FRAME_PARENTS_IDLE_1;
 		}
 		draw_week5_visual_frame(opponent_frame,
-			BOPEEBO_WEEK5_OPP_X, BOPEEBO_WEEK5_OPP_Y,
+			BOPEEBO_WEEK5_OPP_X / 10, BOPEEBO_WEEK5_OPP_Y / 10,
 			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
@@ -4000,12 +4011,10 @@ static void draw_scene(uint32_t samples)
 	/* Official Santa prop at Mall Christmas z=210: it sits in front of Parents,
 	   behind BF, and is omitted from Winter Horrorland. */
 	if (week5 && active_song->opponent_kind != PS1_OPPONENT_MONSTER) {
-		int santa_x = week5_layer_world_pos(18, 160, camera_x,
-			WEEK5_COMPOSITION_BASE_CAMERA_X, 320u, 256u);
-		int santa_y = week5_layer_world_pos(225, 120, camera_y,
-			WEEK5_COMPOSITION_BASE_CAMERA_Y, 320u, 256u);
+		int santa_x = week5_layer_world_pos(-840, camera_x, 256u) + (36 * 236 / 256);
+		int santa_y = week5_layer_world_pos(150, camera_y, 256u) + (84 * 236 / 256);
 		draw_week5_visual_frame(WEEK5_FRAME_SANTA, santa_x, santa_y,
-			camera_x, camera_y, 256u, 320u);
+			camera_x, camera_y, zoom_q8, 236u);
 	}
 
 	unsigned bf_frame = VIS_BF_IDLE_0;
@@ -4036,9 +4045,9 @@ static void draw_scene(uint32_t samples)
 			bf_frame = VIS_BF_IDLE_0 + bopeebo_bf_idle_sequence[idle_step];
 		}
 	int bf_world_x = week3 ? BOPEEBO_WEEK3_BF_X : week4 ? BOPEEBO_WEEK4_BF_X :
-		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
+		week5 ? BOPEEBO_WEEK5_BF_X / 10 : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
-		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
+		week5 ? BOPEEBO_WEEK5_BF_Y / 10 : BOPEEBO_BF_Y;
 	if (week5) {
 		static const uint8_t bf_sing[4][2] = {
 			{ WEEK5_FRAME_BF_LEFT_0, WEEK5_FRAME_BF_LEFT_1 },
