@@ -1673,3 +1673,7 @@ The user reported that v168's composition remained substantially wrong. A follow
 ### Week 5 v169 transform correction
 
 The Week 5 renderer separates camera/world coordinates from per-asset scale and trim, uses one 1:10 mapping for pinned mall stage coordinates, applies official prop positions/parallax/depth order, and centers the 1.5x background plate with 32x24 overscan. The existing converted Week 5 package is reused byte-for-byte; the build dry-run contains only C compilation, linking, and ISO creation. Compilation and packaging succeeded. The new v169 BIN/CUE awaits the user's DuckStation visual check; no execution or visual validation is claimed. See [`PS1_WEEK5_V169_COMPOSITION.md`](PS1_WEEK5_V169_COMPOSITION.md).
+
+### Week 5 v169b anchor correction
+
+A final audit found the generated Week 5 character macros already represented adapted PS1 coordinates. Dividing them by ten a second time had displaced the characters. v169b uses pinned Mall stage JSON character anchors and applies the stage-to-world mapping once. BIN SHA-256: `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE SHA-256: `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. The separate delivery includes a source/config snapshot. Compilation and packaging succeeded; visual validation awaits the user's DuckStation test. No emulator or console run is claimed.
