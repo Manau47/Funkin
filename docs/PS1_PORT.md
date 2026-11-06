@@ -1664,3 +1664,12 @@ Le BIN/CUE normal se trouve localement dans `ps1/build/week4-composition-v153/de
 ## Week 5 composition build v168
 
 This build fixes the Week 5 stage plate origin and layering based on the pinned Mall JSON and user reference: the transparent Evil Mall backdrop now has its declared solid fill and tree, while Christmas Mall upper/lower crowd, escalator/tree, and snow-under layers follow their depth order. Camera targets apply adapted Dad/BF stage offsets. Audio/gameplay/data are unchanged. Compilation and ISO packaging succeeded; emulator/user test is pending. See [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+
+
+### Week 5 v168 composition follow-up (rejected by user)
+
+The user reported that v168's composition remained substantially wrong. A follow-up audit found that the renderer scaled world displacement by each sprite's art scale and used hand-picked screen positions for stage props, so the earlier claims that the plate math and official placements were correct were inaccurate. See [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+
+### Week 5 v169 transform correction
+
+The Week 5 renderer separates camera/world coordinates from per-asset scale and trim, uses one 1:10 mapping for pinned mall stage coordinates, applies official prop positions/parallax/depth order, and centers the 1.5x background plate with 32x24 overscan. The existing converted Week 5 package is reused byte-for-byte; the build dry-run contains only C compilation, linking, and ISO creation. Compilation and packaging succeeded. The new v169 BIN/CUE awaits the user's DuckStation visual check; no execution or visual validation is claimed. See [`PS1_WEEK5_V169_COMPOSITION.md`](PS1_WEEK5_V169_COMPOSITION.md).
