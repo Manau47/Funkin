@@ -904,3 +904,10 @@ audio and transition behavior. See [`PS1_WEEK5_V167_SCENE.md`](PS1_WEEK5_V167_SC
 ## v168 — Week 5 composition recheck
 
 Compared the v167 screenshots to the pinned Week 5 stage data and supplied reference video. Corrected the overscan plate origin, Winter Horrorland backing fill/tree, Christmas Mall depth order and snow-under fill, and Dad/BF focus offsets. No assets, audio, charts, gameplay, or animation timing changed. Incremental compile and ISO generation succeeded; no asset converters ran. BIN SHA-256: `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`. DuckStation and console testing remain pending. Full notes: [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+
+
+## 2026-11-06 — Week 5 composition transform correction (v169)
+
+Retour utilisateur : la composition v168 reste très éloignée des références. L'audit du code a trouvé une cause concrète : le renderer appliquait l'échelle de chaque image au déplacement monde et plaçait les accessoires avec des coordonnées écran choisies à la main plutôt qu'avec les données mallXmas/mallEvil épinglées. v169 utilise une conversion commune 1:10, les positions, offsets caméra, parallaxes et profondeurs du JSON original, et dissocie zoom caméra et taille locale des images. Le fond 256×192 à 1,5× est centré avec 32×24 pixels d'overscan.
+
+Le paquet converti Week 5 est réutilisé octet pour octet; aucune conversion d'image, de chart ou d'audio n'a été lancée. Dry-run : compilation de `spu_probe.c`, édition de liens et création ISO uniquement. Compilation et création du disque réussies. BIN SHA-256 : `661CE1D91A73A7E7B417A07D32E0232867245F542594947E8B2E3B16145486C2`. La branche a reçu le correctif source équivalent dans le commit `bd55029eb5f04297521fb74189046475f4dac728`; le BIN local a été produit depuis le snapshot de build archivé et n'est pas déclaré identique à un checkout propre de ce commit. Essai DuckStation par l'utilisateur en attente; composition visuelle non validée. Voir `PS1_WEEK5_V169_COMPOSITION.md`.
