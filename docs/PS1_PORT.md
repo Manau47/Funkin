@@ -1677,3 +1677,7 @@ The Week 5 renderer separates camera/world coordinates from per-asset scale and 
 ### Week 5 v169b anchor correction
 
 A final audit found the generated Week 5 character macros already represented adapted PS1 coordinates. Dividing them by ten a second time had displaced the characters. v169b uses pinned Mall stage JSON character anchors and applies the stage-to-world mapping once. BIN SHA-256: `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE SHA-256: `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. The separate delivery includes a source/config snapshot. Compilation and packaging succeeded; visual validation awaits the user's DuckStation test. No emulator or console run is claimed.
+
+### v169b startup regression and v169c root fix
+
+v169b was reported stuck at the Sony logo. The ISO root placed SYSTEM.CNF as file entry 93 and FUNKIN.EXE as entry 36. v169c applies the existing checked root-record reorder utility only, placing SYSTEM.CNF then FUNKIN.EXE at the beginning. EDC/ECC was verified and only root-directory sectors changed; the executable and all resources remain byte-identical. v169c BIN SHA-256 `AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`, CUE SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`. This is a static ISO correction; user DuckStation confirmation is pending.
