@@ -3822,7 +3822,7 @@ static void draw_scene(uint32_t samples)
 			WEEK5_FRAME_GF_DANCE_V143_6, WEEK5_FRAME_GF_DANCE_V143_7
 		};
 		draw_week5_visual_frame(dance[gf_dance_pose(beat_q16)],
-			BOPEEBO_WEEK5_GF_X / 10, BOPEEBO_WEEK5_GF_Y / 10,
+			808 / 10, 854 / 10,
 			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t dance[30] = {
@@ -3967,8 +3967,11 @@ static void draw_scene(uint32_t samples)
 		} else if (beat_pose(beat_q16, 2u)) {
 			opponent_frame = WEEK5_FRAME_PARENTS_IDLE_1;
 		}
+		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		int opponent_world_x = evil_mall ? 290 / 10 : 42 / 10;
+		int opponent_world_y = evil_mall ? 869 / 10 : 882 / 10;
 		draw_week5_visual_frame(opponent_frame,
-			BOPEEBO_WEEK5_OPP_X / 10, BOPEEBO_WEEK5_OPP_Y / 10,
+			opponent_world_x, opponent_world_y,
 			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
 	} else if (week4) {
 		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
@@ -4049,6 +4052,9 @@ static void draw_scene(uint32_t samples)
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
 		week5 ? BOPEEBO_WEEK5_BF_Y / 10 : BOPEEBO_BF_Y;
 	if (week5) {
+		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		bf_world_x = evil_mall ? 1297 / 10 : 1177 / 10;
+		bf_world_y = 871 / 10;
 		static const uint8_t bf_sing[4][2] = {
 			{ WEEK5_FRAME_BF_LEFT_0, WEEK5_FRAME_BF_LEFT_1 },
 			{ WEEK5_FRAME_BF_DOWN_0, WEEK5_FRAME_BF_DOWN_1 },
