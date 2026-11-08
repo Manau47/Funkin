@@ -2764,6 +2764,29 @@ static void draw_visual_frame(unsigned frame, int world_x, int world_y,
 		camera_x, camera_y, zoom_q8, scale_q8);
 }
 
+/* Week 2 uses higher-resolution source rectangles while retaining the
+   already-tuned 72x84 world footprint and floor anchor. */
+static void draw_week2_character_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	draw_visual_record_scaled_on_page(visual, world_x, world_y,
+		BOPEEBO_WEEK2_CHARACTER_FRAME_W, BOPEEBO_WEEK2_CHARACTER_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256u, BOPEEBO_VISUAL_PAGE_COUNT);
+}
+
+/* Week 2 GF has a larger source rectangle but keeps the prior world-size and anchor. */
+static void draw_week2_gf_frame(unsigned frame, int world_x, int world_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	if (frame >= BOPEEBO_VISUAL_FRAME_COUNT) return;
+	const BopeeboVisualFrame *visual = &bopeebo_visual_frames[frame];
+	draw_visual_record_scaled_on_page(visual, world_x, world_y,
+		BOPEEBO_WEEK2_GF_FRAME_W, BOPEEBO_WEEK2_GF_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256u, BOPEEBO_VISUAL_PAGE_COUNT);
+}
+
 /* Week 3's composition camera is wider than the prior test scene. Keep the
    already-approved character pixel sizes while moving their anchors with the
    new camera: compensate the world-space frame dimensions for the zoom ratio. */
@@ -3412,15 +3435,24 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 	if (active_song->stage_id == 2u) {
 		switch (focus) {
 		case 1:
-			*x = 48 + 19;
-			*y = 108 - 40 - 13;
+			*x = BOPEEBO_WEEK2_DAD_X + BOPEEBO_WEEK2_DAD_CAMERA_X;
+			*y = BOPEEBO_WEEK2_DAD_Y - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_H / 2u) +
+				BOPEEBO_WEEK2_DAD_CAMERA_Y;
 			/* Lower the camera only for Spookeez/South; the scene moves up
 			   about 12 screen pixels at the Week 2 camera zoom. */
 			if (active_song_index == 4u || active_song_index == 5u)
 				*y += WEEK2_EARLY_OPPONENT_CAMERA_LOWER_WORLD;
 			break;
-		case 0: *x = 124 - 13; *y = 111 - (int)(BOPEEBO_BF_FRAME_H / 2u) - 13; break;
-		case 2: *x = 94; *y = 98 - 40; break;
+		case 0:
+			*x = BOPEEBO_WEEK2_BF_X + BOPEEBO_WEEK2_BF_CAMERA_X;
+			*y = BOPEEBO_WEEK2_BF_Y - (int)(BOPEEBO_BF_FRAME_H / 2u) +
+				BOPEEBO_WEEK2_BF_CAMERA_Y;
+			break;
+		case 2:
+			*x = BOPEEBO_WEEK2_GF_X + BOPEEBO_WEEK2_GF_CAMERA_X;
+			*y = BOPEEBO_WEEK2_GF_Y - (int)(BOPEEBO_WEEK2_GF_FRAME_H / 2u) +
+				BOPEEBO_WEEK2_GF_CAMERA_Y;
+			break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
 		}
 		return;
@@ -4138,9 +4170,10 @@ static void draw_scene(uint32_t samples)
 		unsigned gf_pose = (unsigned)((uint64_t)beat_phase * 5u >> 16);
 		if (gf_pose > 4u) gf_pose = 4u;
 		gf_frame = week2_gf_dance[gf_side + gf_pose];
-		draw_visual_frame(gf_frame,
-			94 - (int)(BOPEEBO_GF_FRAME_W / 2u), 98 - (int)BOPEEBO_GF_FRAME_H,
-			camera_x, camera_y, zoom_q8, 256);
+		draw_week2_gf_frame(gf_frame,
+			BOPEEBO_WEEK2_GF_X - (int)(BOPEEBO_WEEK2_GF_FRAME_W / 2u),
+			BOPEEBO_WEEK2_GF_Y - (int)BOPEEBO_WEEK2_GF_FRAME_H,
+			camera_x, camera_y, zoom_q8);
 	} else if (week3) {
 		static const uint8_t week3_gf_dance[10] = {
 			VIS_WEEK3_GF_DANCE_0, VIS_WEEK3_GF_DANCE_1,
@@ -4272,11 +4305,15 @@ static void draw_scene(uint32_t samples)
 			opponent_frame = idle[(beat_q16 >> 15) & 3u];
 		}
 		if (active_song->opponent_kind == PS1_OPPONENT_MONSTER)
-			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_MONSTER_FRAME_W / 2u),
-				108 - (int)BOPEEBO_WEEK2_MONSTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
+			draw_week2_character_frame(opponent_frame,
+				BOPEEBO_WEEK2_DAD_X - (int)(BOPEEBO_WEEK2_MONSTER_FRAME_W / 2u),
+				BOPEEBO_WEEK2_DAD_Y - (int)BOPEEBO_WEEK2_MONSTER_FRAME_H,
+				camera_x, camera_y, zoom_q8);
 		else
-			draw_visual_frame(opponent_frame, 48 - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
-				108 - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H, camera_x, camera_y, zoom_q8, 256);
+			draw_week2_character_frame(opponent_frame,
+				BOPEEBO_WEEK2_DAD_X - (int)(BOPEEBO_WEEK2_CHARACTER_FRAME_W / 2u),
+				BOPEEBO_WEEK2_DAD_Y - (int)BOPEEBO_WEEK2_CHARACTER_FRAME_H,
+				camera_x, camera_y, zoom_q8);
 	} else if (week3) {
 		static const uint8_t pico_idle[4] = {
 			VIS_WEEK3_PICO_IDLE_0, VIS_WEEK3_PICO_IDLE_1,
@@ -4427,6 +4464,10 @@ static void draw_scene(uint32_t samples)
 		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
 		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
+	if (week2) {
+		bf_world_x = BOPEEBO_WEEK2_BF_X;
+		bf_world_y = BOPEEBO_WEEK2_BF_Y;
+	}
 	if (week5) {
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
 		unsigned variant = evil_mall ? 1u : 0u;
