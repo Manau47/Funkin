@@ -25,4 +25,3 @@ Les chemins d’assets, d’audio et du SDK sont propres à cette machine et res
 ## Portée et niveau de validation
 
 Les changements de code et les volumes avant/après sont décrits dans [`PS1_VRAM_LOADING_AUDIT_V136.md`](PS1_VRAM_LOADING_AUDIT_V136.md). Les volumes CD/VRAM et l’occupation des sections sont des calculs statiques; le dépôt n’a pas de compteurs runtime pour le débit CD, les uploads GPU ou le pic heap. Compilation et vérification ISO réussies. **Aucun lancement de v137b dans DuckStation n’a encore été observé** et aucune validation console réelle n’est revendiquée. L’utilisateur doit charger le CUE et tester des cycles entre semaines, retour Freeplay et Game Over/Retry avant toute conclusion sur la corruption ou la stabilité.
-

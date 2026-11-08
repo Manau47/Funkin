@@ -76,9 +76,10 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
     page_pixels: list[bytearray] = []
     frame_defs: list[tuple[str, int, int, int, int, int]] = []
 
-    # Stage backdrops are cropped to 4:3, with official decorative layer art
-    # retained at 320x240 composition scale. Character proportions are handled
-    # independently in the animated atlas.
+    # Compose the static Mall layers for the 4:3 viewport. The old extraction
+    # shrank the escalator/tree/Santa into a small strip and then clipped the
+    # snow at runtime; retain the useful source detail at a deliberate 256x192
+    # composition scale. Crowd boppers remain separate animated cels below.
     for page_index, background, tree, snow in (
         (0, "bgWalls.png", "christmasTree.png", "fgSnow.png"),
         (1, "evilBG.png", "evilTree.png", "evilSnow.png"),
@@ -88,17 +89,17 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
         bg = run_ffmpeg(ffmpeg, bg_path,
             "scale=256:192:force_original_aspect_ratio=increase:flags=area,"
             "crop=256:192:(iw-ow)/2:(ih-oh)/2,format=rgba", 256, 192)
-        blend_at(page, (256, 256), bg, (256, 192), (0, 32))
+        blend_at(page, (256, 256), bg, (256, 192), (0, 24))
         if page_index == 0:
             escalator = run_ffmpeg(ffmpeg, christmas / "bgEscalator.png",
-                "scale=190:100:force_original_aspect_ratio=decrease:flags=area,"
-                "pad=190:100:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba", 190, 100)
-            blend_at(page, (256, 256), escalator, (190, 100), (32, 54))
+                "scale=256:128:force_original_aspect_ratio=decrease:flags=area,"
+                "pad=256:128:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba", 256, 128)
+            blend_at(page, (256, 256), escalator, (256, 128), (0, 61))
         tree_path = christmas / tree
         tree_pixels = run_ffmpeg(ffmpeg, tree_path,
-            "scale=52:112:force_original_aspect_ratio=decrease:flags=area,"
-            "pad=52:112:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba", 52, 112)
-        blend_at(page, (256, 256), tree_pixels, (52, 112), (193, 42))
+            "scale=76:118:force_original_aspect_ratio=decrease:flags=area,"
+            "pad=76:118:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba", 76, 118)
+        blend_at(page, (256, 256), tree_pixels, (76, 118), (169, 36))
         if page_index == 0:
             santa_xml = ET.parse(christmas / "santa.xml").getroot()
             node = next(item for item in santa_xml.findall("SubTexture")
@@ -106,13 +107,8 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
             santa_frame = {key: int(node.attrib.get(key, 0)) for key in
                 ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
             santa_frame["rotated"] = node.attrib.get("rotated", "false").lower() == "true"
-            santa = extract_sparrow_frame(ffmpeg, christmas / "santa.png", santa_frame, (42, 50))
-            blend_at(page, (256, 256), santa, (42, 50), (12, 137))
-        snow_path = christmas / snow
-        snow_pixels = run_ffmpeg(ffmpeg, snow_path,
-            "scale=256:30:force_original_aspect_ratio=increase:flags=area,"
-            "crop=256:30:(iw-ow)/2:(ih-oh)/2,format=rgba", 256, 30)
-        blend_at(page, (256, 256), snow_pixels, (256, 30), (0, 194))
+            santa = extract_sparrow_frame(ffmpeg, christmas / "santa.png", santa_frame, (54, 64))
+            blend_at(page, (256, 256), santa, (54, 64), (7, 130))
         page_pixels.append(page)
         frame_defs.append(("STAGE_XMAS" if page_index == 0 else "STAGE_EVIL",
                            page_index, 0, 0, 256, 256))
@@ -148,6 +144,46 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
         frame_defs.append((f"GF_DANCE_{index}", 2, x, y, 64, 64))
     page_pixels.append(character_page)
 
+    # The official Mall stage has two animated crowd props (danceEvery=1,
+    # 24fps). They were absent from the old extraction. Keep four distinct
+    # source cels for each prop and snow as independent foreground frames.
+    def sparrow_nodes(xml_path: pathlib.Path, prefix: str, indices: tuple[int, ...]) -> list[dict]:
+        nodes = [node for node in ET.parse(xml_path).getroot().findall("SubTexture")
+                 if node.attrib.get("name", "").startswith(prefix)]
+        out = []
+        for index in indices:
+            node = nodes[index]
+            frame = {key: int(node.attrib.get(key, 0)) for key in
+                     ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
+            frame["rotated"] = node.attrib.get("rotated", "false").lower() == "true"
+            frame["name"] = node.attrib.get("name", prefix)
+            out.append(frame)
+        return out
+
+    crowd_upper = bytearray(PAGE_BYTES * 4)
+    upper_nodes = sparrow_nodes(christmas / "upperBop.xml", "Upper Crowd Bob", (0, 2, 4, 6))
+    for index, node in enumerate(upper_nodes):
+        cel = extract_sparrow_frame(ffmpeg, christmas / "upperBop.png", node, (256, 48))
+        blend_at(crowd_upper, (256, 256), cel, (256, 48), (0, index * 48))
+        frame_defs.append((f"CROWD_UPPER_{index}", 3, 0, index * 48, 256, 48))
+    for index, snow_name in enumerate(("fgSnow.png", "evilSnow.png")):
+        snow_pixels = run_ffmpeg(ffmpeg, christmas / snow_name,
+            "scale=256:30:force_original_aspect_ratio=increase:flags=area,"
+            "crop=256:30:(iw-ow)/2:(ih-oh)/2,format=rgba", 256, 30)
+        y = 192 + index * 30
+        blend_at(crowd_upper, (256, 256), snow_pixels, (256, 30), (0, y))
+        frame_defs.append(("SNOW_XMAS" if index == 0 else "SNOW_EVIL", 3, 0, y, 256, 30))
+    page_pixels.append(crowd_upper)
+
+    crowd_lower = bytearray(PAGE_BYTES * 4)
+    lower_nodes = sparrow_nodes(christmas / "bottomBop.xml", "Bottom Level Boppers", (0, 2, 4, 6))
+    for index, node in enumerate(lower_nodes):
+        cel = extract_sparrow_frame(ffmpeg, christmas / "bottomBop.png", node, (256, 64))
+        y = index * 64
+        blend_at(crowd_lower, (256, 256), cel, (256, 64), (0, y))
+        frame_defs.append((f"CROWD_LOWER_{index}", 4, 0, y, 256, 64))
+    page_pixels.append(crowd_lower)
+
     palette = median_palette(page_pixels, 255)
     indexed = []
     for page in page_pixels:
@@ -162,7 +198,7 @@ def make_scene(assets: pathlib.Path, ffmpeg: str, output: pathlib.Path,
 
     lines = ["/* Generated from pinned classic Week 5 assets. */",
              "#ifndef PS1_WEEK5_VISUAL_DATA_H", "#define PS1_WEEK5_VISUAL_DATA_H",
-             "#define BOPEEBO_WEEK5_PAGE_COUNT 3u",
+             "#define BOPEEBO_WEEK5_PAGE_COUNT 5u",
              "#define BOPEEBO_WEEK5_CAMERA_ZOOM_Q8 460u",
              "#define BOPEEBO_WEEK5_BF_X 203", "#define BOPEEBO_WEEK5_BF_Y 163",
              "#define BOPEEBO_WEEK5_GF_X 131", "#define BOPEEBO_WEEK5_GF_Y 151",

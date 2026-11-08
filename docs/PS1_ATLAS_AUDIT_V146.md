@@ -120,4 +120,3 @@ python ps1/repack_indexed_week_atlas.py --week 7 --header ps1/build/v143-animati
 ```
 
 Le réempaqueteur refuse d’écraser des sorties existantes : choisir un nouveau dossier de sortie pour chaque reproduction. Le lancement de `audit_graphic_atlases.py` exige les paquets W1/W2/W3 et les headers/paquets W4–WEnd1 tels qu’ils sont listés dans son `--help`. Les pages fixes se rendent avec `audit_static_graphic_assets.py --header <header base préconverti> --out <dossier>`.
-

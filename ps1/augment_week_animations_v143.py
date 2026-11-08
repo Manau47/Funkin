@@ -170,7 +170,9 @@ def week5(args):
     extras += [(name, m[src], 64, 64) for name, src in zip(
         ["MONSTER_IDLE_1", "MONSTER_IDLE_2", "MONSTER_RIGHT_ALT", "MONSTER_LEFT_ALT",
          "MONSTER_UP_ALT", "MONSTER_DOWN_ALT"], m_ids)]
-    put_frames(directory, "week5-scene.bin", "week5_visual_data.h", "WEEK5", extras, 3)
+    # The current Week 5 base extractor emits two animated mall-crowd pages
+    # after its three original stage/character pages.
+    put_frames(directory, "week5-scene.bin", "week5_visual_data.h", "WEEK5", extras, 5)
 
 
 def week6(args):
@@ -260,4 +262,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

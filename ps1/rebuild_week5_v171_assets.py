@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""Rebuild Week 5 visuals for v171. Audio and charts are not generated here.
+
+This offline asset step uses the pinned official assets and does not invoke
+audio or chart conversion. It emits a scene atlas and its C header from the
+pinned official assets, retaining all selected poses and palette handling.
+"""
+from __future__ import annotations
+
+import argparse
+import pathlib
+import struct
+import sys
+import xml.etree.ElementTree as ET
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from animate_preview import Rig  # noqa: E402
+from convert_bopeebo_visuals import (  # noqa: E402
+    extract_sparrow_frame, fit_anchored_rig, median_palette, png_size,
+    quantize, rgb555, run_ffmpeg,
+)
+
+PAGE = 256
+PAGE_BYTES = PAGE * PAGE
+MAX_PAGES = 12  # background alternatives + shared poses + aliased variant atlases
+
+
+def trim(rgba: bytearray, width: int, height: int, anchor_x: int = 0,
+         anchor_y: int = 0) -> tuple[bytearray, int, int, int, int]:
+    xs, ys = [], []
+    for y in range(height):
+        for x in range(width):
+            if rgba[(y * width + x) * 4 + 3]:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        raise ValueError("refusing to pack an empty frame")
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs) + 1, max(ys) + 1
+    w, h = x1 - x0, y1 - y0
+    out = bytearray(w * h * 4)
+    for y in range(h):
+        a = ((y + y0) * width + x0) * 4
+        out[y * w * 4:(y + 1) * w * 4] = rgba[a:a + w * 4]
+    return out, w, h, x0 - anchor_x, y0 - anchor_y
+
+
+def frame_from_sparrow(xml_path: pathlib.Path, png_path: pathlib.Path,
+                       prefix: str, sample: int, size: tuple[int, int]) -> bytearray:
+    nodes = [n for n in ET.parse(xml_path).getroot().findall("SubTexture")
+             if n.attrib.get("name", "").startswith(prefix)]
+    unique = []
+    seen = set()
+    for node in nodes:
+        key = tuple(node.attrib.get(k, "0") for k in
+                    ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(node)
+    if not unique:
+        raise ValueError(f"missing official Sparrow sequence {prefix!r}")
+    node = unique[min(sample, len(unique) - 1)]
+    desc = {k: int(node.attrib.get(k, 0)) for k in
+            ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
+    desc["rotated"] = node.attrib.get("rotated", "false").lower() == "true"
+    return extract_sparrow_frame(str(FFMPEG), png_path, desc, size)
+
+
+def packed_pages(items: list[dict], first_page: int) -> tuple[list[bytearray], dict[str, tuple[int, int, int]]]:
+    """MaxRects-pack trimmed frames without rotation; PS1 uses point sampling."""
+    pages: list[bytearray] = []
+    free: list[list[tuple[int, int, int, int]]] = []
+    placements: dict[str, tuple[int, int, int]] = {}
+
+    def new_page() -> None:
+        pages.append(bytearray(PAGE_BYTES * 4))
+        free.append([(0, 0, PAGE, PAGE)])
+
+    def intersects(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+        return not (a[0] >= b[0] + b[2] or a[0] + a[2] <= b[0] or
+                    a[1] >= b[1] + b[3] or a[1] + a[3] <= b[1])
+
+    def split_free(rects: list[tuple[int, int, int, int]], used: tuple[int, int, int, int]):
+        out = []
+        ux, uy, uw, uh = used
+        for rx, ry, rw, rh in rects:
+            if not intersects((rx, ry, rw, rh), used):
+                out.append((rx, ry, rw, rh))
+                continue
+            if ux > rx: out.append((rx, ry, ux - rx, rh))
+            if ux + uw < rx + rw: out.append((ux + uw, ry, rx + rw - ux - uw, rh))
+            if uy > ry: out.append((rx, ry, rw, uy - ry))
+            if uy + uh < ry + rh: out.append((rx, uy + uh, rw, ry + rh - uy - uh))
+        out = [r for r in out if r[2] > 0 and r[3] > 0]
+        keep = []
+        for i, a in enumerate(out):
+            ax, ay, aw, ah = a
+            if any(i != j and ax >= bx and ay >= by and ax + aw <= bx + bw and ay + ah <= by + bh
+                   for j, (bx, by, bw, bh) in enumerate(out)):
+                continue
+            keep.append(a)
+        return keep
+
+    new_page()
+    # Several selected rig frames are exact duplicate rasters. Alias those
+    # rectangles to the same texels instead of paying for identical storage.
+    # Per-frame dx/dy remains in the generated record, so registration is not
+    # coupled to the shared bitmap.
+    raster_placements: dict[tuple[int, int, bytes], tuple[int, int, int]] = {}
+    for item in sorted(items, key=lambda it: (-(it["w"] * it["h"]), -max(it["w"], it["h"]), it["name"])):
+        w, h = item["w"], item["h"]
+        if w > PAGE or h > PAGE:
+            raise ValueError(f"frame exceeds a PS1 atlas page: {item['name']} {w}x{h}")
+        raster_key = (w, h, bytes(item["rgba"]))
+        if raster_key in raster_placements:
+            placements[item["name"]] = raster_placements[raster_key]
+            continue
+        choice = None
+        for pi, rects in enumerate(free):
+            for ri, (rx, ry, rw, rh) in enumerate(rects):
+                if w <= rw and h <= rh:
+                    score = (min(rw - w, rh - h), max(rw - w, rh - h), pi, ry, rx, ri)
+                    if choice is None or score < choice[0]: choice = (score, pi, ri, rx, ry)
+        if choice is None:
+            if first_page + len(pages) >= MAX_PAGES:
+                area = sum(it["w"] * it["h"] for it in items)
+                raise ValueError(f"Week 5 visual assets need more than {MAX_PAGES} pages; "
+                                 f"trimmed area={area} pixels, frame count={len(items)}")
+            new_page()
+            pi, ri, rx, ry = len(pages) - 1, 0, 0, 0
+        else:
+            _score, pi, ri, rx, ry = choice
+        used = (rx, ry, w, h)
+        free[pi] = split_free(free[pi], used)
+        placement = (first_page + pi, rx, ry)
+        placements[item["name"]] = placement
+        raster_placements[raster_key] = placement
+        for row in range(item["h"]):
+            src = row * item["w"] * 4
+            dst = ((ry + row) * PAGE + rx) * 4
+            pages[pi][dst:dst + item["w"] * 4] = item["rgba"][src:src + item["w"] * 4]
+    return pages, placements
+
+
+def make_assets(assets: pathlib.Path, output: pathlib.Path, header: pathlib.Path,
+                parent_detail_q8: int = 256, character_detail_q8: int = 256) -> None:
+    global FFMPEG
+    christmas = assets / "week5/images/christmas"
+    work: list[dict] = []
+    records: list[tuple[str, int, int, int, int, int, int]] = []
+    fixed_pages = [bytearray(PAGE_BYTES * 4), bytearray(PAGE_BYTES * 4)]
+
+    def add(name: str, rgba: bytearray, w: int, h: int, anchor: tuple[int, int] = (0, 0)) -> None:
+        pixels, tw, th, dx, dy = trim(rgba, w, h, *anchor)
+        work.append({"name": name, "rgba": pixels, "w": tw, "h": th, "dx": dx, "dy": dy})
+
+    # Dedicated full-bleed background plates, one per mall variant.
+    for page, source in enumerate(("bgWalls.png", "evilBG.png")):
+        sw, sh = png_size(christmas / source)
+        filters = ("scale=256:192:force_original_aspect_ratio=increase:flags=area,"
+                   "crop=256:192:(iw-ow)/2:(ih-oh)/2,format=rgba")
+        plate = run_ffmpeg(FFMPEG, christmas / source, filters, 256, 192)
+        fixed_pages[page][:256 * 4 * 192] = plate[:256 * 4 * 192]
+        records.append(("STAGE_XMAS" if page == 0 else "STAGE_EVIL", page, 0, 0, 256, 192, 0))
+
+    def resized_prop(name: str, source: str, size: tuple[int, int], contain: bool = True) -> None:
+        w, h = size
+        if contain:
+            filters = (f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=area,"
+                       f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba")
+        else:
+            filters = (f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=area,"
+                       f"crop={w}:{h}:(iw-ow)/2:(ih-oh)/2,format=rgba")
+        add(name, run_ffmpeg(FFMPEG, christmas / source, filters, w, h), w, h)
+
+    # Props remain independent so their official depth/parallax can be applied.
+    resized_prop("ESCALATOR", "bgEscalator.png", (224, 112))
+    resized_prop("TREE_XMAS", "christmasTree.png", (76, 118))
+    resized_prop("TREE_EVIL", "evilTree.png", (70, 118))
+    resized_prop("SNOW_XMAS", "fgSnow.png", (252, 30))
+    resized_prop("SNOW_EVIL", "evilSnow.png", (252, 30))
+
+    upper_xml, upper_png = christmas / "upperBop.xml", christmas / "upperBop.png"
+    lower_xml, lower_png = christmas / "bottomBop.xml", christmas / "bottomBop.png"
+    for i, index in enumerate((0, 2, 4, 6)):
+        nodes = [n for n in ET.parse(upper_xml).getroot().findall("SubTexture")
+                 if n.attrib.get("name", "").startswith("Upper Crowd Bob")]
+        f = nodes[index]
+        d = {k: int(f.attrib.get(k, 0)) for k in
+             ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
+        d["rotated"] = f.attrib.get("rotated", "false").lower() == "true"
+        # Retain a 256-texel strip; runtime scale is derived from official
+        # 0.85 stage scale and the source's 2596px design width.
+        add(f"CROWD_UPPER_{i}", extract_sparrow_frame(str(FFMPEG), upper_png, d, (256, 40)), 256, 40)
+    for i, index in enumerate((0, 2, 4, 6)):
+        nodes = [n for n in ET.parse(lower_xml).getroot().findall("SubTexture")
+                 if n.attrib.get("name", "").startswith("Bottom Level Boppers")]
+        f = nodes[index]
+        d = {k: int(f.attrib.get(k, 0)) for k in
+             ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
+        d["rotated"] = f.attrib.get("rotated", "false").lower() == "true"
+        add(f"CROWD_LOWER_{i}", extract_sparrow_frame(str(FFMPEG), lower_png, d, (176, 54)), 176, 54)
+
+    # Santa is now its own official foreground cel rather than painted into
+    # the backdrop. Keep the source proportions and register its feet.
+    santa_xml = ET.parse(christmas / "santa.xml").getroot()
+    santa = next(n for n in santa_xml.findall("SubTexture")
+                 if n.attrib.get("name", "").startswith("santa idle in fear"))
+    sf = {k: int(santa.attrib.get(k, 0)) for k in
+          ("x", "y", "width", "height", "frameX", "frameY", "frameWidth", "frameHeight")}
+    sf["rotated"] = santa.attrib.get("rotated", "false").lower() == "true"
+    santa_pixels = extract_sparrow_frame(str(FFMPEG), christmas / "santa.png", sf, (72, 84))
+    add("SANTA", santa_pixels, 72, 84, (36, 84))
+
+    # Regenerate every official character cel at higher source resolution,
+    # then trim transparent margins while keeping the common foot/center anchor.
+    # Preserve more of the official high-resolution character linework before
+    # 8bpp conversion. The retained pose set and common anchors are unchanged.
+    # Increase parent and GF texel allocation over v170's 96x112 cells while
+    # retaining the validated draw scale. BF and Monster retain their current
+    # cell dimensions for this comparison build.
+    if parent_detail_q8 < 256 or character_detail_q8 < 256:
+        raise ValueError("detail scale must be >= 1.0x")
+    parent_w = (104 * parent_detail_q8 + 128) // 256
+    parent_h = (116 * parent_detail_q8 + 128) // 256
+    monster_w = (80 * character_detail_q8 + 128) // 256
+    monster_h = (96 * character_detail_q8 + 128) // 256
+    gf_w, gf_h = parent_w, parent_h
+    bf_w, bf_h = monster_w, monster_h
+    parent_scale_q8 = (190 * 256 + parent_detail_q8 // 2) // parent_detail_q8
+    character_scale_q8 = (171 * 256 + character_detail_q8 // 2) // character_detail_q8
+    parents = Rig(assets / "shared/images/characters/parents-christmas", FFMPEG)
+    parent_base = [112, 0, 28, 54, 83, 14, 41, 68, 97]
+    parent_alt = [116, 7, 34, 61, 89, 21, 47, 75, 102]
+    parent_names = ["PARENTS_IDLE", "PARENTS_MOM_DOWN", "PARENTS_MOM_UP", "PARENTS_MOM_RIGHT",
+                    "PARENTS_MOM_LEFT", "PARENTS_DAD_DOWN", "PARENTS_DAD_UP", "PARENTS_DAD_RIGHT",
+                    "PARENTS_DAD_LEFT", "PARENTS_IDLE_1", "PARENTS_MOM_DOWN_ALT", "PARENTS_MOM_UP_ALT",
+                    "PARENTS_MOM_RIGHT_ALT", "PARENTS_MOM_LEFT_ALT", "PARENTS_DAD_DOWN_ALT",
+                    "PARENTS_DAD_UP_ALT", "PARENTS_DAD_RIGHT_ALT", "PARENTS_DAD_LEFT_ALT"]
+    for idx, pixels in fit_anchored_rig(parents, parent_base + parent_alt, parent_w, parent_h,
+                                        anchor_frame_ids=parent_base).items():
+        add(parent_names[(parent_base + parent_alt).index(idx)], pixels, parent_w, parent_h,
+            (parent_w // 2, parent_h))
+
+    monster = Rig(assets / "shared/images/characters/monster", FFMPEG)
+    monster_base, monster_alt = [0, 16, 26, 36, 48], [8, 12, 20, 30, 42, 54]
+    monster_names = ["MONSTER_IDLE", "MONSTER_RIGHT", "MONSTER_LEFT", "MONSTER_UP", "MONSTER_DOWN",
+                     "MONSTER_IDLE_1", "MONSTER_IDLE_2", "MONSTER_RIGHT_ALT", "MONSTER_LEFT_ALT",
+                     "MONSTER_UP_ALT", "MONSTER_DOWN_ALT"]
+    for idx, pixels in fit_anchored_rig(monster, monster_base + monster_alt, monster_w, monster_h,
+                                        anchor_frame_ids=monster_base).items():
+        add(monster_names[(monster_base + monster_alt).index(idx)], pixels, monster_w, monster_h,
+            (monster_w // 2, monster_h))
+
+    gf = Rig(assets / "shared/images/characters/gf-christmas", FFMPEG)
+    gf_ids = [0, 3, 6, 9, 12, 14, 17, 20, 23, 27]
+    gf_names = ["GF_DANCE_0", "GF_DANCE_V143_0", "GF_DANCE_V143_1", "GF_DANCE_V143_2",
+                "GF_DANCE_V143_3", "GF_DANCE_1", "GF_DANCE_V143_4", "GF_DANCE_V143_5",
+                "GF_DANCE_V143_6", "GF_DANCE_V143_7"]
+    for idx, pixels in fit_anchored_rig(gf, gf_ids, gf_w, gf_h,
+                                        anchor_frame_ids=[0, 14]).items():
+        add(gf_names[gf_ids.index(idx)], pixels, gf_w, gf_h, (gf_w // 2, gf_h))
+
+    # The official Christmas Boyfriend art replaces the generic shared BF
+    # cels for this stage. Two idle, two chant poses per lane, one miss per lane.
+    bf_xml = assets / "shared/images/characters/bfChristmas.xml"
+    bf_png = assets / "shared/images/characters/bfChristmas.png"
+    bf_specs = [("BF_IDLE_0", "BF idle dance", 0), ("BF_IDLE_1", "BF idle dance", 2),
+                ("BF_LEFT_0", "BF NOTE LEFT", 0), ("BF_LEFT_1", "BF NOTE LEFT", 4),
+                ("BF_DOWN_0", "BF NOTE DOWN", 0), ("BF_DOWN_1", "BF NOTE DOWN", 4),
+                ("BF_UP_0", "BF NOTE UP", 0), ("BF_UP_1", "BF NOTE UP", 4),
+                ("BF_RIGHT_0", "BF NOTE RIGHT", 0), ("BF_RIGHT_1", "BF NOTE RIGHT", 4),
+                ("BF_MISS_LEFT", "BF NOTE LEFT MISS", 16), ("BF_MISS_DOWN", "BF NOTE DOWN MISS", 14),
+                ("BF_MISS_UP", "BF NOTE UP MISS", 12), ("BF_MISS_RIGHT", "BF NOTE RIGHT MISS", 20)]
+    for name, prefix, sample in bf_specs:
+        rgba = frame_from_sparrow(bf_xml, bf_png, prefix, sample, (bf_w, bf_h))
+        add(name, rgba, bf_w, bf_h, (bf_w // 2, bf_h))
+
+    # Pack always-visible character poses separately from Christmas-only and
+    # Evil-only props. The two variants are never active together; the runtime
+    # can lease the same physical atlas pages to either variant without
+    # reducing source detail or adding CD reads during playback.
+    common_items = [it for it in work if it["name"].startswith(("PARENTS_", "GF_", "BF_"))]
+    evil_items = [it for it in work if it["name"] in ("TREE_EVIL", "SNOW_EVIL")
+                  or it["name"].startswith("MONSTER_")]
+    xmas_items = [it for it in work if it not in common_items and it not in evil_items]
+    common_pages, common_placements = packed_pages(common_items, 2)
+    xmas_first = 2 + len(common_pages)
+    xmas_pages, xmas_placements = packed_pages(xmas_items, xmas_first)
+    evil_first = xmas_first + len(xmas_pages)
+    evil_pages, evil_placements = packed_pages(evil_items, evil_first)
+    if len(common_pages) > 7 or len(xmas_pages) > 2 or len(evil_pages) > 2:
+        raise ValueError("Week 5 variant atlases exceed the reserved shared/variant VRAM slots")
+    dynamic = common_pages + xmas_pages + evil_pages
+    placements = {**common_placements, **xmas_placements, **evil_placements}
+    all_pages = fixed_pages + dynamic
+    if len(all_pages) > MAX_PAGES:
+        raise ValueError(f"atlas uses {len(all_pages)} pages; PS1 Week 5 budget is {MAX_PAGES}")
+
+    # Add the fixed backgrounds to the palette sample and place records for
+    # each dynamically packed frame.
+    rgba_pages = [bytearray(PAGE_BYTES * 4) for _ in all_pages]
+    for page_index in range(2):
+        rgba_pages[page_index][:PAGE_BYTES * 4] = fixed_pages[page_index]
+    for i, page in enumerate(dynamic):
+        rgba_pages[i + 2][:] = page
+    for item in work:
+        page_index, u, v = placements[item["name"]]
+        # placements are absolute page indices (2+); record dx/dy preserves
+        # the original rig registration point after transparent-edge trimming.
+        records.append((item["name"], page_index, u, v,
+                        item["w"], item["h"], (item["dx"] & 0xFFFF) << 16 | (item["dy"] & 0xFFFF)))
+
+    # A single 255-color CLUT for all nine pages made unrelated stage and
+    # character colors compete. Give each texture page its own 8bpp CLUT.
+    indexed_pages = []
+    clut_words: list[int] = []
+    for page in rgba_pages:
+        palette = median_palette([page], 255)
+        indexed_pages.append(quantize(page, palette))
+        page_clut = [0] + [rgb555(color) for color in palette[:255]]
+        page_clut += [0] * (256 - len(page_clut))
+        clut_words.extend(page_clut)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"".join(indexed_pages) + struct.pack(f"<{len(clut_words)}H", *clut_words))
+
+    names = [r[0] for r in records]
+    lines = ["/* Generated from pinned classic Week 5 assets by rebuild_week5_v171_assets.py. */",
+             "#ifndef PS1_WEEK5_VISUAL_DATA_H", "#define PS1_WEEK5_VISUAL_DATA_H",
+             f"#define BOPEEBO_WEEK5_PAGE_COUNT {len(all_pages)}u",
+             f"#define BOPEEBO_WEEK5_PALETTE_SECTORS {((len(all_pages) * 512 + 2047) // 2048)}u",
+             "#define BOPEEBO_WEEK5_COMMON_FIRST_PAGE 2u",
+             f"#define BOPEEBO_WEEK5_COMMON_PAGE_COUNT {len(common_pages)}u",
+             f"#define BOPEEBO_WEEK5_XMAS_FIRST_PAGE {xmas_first}u",
+             f"#define BOPEEBO_WEEK5_XMAS_PAGE_COUNT {len(xmas_pages)}u",
+             f"#define BOPEEBO_WEEK5_EVIL_FIRST_PAGE {evil_first}u",
+             f"#define BOPEEBO_WEEK5_EVIL_PAGE_COUNT {len(evil_pages)}u",
+             "#define BOPEEBO_WEEK5_CAMERA_ZOOM_Q8 460u",
+             f"#define BOPEEBO_WEEK5_CHARACTER_SCALE_Q8 {character_scale_q8}u",
+             f"#define BOPEEBO_WEEK5_PARENTS_SCALE_Q8 {parent_scale_q8}u",
+             f"#define BOPEEBO_WEEK5_GF_SCALE_Q8 {parent_scale_q8}u",
+             "#define BOPEEBO_WEEK5_BF_X 203", "#define BOPEEBO_WEEK5_BF_Y 163",
+             "#define BOPEEBO_WEEK5_GF_X 131", "#define BOPEEBO_WEEK5_GF_Y 151",
+             "#define BOPEEBO_WEEK5_OPP_X 57", "#define BOPEEBO_WEEK5_OPP_Y 153",
+             "#define BOPEEBO_WEEK5_BASE_CAMERA_X 57", "#define BOPEEBO_WEEK5_BASE_CAMERA_Y 125",
+             "typedef struct { uint8_t page, u, v; uint16_t w, h; int16_t dx, dy; } Week5VisualFrame;",
+             "enum {"]
+    for i, name in enumerate(names):
+        lines.append(f"\tWEEK5_FRAME_{name} = {i},")
+    lines.extend(["};", f"#define WEEK5_VISUAL_FRAME_COUNT {len(records)}u",
+                  "static const Week5VisualFrame week5_visual_frames[WEEK5_VISUAL_FRAME_COUNT] = {"])
+    for name, page, u, v, w, h, packed_off in records:
+        dx = (packed_off >> 16) & 0xFFFF
+        dy = packed_off & 0xFFFF
+        if dx >= 32768: dx -= 65536
+        if dy >= 32768: dy -= 65536
+        lines.append(f"\t{{ {page}u, {u}u, {v}u, {w}u, {h}u, {dx}, {dy} }}, /* {name} */")
+    lines.extend(["};", "#endif", ""])
+    header.parent.mkdir(parents=True, exist_ok=True)
+    header.write_text("\n".join(lines), encoding="ascii")
+    print(f"Week 5 visual atlas: {len(all_pages)} logical pages (shared={len(common_pages)}, "
+          f"Xmas={len(xmas_pages)}, Evil={len(evil_pages)}), {len(records)} frames, "
+          f"{output.stat().st_size} bytes")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--assets", type=pathlib.Path, required=True)
+    parser.add_argument("--ffmpeg", required=True)
+    parser.add_argument("--output", type=pathlib.Path, required=True)
+    parser.add_argument("--header", type=pathlib.Path, required=True)
+    parser.add_argument("--parent-detail-q8", type=int, default=256,
+                        help="render scale for Mom/Dad/GF cells; 342 is about 1.33x")
+    parser.add_argument("--character-detail-q8", type=int, default=256,
+                        help="render scale for BF/Monster cells; 307 is about 1.20x")
+    args = parser.parse_args()
+    global FFMPEG
+    FFMPEG = args.ffmpeg
+    make_assets(args.assets, args.output, args.header,
+                args.parent_detail_q8, args.character_detail_q8)
+
+
+if __name__ == "__main__":
+    FFMPEG = "ffmpeg"
+    main()

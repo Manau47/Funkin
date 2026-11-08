@@ -65,4 +65,3 @@ The PSn00bSDK build and disc creation succeeded. Static checks confirmed the
 and same CLUT. DuckStation was not run by the developer; the user must load the
 delivered CUE and judge the animation and scene composition. No real-console
 test is claimed.
-

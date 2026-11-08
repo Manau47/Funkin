@@ -54,4 +54,3 @@ python ps1/compose_week4_layers_v153.py `
 ```
 
 Configurer ensuite CMake avec `FUNKIN_PS1_PRECONVERTED_WEEK4_DIR` pointant sur le paquet produit et construire `ps1-bopeebo-playable-disc` dans un dossier de build neuf ou préservé. Le script refuse d’écraser un dossier de sortie existant.
-

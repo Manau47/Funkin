@@ -39,4 +39,3 @@ Hashes SHA-256 :
 Le PNG de conversion confirme que le paquet de décor décodé contient la scène attendue; ce n’est pas une observation du GPU PS1. Le BIN/CUE n’a pas encore été exécuté dans DuckStation pour cette passe. L’essai utilisateur doit vérifier décor visible hors éclairs, proportions de Mom sur idle et les quatre chants, retours au repos et maintien de l’audio. Aucune validation sur console réelle.
 
 Les couches mobiles `bgLimo` et `limo` ne sont pas animées dans ce jalon : la correction porte sur l’image de scène rendue et sur les cycles de Mom.
-

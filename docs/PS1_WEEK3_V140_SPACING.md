@@ -19,4 +19,3 @@ Le calcul est désormais dans `ps1/convert_bopeebo_visuals.py`. Le paquet v139b 
 - Livraison : `ps1/build/week3-pico-bf-spacing-v140/delivery-v140-pico-bf-spacing/`.
 
 DuckStation n’a pas encore été utilisé pour ce build. À vérifier par l’utilisateur : espacements pendant les focus Pico et BF, transitions de caméra, scène/parallaxe et piste. Aucun résultat console réelle n’est revendiqué.
-

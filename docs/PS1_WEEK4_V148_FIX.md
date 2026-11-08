@@ -28,4 +28,3 @@ The fresh Ninja dry-run contained five actions: regeneration of the existing BF 
 - The separate delivery ISO was checked with the root-order tool: `SYSTEM.CNF` is entry 1 and `FUNKIN.EXE` is entry 2. Previous v147 files were not overwritten.
 
 Compilation, package hashes, and static ISO checks succeeded. The PNG under the preconverted directory is only a scenery-page preview. No emulator execution or console test has occurred for v148; the user must verify the actual composition and GF size transitions in DuckStation.
-

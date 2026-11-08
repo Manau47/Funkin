@@ -15,4 +15,3 @@
 - Delivered BIOS-order BIN SHA-256: `15A53475CC050D60B884D5A5B8572AD41F3788A185BF38406C51C859E61BCE1B`; CUE SHA-256: `054E3A25865253AB5009649E5F3607BA382DFF8811DB8B4882B2A3828F7B22A4`.
 
 This manifest and the current commit identify the source/configuration snapshot before audit changes. The retained cache is machine-specific; reproduce on this host with the installed SDK and the original asset/audio inputs.
-

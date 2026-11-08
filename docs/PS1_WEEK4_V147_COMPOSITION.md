@@ -47,4 +47,3 @@ Static transition budget is unchanged: five page uploads = 327,680 bytes, one CL
 ## Validation state
 
 Compilation, ISO creation, root-order verification and package/hash checks succeeded. No DuckStation or real-console execution has occurred in this pass. The user will load the delivered CUE. In particular, verify that the distant limousine and four dancers are visible without covering the main performers, and report any needed composition adjustment. This build is not yet visually validated.
-

@@ -46,5 +46,4 @@ A first, non-`Debug` configure was caught by comparing its executable to v151 be
 
 Compilation and static package/ISO checks passed. v152 has not been run in DuckStation or on real hardware. The screenshots motivated this correction but are not proof that v152 is visually correct. The user should load the supplied CUE and check the main limo beneath Mom/BF, GF occlusion, far dancers, both camera focuses, and Week 4 tracks. No gameplay or audio behavior is newly claimed as validated.
 
-
-The renderer call used by this build is the v151 `ps1-port` source commit `86258a27c9bce66a4565f5b868a46dec5d1e53cf`; v152 changes only the generated limo position macros and retains that draw-order code.
+The renderer call used by this build is the v151 ps1-port source commit 86258a27c9bce66a4565f5b868a46dec5d1e53cf; v152 changes only the generated limo position macros and retains that draw-order code.

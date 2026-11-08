@@ -19,10 +19,10 @@ The source assets are from the pinned `assets` revision `724eba9de9e76761d9cefd5
 
 The new script is `ps1/rebuild_week5_v167.py`. It rebuilds only the Week 5 visual scene payload/header from the pinned assets, and takes an explicit output directory. The v167 build reused the existing converted base, Weeks 4/6/7/Weekend 1 packages, song audio, and chart data; it did not run audio/chart conversion.
 
-Build directory: `C:\Users\Manau47\Documents\Codex\week5-scene-v167g-build`  
-Week 5 package: `C:\Users\Manau47\Documents\Codex\week5-scene-v167b-package`  
-SDK/toolchain: PSn00bSDK 0.24 with the MIPS toolchain already installed outside this repository.  
-Source branch/HEAD at build: `ps1-port`, `7057882fa4c481fb878de4cc27d3a827179f7ddd` plus the uncommitted source changes archived alongside the build.  
+Build directory: `C:\Users\Manau47\Documents\Codex\week5-scene-v167g-build`
+Week 5 package: `C:\Users\Manau47\Documents\Codex\week5-scene-v167b-package`
+SDK/toolchain: PSn00bSDK 0.24 with the MIPS toolchain already installed outside this repository.
+Source branch/HEAD at build: `ps1-port`, `7057882fa4c481fb878de4cc27d3a827179f7ddd` plus the uncommitted source changes archived alongside the build.
 Build target: `ps1-bopeebo-playable-disc`.
 
 The CMake/Ninja dry-run listed only `spu_probe.c` and `cdstream/stream.c` compilation, executable link, and disc image creation. It listed no resource-conversion command. Ninja then reported `no work to do` on the repeat invocation because those targets had completed in the preceding build operation.
@@ -59,4 +59,3 @@ The ISO root directory was reordered with the repository's `ps1/diagnostics/reor
 - **Real console:** not tested.
 
 The supplied v167 BIN/CUE is an integration build for review, not a claim that Week 5 composition or runtime stability is validated.
-

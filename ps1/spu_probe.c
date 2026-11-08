@@ -66,9 +66,12 @@
 #include "menu_audio_data.h"
 #include "week5_catalog.h"
 #include "week5_visual_data.h"
-/* Stage JSON coordinates are mapped to the PS1 world at 1/10 scale. */
-#define WEEK5_COMPOSITION_BASE_CAMERA_X (BOPEEBO_WEEK5_OPP_X / 10 + 15)
-#define WEEK5_COMPOSITION_BASE_CAMERA_Y (BOPEEBO_WEEK5_OPP_Y / 10 - 10 - 28)
+#ifndef BOPEEBO_WEEK5_UPPER_CROWD_DETAIL_Q8
+#define BOPEEBO_WEEK5_UPPER_CROWD_DETAIL_Q8 256u
+#endif
+#ifndef BOPEEBO_WEEK5_ESCALATOR_DETAIL_Q8
+#define BOPEEBO_WEEK5_ESCALATOR_DETAIL_Q8 256u
+#endif
 #include "week6_catalog.h"
 #include "week6_visual_data.h"
 #include "week7_catalog.h"
@@ -114,6 +117,9 @@
 #endif
 #ifndef GAME_WEEK4_COMPOSITION_EDITOR
 #define GAME_WEEK4_COMPOSITION_EDITOR 0
+#endif
+#ifndef GAME_WEEK5_COMPOSITION_EDITOR
+#define GAME_WEEK5_COMPOSITION_EDITOR 0
 #endif
 #ifndef GAME_HEALTH_BAR_TEST_DEFAULT
 #define GAME_HEALTH_BAR_TEST_DEFAULT 0
@@ -186,6 +192,31 @@ static uint32_t week3_light_random_state;
 static uint32_t week3_light_clut_upload;
 static bool week4_visuals_loaded;
 static const BopeeboVisualPage week4_far_dancer_page = { 896, 0, 1 };
+static const BopeeboVisualPage week5_spare_visual_page = { 896, 0, 1 };
+
+static const BopeeboVisualPage *week5_visual_page_info(unsigned logical_page, bool evil_mall)
+{
+	/* Background alternatives share physical page 0. Character pages are
+	   always resident during Week 5; Xmas/Evil prop pages lease the same final
+	   physical slots because the variants are mutually exclusive. */
+	if (logical_page < 2u) return &bopeebo_visual_page_table[0];
+	if (logical_page >= BOPEEBO_WEEK5_COMMON_FIRST_PAGE &&
+		logical_page < BOPEEBO_WEEK5_COMMON_FIRST_PAGE + BOPEEBO_WEEK5_COMMON_PAGE_COUNT)
+		return &bopeebo_visual_page_table[logical_page - 1u];
+	unsigned variant_slot = 1u + BOPEEBO_WEEK5_COMMON_PAGE_COUNT;
+	if (evil_mall) {
+		if (logical_page >= BOPEEBO_WEEK5_EVIL_FIRST_PAGE &&
+			logical_page < BOPEEBO_WEEK5_EVIL_FIRST_PAGE + BOPEEBO_WEEK5_EVIL_PAGE_COUNT)
+			return &bopeebo_visual_page_table[variant_slot];
+	} else if (logical_page >= BOPEEBO_WEEK5_XMAS_FIRST_PAGE &&
+		logical_page < BOPEEBO_WEEK5_XMAS_FIRST_PAGE + BOPEEBO_WEEK5_XMAS_PAGE_COUNT) {
+		unsigned variant_page = logical_page - BOPEEBO_WEEK5_XMAS_FIRST_PAGE;
+		if (variant_page == 0u) return &bopeebo_visual_page_table[variant_slot];
+		if (variant_page == 1u) return &week5_spare_visual_page;
+		if (variant_page == 2u) return &bopeebo_visual_page_table[8];
+	}
+	return 0;
+}
 
 static const BopeeboVisualPage *week4_visual_page_info(unsigned logical_page)
 {
@@ -396,6 +427,115 @@ static unsigned week4_edit_zoom(unsigned layer, unsigned zoom)
 static unsigned week4_edit_art_scale(unsigned layer, unsigned scale)
 {
 	return scale * week4_edit_scale_q8[layer] / 256u;
+}
+
+enum {
+	W5_EDIT_BACKGROUND = 0,
+	W5_EDIT_CAMERA,
+	W5_EDIT_TREE,
+	W5_EDIT_SNOW,
+	W5_EDIT_GF,
+	W5_EDIT_OPPONENT,
+	W5_EDIT_BF,
+	W5_EDIT_UPPER_CROWD,
+	W5_EDIT_ESCALATOR,
+	W5_EDIT_LOWER_CROWD,
+	W5_EDIT_SANTA,
+	W5_EDIT_LAYER_COUNT
+};
+
+/* Christmas Mall offsets captured from the user's current scene-editor pass
+   through DuckStation Memory Scanner (2026-11-08). Array order is W5_EDIT_*
+   above; values are signed 16-bit stage coordinates. */
+static const int16_t week5_scene_dx_default[2][W5_EDIT_LAYER_COUNT] = {
+	{-45, -25, -30,  35,  10,   5,  35, -75, -125, -10,  -5},
+	{  0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0}
+};
+static const int16_t week5_scene_dy_default[2][W5_EDIT_LAYER_COUNT] = {
+	{-70, -20, -35,   0,   5,   0,   0, -55,  -80,  -5,   0},
+	{  0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0}
+};
+#define WEEK5_GF_SCALE_Q8 352u /* user's current GF zoom: 0x0160 */
+#if GAME_WEEK5_COMPOSITION_EDITOR
+/* The editor starts at the same transforms captured in DuckStation RAM. */
+static const uint16_t week5_edit_scale_default_q8[2][W5_EDIT_LAYER_COUNT] = {
+	{192u, 256u, 256u, 160u, WEEK5_GF_SCALE_Q8, 352u, 256u, 352u, 384u, 288u, 288u},
+	{256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u}
+};
+static int16_t week5_edit_dx[2][W5_EDIT_LAYER_COUNT] = {
+	{-45, -25, -30,  35,  10,   5,  35, -75, -125, -10,  -5},
+	{  0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0}
+};
+static int16_t week5_edit_dy[2][W5_EDIT_LAYER_COUNT] = {
+	{-70, -20, -35,   0,   5,   0,   0, -55,  -80,  -5,   0},
+	{  0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0}
+};
+static uint16_t week5_edit_scale_q8[2][W5_EDIT_LAYER_COUNT] = {
+	{192u, 256u, 256u, 160u, WEEK5_GF_SCALE_Q8, 352u, 256u, 352u, 384u, 288u, 288u},
+	{256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u, 256u}
+};
+static uint8_t week5_editor_layer;
+static bool week5_editor_visible;
+static bool week5_editor_paused;
+static bool week5_editor_summary;
+static uint16_t week5_edit_repeat_button;
+static uint32_t week5_edit_repeat_at;
+
+static unsigned week5_editor_variant(void)
+{
+	return active_song && active_song->opponent_kind == PS1_OPPONENT_MONSTER ? 1u : 0u;
+}
+
+static unsigned week5_editor_layer_id(unsigned variant, unsigned index)
+{
+	static const uint8_t xmas_layers[] = {
+		W5_EDIT_BACKGROUND, W5_EDIT_CAMERA, W5_EDIT_UPPER_CROWD,
+		W5_EDIT_ESCALATOR, W5_EDIT_TREE, W5_EDIT_LOWER_CROWD,
+		W5_EDIT_SNOW, W5_EDIT_SANTA, W5_EDIT_GF, W5_EDIT_OPPONENT, W5_EDIT_BF
+	};
+	static const uint8_t evil_layers[] = {
+		W5_EDIT_BACKGROUND, W5_EDIT_CAMERA, W5_EDIT_TREE, W5_EDIT_SNOW,
+		W5_EDIT_GF, W5_EDIT_OPPONENT, W5_EDIT_BF
+	};
+	return variant ? evil_layers[index % (sizeof(evil_layers) / sizeof(evil_layers[0]))] :
+		xmas_layers[index % (sizeof(xmas_layers) / sizeof(xmas_layers[0]))];
+}
+
+static unsigned week5_editor_layer_count(unsigned variant)
+{
+	return variant ? 7u : 11u;
+}
+#endif
+
+static int week5_scene_edit_x(unsigned variant, unsigned layer, int x)
+{
+#if GAME_WEEK5_COMPOSITION_EDITOR
+	return x + week5_edit_dx[variant & 1u][layer];
+#else
+	return x + week5_scene_dx_default[variant & 1u][layer];
+#endif
+}
+
+static int week5_scene_edit_y(unsigned variant, unsigned layer, int y)
+{
+#if GAME_WEEK5_COMPOSITION_EDITOR
+	return y + week5_edit_dy[variant & 1u][layer];
+#else
+	return y + week5_scene_dy_default[variant & 1u][layer];
+#endif
+}
+
+static unsigned week5_scene_edit_scale(unsigned variant, unsigned layer, unsigned scale)
+{
+#if GAME_WEEK5_COMPOSITION_EDITOR
+	return scale * week5_edit_scale_q8[variant & 1u][layer] / 256u;
+#else
+	/* Keep the user's captured Christmas GF zoom in normal builds too. Other
+	   editor transforms remain opt-in and do not alter the shipped scene. */
+	if ((variant & 1u) == 0u && layer == W5_EDIT_GF)
+		return scale * WEEK5_GF_SCALE_Q8 / 256u;
+	return scale;
+#endif
 }
 
 #if GAME_WEEK4_COMPOSITION_EDITOR
@@ -914,29 +1054,50 @@ static void load_week5_visuals(bool enable)
 		DrawSync(0);
 		uint32_t *page_data = (uint32_t *)malloc(65536u);
 		if (!page_data) { failure_code = FAIL_ASSET_LOAD; return; }
-		for (unsigned i = 0; i < BOPEEBO_WEEK5_PAGE_COUNT; i++) {
-			const BopeeboVisualPage *page = &bopeebo_visual_page_table[i];
-			RECT rect = { (short)page->x, (short)page->y, 128, 256 };
-			if (enable) {
+		if (enable) {
+			bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+			for (unsigned i = 0; i < BOPEEBO_WEEK5_PAGE_COUNT; i++) {
+				/* Only the selected 256x192 plate is uploaded. The other variant
+				   is retained on CD and aliases this same physical texture page. */
+				if ((i == 0u && evil_mall) || (i == 1u && !evil_mall)) continue;
+				if (i >= BOPEEBO_WEEK5_XMAS_FIRST_PAGE &&
+					i < BOPEEBO_WEEK5_XMAS_FIRST_PAGE + BOPEEBO_WEEK5_XMAS_PAGE_COUNT && evil_mall)
+					continue;
+				if (i >= BOPEEBO_WEEK5_EVIL_FIRST_PAGE &&
+					i < BOPEEBO_WEEK5_EVIL_FIRST_PAGE + BOPEEBO_WEEK5_EVIL_PAGE_COUNT && !evil_mall)
+					continue;
+				const BopeeboVisualPage *page = week5_visual_page_info(i, evil_mall);
+				if (!page) { free(page_data); failure_code = FAIL_ASSET_LOAD; return; }
+				RECT rect = { (short)page->x, (short)page->y, 128, 256 };
 				if (!read_cd_file_range("\\W5SCENE.BIN", i * 32u, 32u, page_data)) {
 					free(page_data); failure_code = FAIL_ASSET_LOAD; return;
 				}
 				LoadImage(&rect, page_data);
-			} else if (!load_visual_page_from_disc(i, page_data)) {
+				DrawSync(0);
+			}
+		} else {
+			/* Restore the nine shared gameplay pages. The spare top-right page
+			   has no resident base owner and is overwritten on the next scene. */
+			for (unsigned i = 0; i < BOPEEBO_VISUAL_PAGE8_COUNT; i++) {
+				if (!load_visual_page_from_disc(i, page_data)) {
 				free(page_data); failure_code = FAIL_ASSET_LOAD; return;
 			}
-			DrawSync(0);
+				DrawSync(0);
+			}
 		}
 		free(page_data);
 	}
 	if (enable) {
-		uint32_t *palette_data = (uint32_t *)malloc(CD_SECTOR_SIZE);
+		unsigned palette_sectors = BOPEEBO_WEEK5_PALETTE_SECTORS;
+		uint32_t *palette_data = (uint32_t *)malloc(palette_sectors * CD_SECTOR_SIZE);
 		if (!palette_data) { failure_code = FAIL_ASSET_LOAD; return; }
 		if (!read_cd_file_range("\\W5SCENE.BIN", BOPEEBO_WEEK5_PAGE_COUNT * 32u,
-			1u, palette_data)) {
+			palette_sectors, palette_data)) {
 			free(palette_data); failure_code = FAIL_ASSET_LOAD; return;
 		}
-		RECT palette = { 0, 496, 256, 1 };
+		/* Week 5 leases one CLUT row per 8bpp page. Keep the base HUD/game
+		   palette at y=480/496 intact while avoiding cross-page color bleed. */
+		RECT palette = { 0, 481, 256, (short)BOPEEBO_WEEK5_PAGE_COUNT };
 		LoadImage(&palette, palette_data);
 		DrawSync(0);
 		free(palette_data);
@@ -1786,40 +1947,40 @@ static bool poll_bopeebo4_controls(void)
 	} else {
 		game_pressed = (uint16_t)(previous_pad_buttons & (uint16_t)~buttons);
 #if TEST_PLAYABLE_BOPEEBO
+		bool editor_owns_pad = false;
 	#if GAME_WEEK4_COMPOSITION_EDITOR
 		if (game_screen == SCREEN_GAMEPLAY && active_song && active_song->stage_id == 4u &&
 		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT)) {
 			week4_editor_visible = !week4_editor_visible;
 		}
+		if (active_song && active_song->stage_id == 4u && week4_editor_visible)
+			editor_owns_pad = true;
+	#endif
+	#if GAME_WEEK5_COMPOSITION_EDITOR
+		if (game_screen == SCREEN_GAMEPLAY && active_song && active_song->stage_id == 5u &&
+		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT)) {
+			week5_editor_visible = !week5_editor_visible;
+		}
+		if (active_song && active_song->stage_id == 5u && week5_editor_visible)
+			editor_owns_pad = true;
 	#endif
 		if (game_screen == SCREEN_GAMEPLAY &&
-#if GAME_WEEK4_COMPOSITION_EDITOR
-		    !week4_editor_visible &&
-#endif
+		    !editor_owns_pad &&
 		    (previous_pad_buttons & PAD_CIRCLE) && !(buttons & PAD_CIRCLE))
 			voices_muted = !voices_muted;
-		if (game_screen == SCREEN_GAMEPLAY &&
-#if GAME_WEEK4_COMPOSITION_EDITOR
-		    false &&
-#endif
+		if (game_screen == SCREEN_GAMEPLAY && !editor_owns_pad &&
 		    (previous_pad_buttons & PAD_SELECT) && !(buttons & PAD_SELECT))
 			diagnostics_visible = !diagnostics_visible;
 		if (game_screen == SCREEN_GAMEPLAY &&
-#if GAME_WEEK4_COMPOSITION_EDITOR
-		    !week4_editor_visible &&
-#endif
+		    !editor_owns_pad &&
 		    (previous_pad_buttons & PAD_TRIANGLE) && !(buttons & PAD_TRIANGLE))
 			dad_lanes_visible = !dad_lanes_visible;
 		if (game_screen == SCREEN_GAMEPLAY &&
-#if GAME_WEEK4_COMPOSITION_EDITOR
-		    !week4_editor_visible &&
-#endif
+		    !editor_owns_pad &&
 		    (previous_pad_buttons & PAD_L1) && !(buttons & PAD_L1) && pan_width)
 			pan_width--;
 		if (game_screen == SCREEN_GAMEPLAY &&
-#if GAME_WEEK4_COMPOSITION_EDITOR
-		    !week4_editor_visible &&
-#endif
+		    !editor_owns_pad &&
 		    (previous_pad_buttons & PAD_R1) && !(buttons & PAD_R1) && pan_width < 7u)
 			pan_width++;
 #else
@@ -1942,6 +2103,118 @@ static void draw_week4_editor_panel(void)
 		week4_editor_paused ? "PAUSED" : "RUNNING",
 		week4_editor_paused ? "RESUME" : "PAUSE");
 	FntPrint(error_font_id, "SELECT CLOSE");
+	FntFlush(error_font_id);
+}
+#endif
+
+#if GAME_WEEK5_COMPOSITION_EDITOR
+static void update_week5_composition_editor(void)
+{
+	if (!week5_editor_visible || !active_song || active_song->stage_id != 5u ||
+	    game_screen != SCREEN_GAMEPLAY) return;
+	unsigned variant = week5_editor_variant();
+	unsigned layer_count = week5_editor_layer_count(variant);
+	if (game_pressed & PAD_TRIANGLE) {
+		week5_editor_summary = !week5_editor_summary;
+		return;
+	}
+	if (week5_editor_summary) return;
+	unsigned layer = week5_editor_layer_id(variant, week5_editor_layer);
+	int dx = week5_edit_dx[variant][layer];
+	int dy = week5_edit_dy[variant][layer];
+	int scale = week5_edit_scale_q8[variant][layer];
+	bool fast = (game_buttons & PAD_R2) != 0;
+	int move_step = fast ? 5 : 1; /* stage coordinates are converted by /10 */
+	int scale_step = fast ? 32 : 16;
+	if (game_pressed & PAD_UP)
+		week5_editor_layer = (uint8_t)((week5_editor_layer + layer_count - 1u) % layer_count);
+	else if (game_pressed & PAD_DOWN)
+		week5_editor_layer = (uint8_t)((week5_editor_layer + 1u) % layer_count);
+	else if ((game_pressed & PAD_LEFT) ||
+		((game_buttons & PAD_LEFT) == 0 && week5_edit_repeat_button == PAD_LEFT &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_LEFT;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dx > -128) week5_edit_dx[variant][layer] = (int16_t)(dx - move_step);
+	}
+	else if ((game_pressed & PAD_RIGHT) ||
+		((game_buttons & PAD_RIGHT) == 0 && week5_edit_repeat_button == PAD_RIGHT &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_RIGHT;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dx < 128) week5_edit_dx[variant][layer] = (int16_t)(dx + move_step);
+	}
+	else if ((game_pressed & PAD_L1) ||
+		((game_buttons & PAD_L1) == 0 && week5_edit_repeat_button == PAD_L1 &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_L1;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dy > -128) week5_edit_dy[variant][layer] = (int16_t)(dy - move_step);
+	}
+	else if ((game_pressed & PAD_R1) ||
+		((game_buttons & PAD_R1) == 0 && week5_edit_repeat_button == PAD_R1 &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_R1;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (dy < 128) week5_edit_dy[variant][layer] = (int16_t)(dy + move_step);
+	}
+	else if ((game_pressed & PAD_CROSS) ||
+		((game_buttons & PAD_CROSS) == 0 && week5_edit_repeat_button == PAD_CROSS &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_CROSS;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (scale < 1024) week5_edit_scale_q8[variant][layer] =
+			(uint16_t)(scale + scale_step > 1024 ? 1024 : scale + scale_step);
+	}
+	else if ((game_pressed & PAD_CIRCLE) ||
+		((game_buttons & PAD_CIRCLE) == 0 && week5_edit_repeat_button == PAD_CIRCLE &&
+		 gameplay_frame_counter >= week5_edit_repeat_at)) {
+		week5_edit_repeat_button = PAD_CIRCLE;
+		week5_edit_repeat_at = gameplay_frame_counter + 5u;
+		if (scale > 128) week5_edit_scale_q8[variant][layer] =
+			(uint16_t)(scale - scale_step < 128 ? 128 : scale - scale_step);
+	}
+	else if (game_pressed & PAD_SQUARE) {
+		week5_edit_dx[variant][layer] = week5_scene_dx_default[variant][layer];
+		week5_edit_dy[variant][layer] = week5_scene_dy_default[variant][layer];
+		week5_edit_scale_q8[variant][layer] =
+			week5_edit_scale_default_q8[variant][layer];
+	}
+	else if (game_buttons & (PAD_LEFT | PAD_RIGHT | PAD_L1 | PAD_R1 | PAD_CROSS | PAD_CIRCLE))
+		week5_edit_repeat_button = 0;
+}
+
+static void draw_week5_editor_panel(void)
+{
+	static const char *const names[W5_EDIT_LAYER_COUNT] = {
+		"BACKGROUND", "CAMERA", "TREE", "SNOW", "GF", "OPPONENT", "BF",
+		"UPPER CROWD", "ESCALATOR", "LOWER CROWD", "SANTA"
+	};
+	if (error_font_id < 0 || !week5_editor_visible || !active_song ||
+	    active_song->stage_id != 5u || game_screen != SCREEN_GAMEPLAY) return;
+	unsigned variant = week5_editor_variant();
+	unsigned layer_count = week5_editor_layer_count(variant);
+	if (week5_editor_summary) {
+		FntPrint(error_font_id, "W5 %s TRANSFORMS - CAPTURE THIS PAGE\n",
+			variant ? "EVIL" : "XMAS");
+		for (unsigned i = 0; i < layer_count; i++) {
+			unsigned layer = week5_editor_layer_id(variant, i);
+			FntPrint(error_font_id, "%s X%+d Y%+d S%u%%\n", names[layer],
+				(int)week5_edit_dx[variant][layer], (int)week5_edit_dy[variant][layer],
+				(unsigned)(week5_edit_scale_q8[variant][layer] * 100u / 256u));
+		}
+		FntPrint(error_font_id, "TRIANGLE:EDIT  START:%s  SELECT:CLOSE",
+			week5_editor_paused ? "RESUME" : "PAUSE");
+		FntFlush(error_font_id);
+		return;
+	}
+	unsigned layer = week5_editor_layer_id(variant, week5_editor_layer);
+	FntPrint(error_font_id, "W5 %s %s X%+d Y%+d S%u%%\n", variant ? "EVIL" : "XMAS",
+		names[layer], (int)week5_edit_dx[variant][layer], (int)week5_edit_dy[variant][layer],
+		(unsigned)(week5_edit_scale_q8[variant][layer] * 100u / 256u));
+	FntPrint(error_font_id, "%s UP/DOWN LAYER LEFT/RIGHT X\nL1/R1 Y CROSS/CIRCLE SIZE R2 FAST\nTRI SUMMARY SQUARE RESET START:%s\nSELECT CLOSE",
+		week5_editor_paused ? "PAUSED" : "RUNNING",
+		week5_editor_paused ? "RESUME" : "PAUSE");
 	FntFlush(error_font_id);
 }
 #endif
@@ -2752,12 +3025,15 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 	}
 	if (frame >= WEEK5_VISUAL_FRAME_COUNT) return;
 	const Week5VisualFrame *visual = &week5_visual_frames[frame];
-	const BopeeboVisualPage *page = &bopeebo_visual_page_table[visual->page];
+	const BopeeboVisualPage *page = week5_visual_page_info(visual->page,
+		active_song->opponent_kind == PS1_OPPONENT_MONSTER);
+	if (!page) return;
 	POLY_FT4 *p = &visual_prims[visual_prim_count++];
 	if (visual_prim_count > visual_prim_high_water) visual_prim_high_water = visual_prim_count;
 	unsigned combined_scale = zoom_q8 * scale_q8 / 256u;
 	/* Camera/world coordinates and the asset's local size/trim are separate.
-	   A prop's own scale must not move its scene anchor. */
+	   Multiplying the world offset by the prop scale made each sprite's own
+	   size change its scene position and broke the stage composition. */
 	int x0 = 160 + ((world_x - camera_x) * (int)zoom_q8) / 256 +
 		((int)visual->dx * (int)combined_scale) / 256;
 	int y0 = 120 + ((world_y - camera_y) * (int)zoom_q8) / 256 +
@@ -2772,12 +3048,12 @@ static void draw_week5_visual_frame(unsigned frame, int world_x, int world_y,
 		visual->u, (uint8_t)(visual->v + visual->h - 1u),
 		(uint8_t)(visual->u + visual->w - 1u), (uint8_t)(visual->v + visual->h - 1u));
 	p->tpage = getTPage(page->depth, 0, page->x, page->y);
-	setClut(p, 0, 496);
+	setClut(p, 0, (unsigned short)(481u + visual->page));
 	DrawPrim((uint32_t *)p);
 }
 
-/* Official stage coordinates are scaled into the PS1 world at 1:10.
-   For a prop with scroll s, world = stage + camera*(1-s). */
+/* The official stage uses design pixels; 1/10 gives a compact PS1 world.
+   A prop with scroll s moves with camera delta (1-s), leaving screen motion s. */
 static int week5_stage_to_world(int stage_pos)
 {
 	return stage_pos / 10;
@@ -3065,13 +3341,31 @@ static void camera_target_for_focus(int focus, int *x, int *y)
 		int opp_y = evil ? 869 : 882;
 		int bf_x = evil ? 1297 : 1177;
 		int bf_y = 871;
-		/* Pinned mallXmas/mallEvil positions and camera offsets in the
-		   shared 1:10 world mapping. Retain the PS1 framing bias of -28. */
 		switch (focus) {
-		case 1: *x = opp_x / 10 + 15; *y = opp_y / 10 - 10 - 28; break;
-		case 0: *x = bf_x / 10 - 30; *y = bf_y / 10 - 20 - 28; break;
-		case 2: *x = 808 / 10; *y = 854 / 10 - 28; break;
+		/* Pinned mallXmas/mallEvil camera offsets, in the shared 1/10
+		   stage-world mapping. Opponent/GF keep the authored framing bias;
+		   BF is centered on its stage anchor so the 1.8x crop does not push
+		   the player off the right/bottom edge. */
+		case 1: *x = opp_x / 10 + 15;
+			*y = opp_y / 10 - 10 - 28; break;
+		case 0: *x = bf_x / 10;
+			/* Raise only the BF-focus camera by 11 world units so BF moves
+			   down about 20 screen pixels at the 460/256 Week 5 zoom. */
+			*y = bf_y / 10 - 17 - 11; break;
+		case 2: *x = 808 / 10;
+			*y = 854 / 10 - 28; break;
 		default: *x = SCREEN_W / 2; *y = SCREEN_H / 2; break;
+		}
+		unsigned variant = evil ? 1u : 0u;
+		if (focus == 1) {
+			*x = week5_scene_edit_x(variant, W5_EDIT_OPPONENT, *x);
+			*y = week5_scene_edit_y(variant, W5_EDIT_OPPONENT, *y);
+		} else if (focus == 0) {
+			*x = week5_scene_edit_x(variant, W5_EDIT_BF, *x);
+			*y = week5_scene_edit_y(variant, W5_EDIT_BF, *y);
+		} else if (focus == 2) {
+			*x = week5_scene_edit_x(variant, W5_EDIT_GF, *x);
+			*y = week5_scene_edit_y(variant, W5_EDIT_GF, *y);
 		}
 		return;
 	}
@@ -3550,6 +3844,14 @@ static void draw_scene(uint32_t samples)
 		camera_y = week4_edit_y(W4_EDIT_CAMERA, camera_y);
 		zoom_q8 = week4_edit_zoom(W4_EDIT_CAMERA, zoom_q8);
 	}
+#if GAME_WEEK5_COMPOSITION_EDITOR
+	if (week5) {
+		unsigned variant = week5_editor_variant();
+		camera_x = week5_scene_edit_x(variant, W5_EDIT_CAMERA, camera_x);
+		camera_y = week5_scene_edit_y(variant, W5_EDIT_CAMERA, camera_y);
+		zoom_q8 = week5_scene_edit_scale(variant, W5_EDIT_CAMERA, zoom_q8);
+	}
+#endif
 	camera_focus_display = (uint8_t)target_focus;
 	camera_transitioning = event_index && elapsed < transition;
 
@@ -3662,64 +3964,124 @@ static void draw_scene(uint32_t samples)
 		}
 	} else if (week5) {
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
-		int base_camera_x = evil_mall ? 290 / 10 + 15 : 42 / 10 + 15;
-		int base_camera_y = evil_mall ? 869 / 10 - 10 - 28 : 882 / 10 - 10 - 28;
-		int camera_dx = camera_x - base_camera_x;
-		int camera_dy = camera_y - base_camera_y;
-		/* 256x192 at 1.5x is 384x288: center the overscan at (-32,-24).
-		   Across focus shifts the flattened plate moves with official .2 scroll. */
+		unsigned variant = evil_mall ? 1u : 0u;
+		/* The official background is a positioned stage prop, not a full-bleed
+		   screen plate. Keep its source aspect, stage scale, 1:10 world mapping,
+		   and 0.2 parallax in the same transform as the other mall layers. */
 		if (evil_mall) draw_rect(0, 0, SCREEN_W, SCREEN_H, 35, 6, 45);
-		int bg_x = base_camera_x - 192 + camera_dx * 205 / 256;
-		int bg_y = base_camera_y - 144 + camera_dy * 205 / 256;
+		int bg_x = week5_scene_edit_x(variant, W5_EDIT_BACKGROUND,
+			week5_layer_world_pos(evil_mall ? -400 : -630, camera_x, 51u));
+		int bg_y = week5_scene_edit_y(variant, W5_EDIT_BACKGROUND,
+			week5_layer_world_pos(evil_mall ? -500 : -492, camera_y, 51u));
 		unsigned bg_frame = evil_mall ? WEEK5_FRAME_STAGE_EVIL : WEEK5_FRAME_STAGE_XMAS;
+		/* Keep the official source-stage scale after converting the 1280x720
+		   design to the PS1's 320x240 viewport. The image is intentionally
+		   larger than the viewport and must be cropped by the screen edges;
+		   do not fit it to 320x240. */
+		unsigned bg_art_scale = week5_scene_edit_scale(variant, W5_EDIT_BACKGROUND,
+			evil_mall ? 389u : 368u);
 		draw_week5_visual_frame(bg_frame, bg_x, bg_y,
-			camera_x, camera_y, 256u, 384u);
-
-		const unsigned crowd_upper_scale = 321u;
-		const unsigned crowd_lower_scale = 288u;
-		const unsigned escalator_scale = 381u;
-		const unsigned xmas_tree_scale = 223u;
-		const unsigned evil_tree_scale = 226u;
-		const unsigned snow_scale = 336u;
+			camera_x, camera_y, zoom_q8, bg_art_scale);
+		/* Asset scales compensate for the fixed atlas downsampling, then apply
+		   the official JSON scale. These do not affect scene positions. */
+		const unsigned crowd_upper_scale = 221u * 256u / BOPEEBO_WEEK5_UPPER_CROWD_DETAIL_Q8;
+		const unsigned crowd_lower_scale = 288u; /* 1978 -> 176, stage 1.0 */
+		const unsigned escalator_scale = 381u * 256u / BOPEEBO_WEEK5_ESCALATOR_DETAIL_Q8;
+		const unsigned xmas_tree_scale = 223u;   /* 662 -> 76, stage 1.0 */
+		const unsigned evil_tree_scale = 226u;   /* 617 -> 70, stage 1.0 */
+		const unsigned snow_scale = 336u;        /* 3300 -> 252, stage 1.0 */
+		const unsigned santa_scale = 236u;        /* 663 -> 72, stage 1.0 */
 		static const uint8_t crowd_sequence[13] = {
 			0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3
 		};
 		unsigned anim = (unsigned)(((uint64_t)samples * 24u / rate) % 13u);
 		unsigned crowd_pose = crowd_sequence[anim];
 		if (!evil_mall) {
-			int upper_x = week5_layer_world_pos(-396, camera_x, 72u);
-			int upper_y = week5_layer_world_pos(-98, camera_y, 72u);
-			draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
-				upper_x, upper_y, camera_x, camera_y, zoom_q8, crowd_upper_scale);
-
 			int escalator_x = week5_layer_world_pos(-1100, camera_x, 77u);
 			int escalator_y = week5_layer_world_pos(-540, camera_y, 77u);
 			int tree_x = week5_layer_world_pos(370, camera_x, 102u);
 			int tree_y = week5_layer_world_pos(-250, camera_y, 102u);
-			draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
-				camera_x, camera_y, zoom_q8, escalator_scale);
+			int upper_x = week5_layer_world_pos(-396, camera_x, 72u);
+			int upper_y = week5_layer_world_pos(-98, camera_y, 72u);
+			escalator_x = week5_scene_edit_x(variant, W5_EDIT_ESCALATOR, escalator_x);
+			escalator_y = week5_scene_edit_y(variant, W5_EDIT_ESCALATOR, escalator_y);
+			tree_x = week5_scene_edit_x(variant, W5_EDIT_TREE, tree_x);
+			tree_y = week5_scene_edit_y(variant, W5_EDIT_TREE, tree_y);
+			upper_x = week5_scene_edit_x(variant, W5_EDIT_UPPER_CROWD, upper_x);
+			upper_y = week5_scene_edit_y(variant, W5_EDIT_UPPER_CROWD, upper_y);
+			/* Official mallXmas z order: upperBoppers (20) behind the escalator (30). */
+		unsigned upper_scale = week5_scene_edit_scale(variant, W5_EDIT_UPPER_CROWD,
+			crowd_upper_scale);
+#ifdef BOPEEBO_WEEK5_BACKDROP_DETAIL_SPLIT
+		static const uint8_t upper_right_frame[4] = {
+			WEEK5_FRAME_CROWD_UPPER_0_PART_1,
+			WEEK5_FRAME_CROWD_UPPER_1_PART_1,
+			WEEK5_FRAME_CROWD_UPPER_2_PART_1,
+			WEEK5_FRAME_CROWD_UPPER_3_PART_1
+		};
+		static const uint8_t upper_third_frame[4] = {
+			WEEK5_FRAME_CROWD_UPPER_0_PART_2,
+			WEEK5_FRAME_CROWD_UPPER_1_PART_2,
+			WEEK5_FRAME_CROWD_UPPER_2_PART_2,
+			WEEK5_FRAME_CROWD_UPPER_3_PART_2
+		};
+		draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
+			upper_x, upper_y, camera_x, camera_y, zoom_q8, upper_scale);
+		draw_week5_visual_frame(upper_right_frame[crowd_pose & 3u],
+			upper_x, upper_y, camera_x, camera_y, zoom_q8, upper_scale);
+		draw_week5_visual_frame(upper_third_frame[crowd_pose & 3u],
+			upper_x, upper_y, camera_x, camera_y, zoom_q8, upper_scale);
+		unsigned escalator_draw_scale = week5_scene_edit_scale(variant,
+			W5_EDIT_ESCALATOR, escalator_scale);
+		draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
+			camera_x, camera_y, zoom_q8, escalator_draw_scale);
+		draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR_PART_1, escalator_x, escalator_y,
+			camera_x, camera_y, zoom_q8, escalator_draw_scale);
+		draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR_PART_2, escalator_x, escalator_y,
+			camera_x, camera_y, zoom_q8, escalator_draw_scale);
+#else
+		draw_week5_visual_frame(WEEK5_FRAME_CROWD_UPPER_0 + crowd_pose,
+			upper_x, upper_y, camera_x, camera_y, zoom_q8, upper_scale);
+		draw_week5_visual_frame(WEEK5_FRAME_ESCALATOR, escalator_x, escalator_y,
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_ESCALATOR, escalator_scale));
+#endif
 			draw_week5_visual_frame(WEEK5_FRAME_TREE_XMAS, tree_x, tree_y,
-				camera_x, camera_y, zoom_q8, xmas_tree_scale);
+				camera_x, camera_y, zoom_q8,
+				week5_scene_edit_scale(variant, W5_EDIT_TREE, xmas_tree_scale));
+
+			/* Evil Tree is a separate z=20 layer; it was omitted entirely. */
 		} else {
 			int tree_x = week5_layer_world_pos(300, camera_x, 51u);
 			int tree_y = week5_layer_world_pos(-300, camera_y, 51u);
+			tree_x = week5_scene_edit_x(variant, W5_EDIT_TREE, tree_x);
+			tree_y = week5_scene_edit_y(variant, W5_EDIT_TREE, tree_y);
 			draw_week5_visual_frame(WEEK5_FRAME_TREE_EVIL, tree_x, tree_y,
-				camera_x, camera_y, zoom_q8, evil_tree_scale);
+				camera_x, camera_y, zoom_q8,
+				week5_scene_edit_scale(variant, W5_EDIT_TREE, evil_tree_scale));
 		}
 		if (!evil_mall) {
+			/* z=50 lower crowd follows the .9 stage parallax. */
 			int lower_x = week5_layer_world_pos(-300, camera_x, 230u);
 			int lower_y = week5_layer_world_pos(120, camera_y, 230u);
+			lower_x = week5_scene_edit_x(variant, W5_EDIT_LOWER_CROWD, lower_x);
+			lower_y = week5_scene_edit_y(variant, W5_EDIT_LOWER_CROWD, lower_y);
 			draw_week5_visual_frame(WEEK5_FRAME_CROWD_LOWER_0 + crowd_pose,
-				lower_x, lower_y, camera_x, camera_y, zoom_q8, crowd_lower_scale);
+				lower_x, lower_y, camera_x, camera_y, zoom_q8,
+				week5_scene_edit_scale(variant, W5_EDIT_LOWER_CROWD, crowd_lower_scale));
 		}
-
+		/* The Evil Snow sprite is z=20; Christmas fgSnow is z=60. */
 		unsigned snow_frame = evil_mall ? WEEK5_FRAME_SNOW_EVIL : WEEK5_FRAME_SNOW_XMAS;
 		int snow_x = week5_layer_world_pos(evil_mall ? -500 : -1150,
 			camera_x, 256u);
 		int snow_y = week5_layer_world_pos(evil_mall ? 700 : 680,
 			camera_y, 256u);
+		snow_x = week5_scene_edit_x(variant, W5_EDIT_SNOW, snow_x);
+		snow_y = week5_scene_edit_y(variant, W5_EDIT_SNOW, snow_y);
 		if (!evil_mall) {
-			int snow_under_y = week5_layer_world_pos(800, camera_y, 256u);
+			/* snowUnder is the official z=59 solid #F3F4F5 layer beneath fgSnow. */
+			int snow_under_y = week5_scene_edit_y(variant, W5_EDIT_SNOW,
+				week5_layer_world_pos(800, camera_y, 256u));
 			int snow_screen_y = 120 + ((snow_under_y - camera_y) * (int)zoom_q8) / 256;
 			if (snow_screen_y < 0) snow_screen_y = 0;
 			if (snow_screen_y < SCREEN_H)
@@ -3727,7 +4089,8 @@ static void draw_scene(uint32_t samples)
 					243, 244, 245);
 		}
 		draw_week5_visual_frame(snow_frame, snow_x, snow_y,
-			camera_x, camera_y, zoom_q8, snow_scale);
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_SNOW, snow_scale));
 	} else {
 		draw_visual_frame(VIS_STAGE_SCENE_0, BOPEEBO_STAGE_SCENE_X, BOPEEBO_STAGE_SCENE_Y,
 			camera_x, camera_y, zoom_q8, 256);
@@ -3821,9 +4184,12 @@ static void draw_scene(uint32_t samples)
 			WEEK5_FRAME_GF_DANCE_V143_4, WEEK5_FRAME_GF_DANCE_V143_5,
 			WEEK5_FRAME_GF_DANCE_V143_6, WEEK5_FRAME_GF_DANCE_V143_7
 		};
+		unsigned variant = active_song->opponent_kind == PS1_OPPONENT_MONSTER ? 1u : 0u;
 		draw_week5_visual_frame(dance[gf_dance_pose(beat_q16)],
-			808 / 10, 854 / 10,
-			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
+			week5_scene_edit_x(variant, W5_EDIT_GF, 808 / 10),
+			week5_scene_edit_y(variant, W5_EDIT_GF, 854 / 10),
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_GF, BOPEEBO_WEEK5_GF_SCALE_Q8));
 	} else if (week4) {
 		static const uint8_t dance[30] = {
 			WEEK4_FRAME_GF_DANCE_0,
@@ -3968,11 +4334,15 @@ static void draw_scene(uint32_t samples)
 			opponent_frame = WEEK5_FRAME_PARENTS_IDLE_1;
 		}
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		unsigned variant = evil_mall ? 1u : 0u;
 		int opponent_world_x = evil_mall ? 290 / 10 : 42 / 10;
 		int opponent_world_y = evil_mall ? 869 / 10 : 882 / 10;
 		draw_week5_visual_frame(opponent_frame,
-			opponent_world_x, opponent_world_y,
-			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
+			week5_scene_edit_x(variant, W5_EDIT_OPPONENT, opponent_world_x),
+			week5_scene_edit_y(variant, W5_EDIT_OPPONENT, opponent_world_y),
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_OPPONENT,
+				evil_mall ? BOPEEBO_WEEK5_CHARACTER_SCALE_Q8 : BOPEEBO_WEEK5_PARENTS_SCALE_Q8));
 	} else if (week4) {
 		static const uint8_t mom_idle[3] = { WEEK4_FRAME_MOM_IDLE,
 			WEEK4_FRAME_MOM_IDLE_1, WEEK4_FRAME_MOM_IDLE_2 };
@@ -4014,10 +4384,16 @@ static void draw_scene(uint32_t samples)
 	/* Official Santa prop at Mall Christmas z=210: it sits in front of Parents,
 	   behind BF, and is omitted from Winter Horrorland. */
 	if (week5 && active_song->opponent_kind != PS1_OPPONENT_MONSTER) {
-		int santa_x = week5_layer_world_pos(-840, camera_x, 256u) + (36 * 236 / 256);
-		int santa_y = week5_layer_world_pos(150, camera_y, 256u) + (84 * 236 / 256);
+		unsigned variant = 0u;
+		int santa_x = week5_scene_edit_x(variant, W5_EDIT_SANTA,
+			week5_layer_world_pos(-840, camera_x, 256u)) +
+			(36 * 236 / 256);
+		int santa_y = week5_scene_edit_y(variant, W5_EDIT_SANTA,
+			week5_layer_world_pos(150, camera_y, 256u)) +
+			(84 * 236 / 256);
 		draw_week5_visual_frame(WEEK5_FRAME_SANTA, santa_x, santa_y,
-			camera_x, camera_y, zoom_q8, 236u);
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_SANTA, 236u));
 	}
 
 	unsigned bf_frame = VIS_BF_IDLE_0;
@@ -4048,11 +4424,12 @@ static void draw_scene(uint32_t samples)
 			bf_frame = VIS_BF_IDLE_0 + bopeebo_bf_idle_sequence[idle_step];
 		}
 	int bf_world_x = week3 ? BOPEEBO_WEEK3_BF_X : week4 ? BOPEEBO_WEEK4_BF_X :
-		week5 ? BOPEEBO_WEEK5_BF_X / 10 : BOPEEBO_BF_X;
+		week5 ? BOPEEBO_WEEK5_BF_X : BOPEEBO_BF_X;
 	int bf_world_y = week3 ? BOPEEBO_WEEK3_BF_Y : week4 ? BOPEEBO_WEEK4_BF_Y :
-		week5 ? BOPEEBO_WEEK5_BF_Y / 10 : BOPEEBO_BF_Y;
+		week5 ? BOPEEBO_WEEK5_BF_Y : BOPEEBO_BF_Y;
 	if (week5) {
 		bool evil_mall = active_song->opponent_kind == PS1_OPPONENT_MONSTER;
+		unsigned variant = evil_mall ? 1u : 0u;
 		bf_world_x = evil_mall ? 1297 / 10 : 1177 / 10;
 		bf_world_y = 871 / 10;
 		static const uint8_t bf_sing[4][2] = {
@@ -4080,8 +4457,11 @@ static void draw_scene(uint32_t samples)
 			christmas_bf_frame = WEEK5_FRAME_BF_IDLE_0 +
 				(bopeebo_bf_idle_sequence[idle_step] & 1u);
 		}
-		draw_week5_visual_frame(christmas_bf_frame, bf_world_x, bf_world_y,
-			camera_x, camera_y, zoom_q8, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8);
+		draw_week5_visual_frame(christmas_bf_frame,
+			week5_scene_edit_x(variant, W5_EDIT_BF, bf_world_x),
+			week5_scene_edit_y(variant, W5_EDIT_BF, bf_world_y),
+			camera_x, camera_y, zoom_q8,
+			week5_scene_edit_scale(variant, W5_EDIT_BF, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8));
 	} else if (bf_extra_pose >= 0)
 		draw_bf_sing_extra_frame((unsigned)bf_extra_pose,
 			bf_world_x, bf_world_y, camera_x, camera_y, zoom_q8, week3);
@@ -4769,6 +5149,13 @@ static bool enter_bopeebo(void)
 	week4_editor_paused = false;
 	week4_editor_summary = false;
 #endif
+#if GAME_WEEK5_COMPOSITION_EDITOR
+	week5_editor_visible = false;
+	week5_editor_paused = false;
+	week5_editor_summary = false;
+	week5_editor_layer = 0;
+	week5_edit_repeat_button = 0;
+#endif
 	if (!start_stream_from_disc()) return false;
 	game_screen = SCREEN_GAMEPLAY;
 	return true;
@@ -4868,6 +5255,9 @@ static void run_playable_frontend(void)
 #if GAME_WEEK4_COMPOSITION_EDITOR
 			update_week4_composition_editor();
 #endif
+#if GAME_WEEK5_COMPOSITION_EDITOR
+			update_week5_composition_editor();
+#endif
 			if (game_pressed & PAD_START) {
 	#if GAME_WEEK4_COMPOSITION_EDITOR
 				if (active_song && active_song->stage_id == 4u &&
@@ -4880,6 +5270,18 @@ static void run_playable_frontend(void)
 					} else {
 						Stream_Stop();
 						week4_editor_paused = true;
+					}
+				} else
+	#endif
+	#if GAME_WEEK5_COMPOSITION_EDITOR
+				if (active_song && active_song->stage_id == 5u &&
+				    (week5_editor_visible || week5_editor_paused)) {
+					if (week5_editor_paused) {
+						if (!Stream_Start(&stream, true)) show_error(FAIL_STREAM_START);
+						week5_editor_paused = false;
+					} else {
+						Stream_Stop();
+						week5_editor_paused = true;
 					}
 				} else
 	#endif
@@ -5725,6 +6127,9 @@ int main(void)
 #if GAME_WEEK4_COMPOSITION_EDITOR
 		draw_week4_editor_panel();
 #endif
+#if GAME_WEEK5_COMPOSITION_EDITOR
+		draw_week5_editor_panel();
+#endif
 #else
 		if (active_song->stage_id == 8u || active_song->stage_id == 9u)
 			FntPrint(-1, "WEEKEND 1  INST / DARNELL-L / PICO-R\n");
@@ -5776,4 +6181,3 @@ int main(void)
 #endif
 	}
 }
-

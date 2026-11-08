@@ -195,6 +195,10 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	option(FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT "Test popup palette in a free neighboring CLUT slot" OFF)
 	option(FUNKIN_PS1_SCENE_DEMO_DEFAULT "Build a camera-only scene demo without gameplay penalties" OFF)
 	option(FUNKIN_PS1_WEEK4_COMPOSITION_EDITOR "Enable the temporary in-memory Week 4 layer tuner" OFF)
+	option(FUNKIN_PS1_WEEK5_COMPOSITION_EDITOR "Enable the temporary in-memory Week 5 layer tuner" OFF)
+	if(FUNKIN_PS1_WEEK5_COMPOSITION_EDITOR AND NOT FUNKIN_PS1_SCENE_DEMO_DEFAULT)
+		message(FATAL_ERROR "The Week 5 composition editor requires FUNKIN_PS1_SCENE_DEMO_DEFAULT=ON so D-pad editing cannot hit or penalize notes")
+	endif()
 	set(FUNKIN_PS1_REUSE_BF_POSE_DIR "" CACHE PATH
 		"Reuse bf_sing_pose_data.h and week1-scene-bf-poses.bin from an existing build directory")
 	option(FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT "Build a visual-only health bar calibration disc" OFF)
@@ -1022,6 +1026,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		GAME_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT=$<BOOL:${FUNKIN_PS1_JUDGEMENT_POPUP_CLUT_SLOT_PROBE_DEFAULT}>
 		GAME_SCENE_DEMO_DEFAULT=$<BOOL:${FUNKIN_PS1_SCENE_DEMO_DEFAULT}>
 		GAME_WEEK4_COMPOSITION_EDITOR=$<BOOL:${FUNKIN_PS1_WEEK4_COMPOSITION_EDITOR}>
+		GAME_WEEK5_COMPOSITION_EDITOR=$<BOOL:${FUNKIN_PS1_WEEK5_COMPOSITION_EDITOR}>
 		GAME_HEALTH_BAR_TEST_DEFAULT=$<BOOL:${FUNKIN_PS1_HEALTH_BAR_TEST_DEFAULT}>
 		GAME_STARTUP_MAIN_MARKER=$<BOOL:${FUNKIN_PS1_STARTUP_MAIN_MARKER}>
 		TEST_NO_LOOP=1 TEST_TOTAL_SAMPLES=3509453u)
@@ -1081,4 +1086,3 @@ if(DEFINED _week1_visual_payload)
 			"${_week1_visual_payload}" "${_playable_visual_header}"
 	)
 endif()
-

@@ -1626,58 +1626,247 @@ Le fond Week 4 est séparé correctement en pages gauche/droite (copie par rang�
 Le paquet de scène actif fait 393 728 octets, soit +131 072 octets (+2 pages 8bpp) par rapport au paquet pré-v145. Le buffer de transfert reste 64 Kio. Audio, charts, placements, caméra et règles inchangés. BIN/CUE distinct et manifeste : [`PS1_WEEK4_V145_SCENE.md`](PS1_WEEK4_V145_SCENE.md). Build et contrôle ISO statiques réussis; test DuckStation utilisateur en attente. Les couches de limousine ne sont pas animées dans ce jalon.
 
 
-
-
 ## Audit global des atlas graphiques — v146
 
 Les planches base/W1, Weeks 2–7, Weekend 1 et les pages statiques menu/Freeplay/game over couvrent les ressources intégrées. L’audit documente séparément les pixels d’index zéro, unions/chevauchements des rectangles et espaces récupérables. Deux atlas sont réempaquetés sans perte : Week 4 et Week 7 récupèrent chacun une page 8bpp. Les palettes et pixels indexés restent appariés; poses, dimensions, séquences et durées restent inchangées. Pas de reconversion générale.
 
 Voir [`PS1_ATLAS_AUDIT_V146.md`](PS1_ATLAS_AUDIT_V146.md) pour les hashes, budgets RAM/VRAM/CD, commandes de reproduction et limites. BIN/CUE v146 compilé et contrôlé statiquement; essai utilisateur DuckStation en attente. Le retry validé antérieurement est conservé.
 
-
 ## Week 4 — composition Mother v7 (v147, essai)
 
-Le paquet Week 4 reprend la composition v7 : sky officiel, limousine distante agrandie, quatre danseurs au-dessus de la limousine principale. Les danseurs restent sur une pose fixe. Les acteurs principaux, caméras, gameplay, charts et audio ne changent pas.
+Le décor utilise désormais la limousine lointaine et quatre danseurs officiels placés d’après la maquette v7, en arrière de la limousine principale. Cette première intégration emploie une pose fixe pour les danseurs. Les emplacements et tailles de Mom/GF/BF, l’audio, les charts et les règles restent ceux du moteur actuel.
 
-Le paquet reste à cinq pages 8bpp / 328 192 octets; seules les deux pages de décor sont remplacées. Le script reproductible et les hashes figurent dans [PS1_WEEK4_V147_COMPOSITION.md](PS1_WEEK4_V147_COMPOSITION.md). Le CUE est livré pour test manuel dans DuckStation; aucun résultat d’exécution n’est revendiqué.
+`W4SCENE.BIN` reste à cinq pages / 328 192 octets : les deux pages de décor sont seules modifiées, avec la même CLUT. Le paquet d’acteurs est identique; pas de nouveau coût VRAM, RAM ou transfert runtime. Les nouvelles couleurs sont adaptées à la palette W4 déjà chargée.
 
+Le build v147 a été compilé, puis contrôlé statiquement : SYSTEM.CNF est la première entrée ISO, l’exécutable la deuxième. BIN/CUE sont dans `ps1/build/week4-composition-v147/delivery-v147-mother-composition/`. L’exécution DuckStation et la validation visuelle attendent le chargement manuel de l’utilisateur. Voir [`PS1_WEEK4_V147_COMPOSITION.md`](PS1_WEEK4_V147_COMPOSITION.md).
 
 ## Week 4 — correction v148
 
 v147 réduisait à tort la limousine distante et les danseurs par leurs dimensions d’extraction (222×39 et 29×22). v148 utilise 455×79 et 40×32, en gardant les placements approuvés et le premier plan. GF passait de rectangles 87×79 à 64×64 pendant sa danse; le dessin utilise maintenant une destination constante de 87×79 et conserve les UV de chaque pose. Les timings, caméras, gameplay et atlas actifs ne changent pas; aucun espace RAM/VRAM supplémentaire.
 
-Build et vérification statique ISO réussis; BIN/CUE dans `ps1/build/week4-composition-v148/delivery-v148-mother-composition/`. Le test DuckStation v148 reste en attente. Voir [PS1_WEEK4_V148_FIX.md](PS1_WEEK4_V148_FIX.md).
+Build et vérification statique ISO réussis; BIN/CUE dans `ps1/build/week4-composition-v148/delivery-v148-mother-composition/`. Le test DuckStation v148 reste en attente. Voir [`PS1_WEEK4_V148_FIX.md`](PS1_WEEK4_V148_FIX.md).
 
 
 ## Week 4 — GF v149
 
 Le build d’essai restaure les 30 cellules officielles de danse GF à 87×79 au lieu des 10 poses précédentes, dont huit petites images étirées. L’animation suit l’horloge audio à raison d’une moitié de 15 poses par beat. Le paquet W4 utilise 8 pages (contre 5), CLUT conservée; composition, caméra, audio et gameplay inchangés. Compilation et contrôles statiques réussis, pas encore exécuté par l’utilisateur dans DuckStation. BIN/CUE et hashes : [`PS1_WEEK4_V149_GF.md`](PS1_WEEK4_V149_GF.md).
 
-
 ### Week 4 v153 — plan lointain indépendant
 
 Le paquet de décor W4 conserve huit pages 8bpp et sa CLUT. La texture de fond contient maintenant le coucher de soleil seul; la limousine lointaine et quatre cels henchmen sont dessinés comme une couche séparée avec scroll `0.4`, tandis que la limousine principale conserve scroll `1.0` et sa composition/ancre v152. Cela ajoute une primitive, sans page VRAM ni lecture CD additionnelle. L’image reste à 524 800 octets. Voir `docs/PS1_WEEK4_V153_PARALLAX.md` pour la comparaison, la recette, les hashes, les budgets et limites de validation.
 
-Le BIN/CUE normal se trouve localement dans `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. Compilation et contrôles statiques réussis; exécution utilisateur DuckStation en attente. Aucun test console réelle.
+Le BIN/CUE normal se trouve dans `ps1/build/week4-composition-v153/delivery-v153-far-plane-parallax/`. Compilation et contrôles statiques réussis; exécution utilisateur DuckStation en attente. Aucun test console réelle.
 
+### Week 4 v156c — couches lointaines réglables
 
-## Week 5 composition build v168
+Le plan lointain de Week 4 sépare maintenant la limousine animée et les quatre danseurs en deux pages/ensembles de sprites officiels. L’éditeur de scène permet de régler séparément leur position et leur échelle; Select l’ouvre, Start met l’horloge musicale en pause, Triangle affiche les valeurs. Voir `PS1_WEEK4_V156C_FAR_LAYERS_EDITOR.md`. Build compilé et ISO contrôlée statiquement, essai DuckStation utilisateur attendu.
 
-This build fixes the Week 5 stage plate origin and layering based on the pinned Mall JSON and user reference: the transparent Evil Mall backdrop now has its declared solid fill and tree, while Christmas Mall upper/lower crowd, escalator/tree, and snow-under layers follow their depth order. Camera targets apply adapted Dad/BF stage offsets. Audio/gameplay/data are unchanged. Compilation and ISO packaging succeeded; emulator/user test is pending. See [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+### Week 4 v157 — far-art resolution and BF page ownership
 
+v157 fixes a VRAM collision: v156c wrote the far-limo atlas over common visual page 7, which contains BF's sprites. Far-limo cels are now packed into the spare strip of Week 4 page 7, the front-limo UV is moved within that same page, and far dancers use the spare physical page `(896,0)`. The BF atlas page is left untouched. Dancer cels increase from 48×38 to 72×57; the editor zoom ceiling increases to 400%, preserving the current placement defaults. The W4 package shrinks by one 64 KiB page. Build and static ISO checks passed; no emulator or console validation yet. See [`PS1_WEEK4_V157_FAR_ART_BF_PAGE_FIX.md`](PS1_WEEK4_V157_FAR_ART_BF_PAGE_FIX.md).
+
+The final manual test artifact is v157b, with source/config hashes archived outside Git at `C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/source-v157b/`; no runtime result is claimed.
+
+### Week 4 v158 — front limousine and normal build
+
+v158 restores the front-limo texture rectangle lost by the previous repack,
+raises the four distant dancers by 10 world units (about 20 screen pixels at the
+current zoom), and compiles out the temporary scene editor/camera demo. It keeps
+the v157b composition, animations, audio, charts, and remaining scene positions.
+The repair copies only converted indexed pixels from the archived v156c atlas;
+no general reconversion ran. Build and static ISO generation succeeded; the
+user's DuckStation test is pending. See
+[`PS1_WEEK4_V158_FRONT_LIMO_DANCERS.md`](PS1_WEEK4_V158_FRONT_LIMO_DANCERS.md).
+The final ordered CUE is under
+`C:/Users/Manau47/Documents/Codex/week4-composition-editor-v156b/delivery-v158-ordered/`.
+
+### Week 4 v159 — saved composition in the normal build
+
+v158 had the restored front limousine and raised dancers, but its normal build
+lost the editor-tuned layout because all layer offsets and scales were
+conditional on the editor compile flag. v159 bakes those saved transforms into
+the regular renderer while leaving the editor, scene demo, and startup
+diagnostics disabled. The far limousine returns to its saved 2× scale; stage,
+camera, GF, Mom, BF, and foreground limo offsets are retained. Dancers stay
+raised 10 world units (~20 screen pixels). No asset reconversion or gameplay
+change was needed. The incremental dry-run and build covered only C compile,
+link, and ISO generation; static root-order checks passed. User DuckStation
+validation is pending. See [`PS1_WEEK4_V159_LAYOUT_BAKED.md`](PS1_WEEK4_V159_LAYOUT_BAKED.md).
+
+### Week 4 v160 — placement adjustment
+
+The dancers move up another ~41 screen pixels and Mom, GF, and BF move left
+~31 screen pixels, derived from the 2.046875× scene zoom. Camera focus anchors
+stay fixed so they do not negate the character movement. All other v159 scene
+values remain. Only C/link/ISO steps are expected; converted assets are reused.
+The build is awaiting the user's DuckStation check; see
+[`PS1_WEEK4_V160_LAYOUT_NUDGE.md`](PS1_WEEK4_V160_LAYOUT_NUDGE.md).
+
+### Week 4 v161 — camera follows character offsets
+
+Mom, GF, and BF focus targets now inherit the same X shifts as their sprites;
+GF focus also inherits its existing Y offset. This preserves the v160 scene
+placements while moving the camera focus with them. Assets and gameplay are
+unchanged. Awaiting the user's DuckStation test; details in
+[`PS1_WEEK4_V161_CAMERA_FOLLOWS.md`](PS1_WEEK4_V161_CAMERA_FOLLOWS.md).
+
+### Week 4 v162 — small placement adjustment
+
+GF moves down ~4 screen pixels, and the distant dancers move right ~41 pixels.
+The camera continues to follow GF's adjusted anchor; other v161 settings are
+preserved. Awaiting the user's DuckStation check. See
+[`PS1_WEEK4_V162_GF_DANCERS_NUDGE.md`](PS1_WEEK4_V162_GF_DANCERS_NUDGE.md).
+
+### Week 4 v163 — dancers nudged right
+
+The four distant dancers shift another ~10 screen pixels right; all v162
+settings are preserved. Awaiting the user's DuckStation check. See
+[`PS1_WEEK4_V163_DANCERS_NUDGE.md`](PS1_WEEK4_V163_DANCERS_NUDGE.md).
+
+### Week 4 v164 — dancers nudged right
+
+The dancers shift another ~10 screen pixels right; the remaining scene values
+stay as v163. Awaiting the user's DuckStation check. See
+[`PS1_WEEK4_V164_DANCERS_NUDGE.md`](PS1_WEEK4_V164_DANCERS_NUDGE.md).
+
+### Week 5 v165 Mall scene pass
+
+Week 5 visuals were re-extracted from the pinned official assets. The package
+now includes the official upper and lower Mall crowd cels, separate snow
+foreground frames, a corrected full-width 4:3 background fit, and audio-clock
+24fps animation with independent crowd parallax. It uses seven 8bpp pages
+while W5 is active. Charts, audio and Week 4 are reused unchanged. The normal
+build has diagnostics off. Compilation and static ISO checks passed; the
+DuckStation visual and transition test is pending. See
+[`PS1_WEEK5_V165_SCENE.md`](PS1_WEEK5_V165_SCENE.md).
+
+### Week 5 v166 — pause/resume stream follow-up
+
+The supplied pause/resume error screen reports code 8 (SPU underrun), zero CD
+errors, and an empty ring. The previous pause path aborted an outstanding CD
+read after advancing the stream sector cursor, and did not feed the ring while
+paused. v166 lets pending reads complete, pumps the ring during pause, and
+waits for a bounded prebuffer before resuming SPU playback. It reuses the v165
+scene package unchanged. Build and ISO checks pass; the user's DuckStation
+pause/resume retest is pending. The Week 5 composition and higher-resolution
+character re-extraction remain unaddressed in this isolated audio fix. See
+[`PS1_WEEK5_V166_PAUSE_RESUME.md`](PS1_WEEK5_V166_PAUSE_RESUME.md).
 
 ### Week 5 v168 composition follow-up (rejected by user)
 
-The user reported that v168's composition remained substantially wrong. A follow-up audit found that the renderer scaled world displacement by each sprite's art scale and used hand-picked screen positions for stage props, so the earlier claims that the plate math and official placements were correct were inaccurate. See [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+The v167 review identified a plate-origin error (64x48 px), missing official
+Winter Horrorland solid/tree layers, and incorrect Mall upper-crowd z ordering.
+v168 corrects those code paths and uses the original stage camera offsets. It
+reuses every converted Week 5 asset and audio/chart payload. The user then
+reported that the resulting composition was still substantially wrong. The
+follow-up audit found that the renderer scaled world displacement by each
+sprite's art scale and used hand-picked screen positions for stage props. See
+[`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
 
 ### Week 5 v169 transform correction
 
-The Week 5 renderer separates camera/world coordinates from per-asset scale and trim, uses one 1:10 mapping for pinned mall stage coordinates, applies official prop positions/parallax/depth order, and centers the 1.5x background plate with 32x24 overscan. The existing converted Week 5 package is reused byte-for-byte; the build dry-run contains only C compilation, linking, and ISO creation. Compilation and packaging succeeded. The new v169 BIN/CUE awaits the user's DuckStation visual check; no execution or visual validation is claimed. See [`PS1_WEEK5_V169_COMPOSITION.md`](PS1_WEEK5_V169_COMPOSITION.md).
+The Week 5 renderer now separates camera/world coordinates from per-asset
+scale and trim, uses one 1:10 mapping for the pinned mall stage coordinates,
+applies official prop positions/parallax/depth order, and centers the 1.5x
+background plate with 32x24 overscan. It reuses the exact v168-converted scene
+package; the build dry-run contains only C compilation, linking, and ISO
+creation. The build succeeded. The new v169 BIN/CUE is awaiting the user's
+DuckStation visual check; no execution or visual validation is claimed. See
+[`PS1_WEEK5_V169_COMPOSITION.md`](PS1_WEEK5_V169_COMPOSITION.md).
 
-### Week 5 v169b anchor correction
+### Week 5 v169b character-anchor correction
 
-A final audit found the generated Week 5 character macros already represented adapted PS1 coordinates. Dividing them by ten a second time had displaced the characters. v169b uses pinned Mall stage JSON character anchors and applies the stage-to-world mapping once. BIN SHA-256: `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE SHA-256: `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. The separate delivery includes a source/config snapshot. Compilation and packaging succeeded; visual validation awaits the user's DuckStation test. No emulator or console run is claimed.
+Before delivery, a final audit found that `BOPEEBO_WEEK5_*_X/Y` were already
+adapted PS1 world coordinates. Dividing those generated macros by ten a second
+time displaced the characters. v169b uses the pinned stage JSON character
+positions directly and applies the stage-to-world mapping once. The resulting
+BIN/CUE is in the separate `week5-scene-v169b-delivery` folder. BIN SHA-256 is
+`8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE
+SHA-256 is `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`.
+Incremental build reported no work remaining after successful packaging. The
+DuckStation visual check is pending; do not treat v169b as user-validated.
 
-### v169b startup regression and v169c root fix
+### v169b boot-order failure / v169c correction
 
-v169b was reported stuck at the Sony logo. The ISO root placed SYSTEM.CNF as file entry 93 and FUNKIN.EXE as entry 36. v169c applies the existing checked root-record reorder utility only, placing SYSTEM.CNF then FUNKIN.EXE at the beginning. EDC/ECC was verified and only root-directory sectors changed; the executable and all resources remain byte-identical. v169c BIN SHA-256 `AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`, CUE SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`. This is a static ISO correction; user DuckStation confirmation is pending.
+The user reported v169b stuck at the Sony logo. ISO inspection found
+`SYSTEM.CNF;1` at root file entry 93 and `FUNKIN.EXE;1` at entry 36, a repeat
+of the known early-root-order boot issue. v169c was made from v169b using the
+existing root-record reordering utility only: `SYSTEM.CNF;1` and `FUNKIN.EXE;1`
+are now the first two file entries. The utility validated EDC/ECC and confirmed
+that only the four raw sectors occupied by the root directory changed; file
+contents, executable, code and resources are unchanged. BIN SHA-256
+`AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`; CUE
+SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`.
+This is a static boot-layout correction; user DuckStation verification is
+pending.
+
+### Week 5 v170b — scale/palette follow-up
+
+The v169c user feedback favored the scene positions but requested better
+character scale/detail and a visible mall upper level/crowd. v170b increases
+Mom/Dad and GF cel dimensions to 96x112, leaves BF/Monster at 80x96 to keep the
+nine-page allocation, uses a separate palette per W5 page, and draws the upper
+crowd over the escalator layer. The scene data grows by 4 KiB (two additional CD
+sectors); texture-page count and texture transfer size stay unchanged. Audio,
+charts, and catalog hashes were verified unchanged. Compilation and root-order
+ISO checks pass. DuckStation visual/gameplay/audio verification is pending the
+user. See [`PS1_WEEK5_V170B_SCALE_PALETTE.md`](PS1_WEEK5_V170B_SCALE_PALETTE.md).
+
+### Week 5 v171 — couches mall et échelles
+
+Comparaison avec `mallXmas.json`, les rigs épinglés et la vidéo de référence, budgets et limites : [`PS1_WEEK5_V171_LAYERS_SCALE.md`](PS1_WEEK5_V171_LAYERS_SCALE.md). BIN/CUE et manifeste reproductible : dossier externe `week5-scene-v171-delivery`. Build compilé, mais pas encore observé dans DuckStation.
+
+Correctif de démarrage v171b : l’image v171 initiale avait les entrées racine dans le mauvais ordre. v171b ne change que les enregistrements ISO racine; voir le manifeste dans `week5-scene-v171b-bootfix-delivery`. L’essai DuckStation reste à faire.
+
+Week 5 v172 corrige le repère du fond mall : conservation du rapport d’aspect et positions/échelle/parallaxe conformes aux stages officiels. Voir [`PS1_WEEK5_V172_BACKGROUND_TRANSFORM.md`](PS1_WEEK5_V172_BACKGROUND_TRANSFORM.md). La build compile, mais son rendu attend l’essai DuckStation.
+### Week 5 v173 background scale correction
+
+The v172 feedback identified a remaining distinction: background overscan is
+expected even in the original 16:9 scene, while the actual background scale
+was still too small. v173 retains the official stage anchor and aspect ratio
+and changes only the background destination scale. Expected native rectangles
+are about 661x392 (Mall Xmas) and 698x428 (Mall Evil), intentionally larger
+than 320x240. No scene assets were reconverted; gameplay, camera, actors,
+audio, charts and other props are unchanged. Build and ISO checks pass; the
+new composition still awaits the user's DuckStation observation. Details and
+artifact hashes are in `PS1_WEEK5_V173_BACKGROUND_SCALE.md` and the external
+`week5-scene-v173-delivery` manifest.
+
+### Week 5 v174 — temporary scene editor
+
+v174 adds a dedicated editor build for tuning the Week 5 Mall scenes in
+DuckStation. It exposes each existing layer and the camera as temporary
+position/scale controls, with a summary screen for transferring approved
+values back to the production scene. The build uses the scene-demo mode so
+controller edits do not trigger judgments or penalties; the music and visual
+timeline can be paused with Start. The panel is hidden at startup and opened
+with Select. No scene, chart, audio, or graphics assets were changed or
+reconverted. Compilation and static ISO boot-entry checks succeeded; the user
+still needs to load the CUE and verify navigation, panel visibility, pause, and
+the layer controls before any composition values are adopted. See
+[`PS1_WEEK5_SCENE_EDITOR_V174.md`](PS1_WEEK5_SCENE_EDITOR_V174.md) and the
+external `week5-scene-editor-v174-delivery` directory.
+
+
+## Week 5 second-pass capture (v177)
+
+The latest normal-build test applies the user's Christmas Mall layer offsets captured from DuckStation Memory Analyzer and raises the BF-focus framing by an estimated five screen pixels. Sprite up-resolution was evaluated but not applied: the common atlas exceeds the active VRAM-page budget at the current pose count and colors. See [PS1_WEEK5_SECOND_PASS_V177.md](PS1_WEEK5_SECOND_PASS_V177.md) for per-layer values, package hashes, page/area calculations, build flags and the pending manual test.
+
+## Week 5 backdrop detail v178
+
+This targeted sprite pass follows the user's clarification: BF, Mom, Dad and GF are preserved. Only the balcony crowd and escalator use higher-density source art. The existing crowd poses, cadence, scene coordinates, scale on screen, camera, gameplay, chart and audio remain unchanged.
+
+The reproducible package transformer is `ps1/rebuild_week5_backdrop_detail.py`. It starts from the converted v171 Week 5 package and reads only official `upperBop` crowd frames and `bgEscalator`. It emits 1.5× raster density split into PS1 page-safe pieces, retaining alpha trim offsets and applying inverse display scale compensation. It also verifies/reports page count and keeps source package pages/palettes outside the target art byte-identical. See [PS1_WEEK5_BACKDROP_DETAIL_V178.md](PS1_WEEK5_BACKDROP_DETAIL_V178.md) for page/VRAM/CD/RAM accounting and validation status. The root-order-fixed normal CUE for the user test is in the external `week5-backdrop-hires-v178-rootfixed-delivery` directory; no emulator validation has yet been observed.
+
+## Week 5 GF scale and crowd frame registration v182
+
+The Christmas Mall GF scale captured from the user's editor (`0x0160`, 352 Q8) now applies in the normal build. Crowd retains its official four selected cels and 24 fps sequence, but the atlas uses a shared frame window to avoid per-pose trim-size/offset rounding. The external CUE is awaiting the user's DuckStation observation; static package checks and compilation do not establish a visual fix. Details and package/build information: [PS1_WEEK5_GF_CROWD_V182.md](PS1_WEEK5_GF_CROWD_V182.md).
+
+
+## v183 reference and asset harmonization v1
+
+v183 is the user-accepted reference build. Its original delivery and source snapshot are retained outside Git under `C:/Users/Manau47/Documents/Codex/week5-lower-crowd-v183-delivery/`; hashes and the static all-week atlas/scene audit are documented in `PS1_ASSET_SCENE_AUDIT_V183.md`. A dedicated `ps1-asset-harmonization-v1` branch starts a new build sequence at v1. Its first candidate disables temporary scene-editor/demo modes and reuses v183 converted resources. It does not resize/recolor/repack assets or change gameplay/audio. See `PS1_ASSET_HARMONIZATION_V1.md` for the reproducible configuration and test status.
+
+### v1 build evidence
+
+The v1 candidate compiled incrementally and reused 133 generated `.bin`/`.vag`/`.h` files byte-for-byte against v183. ISO static checks place `SYSTEM.CNF`/`FUNKIN.EXE` at root entries 1/2 and confirm the embedded EXE hash. No additional atlas-page or memory saving is claimed: text+data+BSS is 4,016 bytes larger than the recorded v183 ELF. DuckStation execution and user validation are pending.

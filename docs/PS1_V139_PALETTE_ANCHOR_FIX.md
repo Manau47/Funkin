@@ -29,12 +29,10 @@ Le paquet W3 réutilisé et ses nouvelles poses demeurent hors Git. La copie ant
 
 Charger le CUE dans DuckStation et vérifier : écran titre/Options, Tutorial, Bopeebo, puis Week 3 et les positions Pico/GF durant les poses et le passage du train. Le parcours complet et les transitions ne sont pas observés par Codex. Ce résultat est une compilation et une validation statique, pas une validation DuckStation ni console réelle.
 
-
-
 ## Correctif de démarrage du disque (v139b)
 
-Le CUE v139 initial restait au logo Sony. L’audit a isolé l’écart ISO : `SYSTEM.CNF;1` était la 93e entrée racine au lieu de la première, contrairement au disque v138 fonctionnel. La directive boot, le CUE et l’exécutable étaient corrects. Le BIN v139 initial est conservé mais ne doit pas être utilisé pour l’essai.
+L’utilisateur a signalé que le CUE v139 restait au logo Sony. La comparaison ISO a révélé la différence : dans le BIN livré initialement, `SYSTEM.CNF;1` était la 93e entrée du répertoire racine; dans le disque v138 de référence, il était en première position, suivi de `FUNKIN.EXE;1`. Le CUE v139 référençait bien son BIN; c’est l’ordre racine du BIN qui était incorrect. Le BIN v139 initial est conservé, mais ne pas l’utiliser pour l’essai.
 
-v139b réordonne uniquement les enregistrements du répertoire racine du BIN brut avec `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf`; aucun exécutable ni asset n’a été recompilé/reconverti. Vérifications statiques : 117 fichiers, `SYSTEM.CNF;1` en première position, `FUNKIN.EXE;1` en deuxième, directive `BOOT=cdrom:\\FUNKIN.EXE;1`. L’exécutable extrait (1 021 952 octets) est byte-identique à celui du v139 initial, SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`.
+v139b réordonne uniquement les enregistrements du répertoire ISO du BIN brut du même build, avec `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf`. Aucun code, asset, ressource audio ou exécutable n’a été recompilé ou reconverti. Les contrôles confirment 117 fichiers, `SYSTEM.CNF;1` en entrée 1, `FUNKIN.EXE;1` en entrée 2, la directive `BOOT=cdrom:\FUNKIN.EXE;1`, et un exécutable PS-X EXE de 1 021 952 octets byte-identique à celui du v139 initial (SHA-256 `54131AB733936A82676EFE91CE7D9B3D0771EEA32C883B68CDA8788AC70D727D`). Les données des autres secteurs sont conservées par le réordonnanceur.
 
-À tester : `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/funkin-ps1-v139b-boot-order-fix.cue`. BIN SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. Le boot reste à confirmer par l’utilisateur dans DuckStation.
+Le seul CUE à tester maintenant est `ps1/build/week3-animation-compromise-v138/delivery-v139b-iso-boot-order/funkin-ps1-v139b-boot-order-fix.cue`. BIN SHA-256 `0E9F1852D97F89F2771AA6AC9196214EE55C3374D2F81B2FEFF4320EE3410B5F`; CUE SHA-256 `AAE35D9F4730932B0D2EE363D4B99761C71422846A8ED1FB0CDE4004D90BD3E6`. C’est un contrôle statique du média; le redémarrage effectif reste à confirmer par l’utilisateur dans DuckStation.

@@ -45,4 +45,3 @@ Build PSn00bSDK/GCC réussi et image statiquement contrôlée; l’ISO contient 
 - ELF lié : 1 335 560 octets; SHA-256 `848F6E25FC92241D2060A514646EF28FEEB2FB3DB1D8A84CE9E227D37E0DC672`.
 
 DuckStation n’a pas été exécuté par Codex. La fluidité, les retours idle, la lisibilité, les transitions/retry et l’absence d’underrun doivent être vérifiés par l’utilisateur. Aucune validation utilisateur de v143 ni aucun test console réelle n’est revendiqué.
-

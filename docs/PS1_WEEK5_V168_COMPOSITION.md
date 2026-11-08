@@ -2,32 +2,60 @@
 
 ## Reference comparison
 
-Compared the supplied v167 DuckStation captures with the user's Week 5 reference video and pinned assets at `724eba9de9e76761d9cefd52169926bc51c760a5` (`mallXmas.json`, `mallEvil.json`).
+The supplied v167 captures were compared with the user's Week 5 reference video,
+the pinned assets at revision `724eba9de9e76761d9cefd52169926bc51c760a5`, and
+`mallXmas.json` / `mallEvil.json`.
 
-Identified v167 scene errors:
-- The 256x192 background plate is rendered at 1.5x (384x288). For centered 32x24 overscan its top-left must be screen (-32,-24), i.e. world offset (-192,-144) from the camera center. v167 used (-128,-96), moving the plate down/right by 64x48 screen pixels at 1.5x.
-- `evilBG.png` contains transparency; the official `mallEvil` stage has solid `#23062D` behind it. The renderer exposed the clear color as a large black region.
-- The official Evil Tree was omitted.
-- In the Christmas Mall, upper crowd z=20 must draw before escalator z=30/tree z=40. v167 reversed that order. It also omitted the snow-under fill at z=59.
-- Dad/BF camera targets did not apply their stage camera offsets.
+Observed implementation errors in v167:
 
-## Changes in v168
+- A 256x192 plate drawn at 1.5x is 384x288. Its intended origin for centered
+  32x24 overscan is `(-32,-24)` on screen, which corresponds to world offset
+  `(-192,-144)` from the camera center. The v167 offsets were `(-128,-96)`, so
+  the plate appeared at screen `(+32,+24)`, shifted down/right.
+- `evilBG.png` has transparent areas. The original Mall Evil stage declares a
+  full-screen solid `#23062D` behind it. The PS1 renderer left those pixels at
+  the framebuffer clear color, causing the large black region in the capture.
+- `evilTree` from the official stage JSON was not drawn.
+- Mall's `upperBoppers` are z=20, before the escalator at z=30 and tree at z=40;
+  v167 drew them after those props.
+- The official snow-under fill at z=59 was absent.
+- Camera focus used character center positions and ignored the pinned Dad/BF
+  camera offsets.
 
-Only the Week 5 composition and focus target paths in `ps1/spu_probe.c` changed. The plate is centered for its overscan, Winter Horrorland receives its solid backing and tree layer, Mall layers follow their stage depth order, and the snow-under/fog layer is drawn before the character sprites. Dad/BF camera targets use adapted source camera offsets; notes and HUD remain screen-space.
+## v168 correction
 
-No scene image, palette, audio, chart, character frame, animation duration, gameplay rule, or pause/retry code was regenerated or modified. The existing scene package and music payload hashes match v167.
+Only `ps1/spu_probe.c` changes the scene. The render order now follows the
+pinned stage's depth order. Mall Evil draws its solid backdrop before the PNG
+and includes the separate evil tree. The Mall snow fill and foreground snow
+are drawn before character layers. The plate origin now matches its 1.5x size
+and overscan. Dad and BF camera targets apply the official source offsets using
+the port's existing coordinate scale.
 
-## Build and validation record
+The scene atlas, audio, charts, character frames, dimensions, palette and
+animation timing are unchanged. In particular, no gameplay or pause/retry logic
+was modified.
 
-- Source base: PR branch `ps1-port`, commit `05a7f5250b730991f02c9b730043099236c4f3a3`; composition patch committed separately for v168.
-- Pinned assets: `724eba9de9e76761d9cefd52169926bc51c760a5`.
-- Build folder: `C:\Users\Manau47\Documents\Codex\week5-scene-v168-build`; SDK/toolchain unchanged from v167.
-- Dry-run included two C compilations, link, and ISO generation; no image/audio/chart converter ran.
-- Build and ISO packaging completed. Two existing SDK volatile-qualifier warnings remain.
-- ISO root order checked: SYSTEM.CNF entry 1, FUNKIN.EXE entry 2.
-- Delivered BIN SHA-256: `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`.
-- CUE SHA-256: `BA00F22DF825369BF72D2AD4EA37ECD8D67D44E2489657078FCC64703A0AE079`.
+## Build inputs and checks
+
+- Source snapshot base: local commit `7057882fa4c481fb878de4cc27d3a827179f7ddd`
+  plus the existing working-tree state; relevant change is the Week 5 drawing
+  and focus-target code in `ps1/spu_probe.c`.
+- Assets: pinned revision `724eba9de9e76761d9cefd52169926bc51c760a5`.
+- Build directory: `C:\Users\Manau47\Documents\Codex\week5-scene-v168-build`.
+- Previous build preserved: `C:\Users\Manau47\Documents\Codex\week5-scene-v167g-build`.
+- Converted Week 5 scene `W5SCENE.BIN`: same hash as v167; audio payload hash
+  also same. No image, audio, chart, or atlas converter ran.
+- Dry-run: 4 tasks only (2 C compilations, link, ISO creation).
+- Build: success. The SDK stream source emitted two existing volatile qualifier
+  warnings.
+- ISO root ordering check: `SYSTEM.CNF` entry 1, `FUNKIN.EXE` entry 2.
+- Delivered BIN SHA-256:
+  `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`.
 
 ## Validation status
 
-This build has not been run in DuckStation by Codex or on a real console. The corrected framing, Evil background fill/tree, layer order, menu-to-song transition, and audio stability await the user's test. The reference comparison and source inspection identify the faults; they do not establish runtime validation.
+Compiled and packaged, but not executed in DuckStation by Codex. The user will
+load the CUE and report the visual result. Therefore the plate alignment,
+Winter Horrorland fill/tree, camera framing, cross-song transitions and any
+remaining composition issues are still unverified in execution. Real hardware
+has not been tested.

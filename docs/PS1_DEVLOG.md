@@ -899,25 +899,339 @@ ISO reorder checks passed. DuckStation and real-console execution have not been
 performed; the user must load the CUE and report composition, animation, pause,
 audio and transition behavior. See [`PS1_WEEK5_V167_SCENE.md`](PS1_WEEK5_V167_SCENE.md).
 
+## Week 5 v168 — composition correction after v167 review
 
+This pass compares the user's v167 DuckStation captures with the supplied
+reference recording and the pinned stage JSON (`mallXmas.json`, `mallEvil.json`).
+The previous v167 captures show (1) Winter Horrorland's transparent stage plate
+exposing framebuffer black over a large area and its official evil tree absent,
+and (2) a Mall plate shifted down/right despite the overscan comment. The
+renderer also drew the upper crowd after the escalator/tree, contrary to the
+official z order.
 
-## v168 — Week 5 composition recheck
+Changes are limited to Week 5 scene drawing and camera targets:
 
-Compared the v167 screenshots to the pinned Week 5 stage data and supplied reference video. Corrected the overscan plate origin, Winter Horrorland backing fill/tree, Christmas Mall depth order and snow-under fill, and Dad/BF focus offsets. No assets, audio, charts, gameplay, or animation timing changed. Incremental compile and ISO generation succeeded; no asset converters ran. BIN SHA-256: `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`. DuckStation and console testing remain pending. Full notes: [`PS1_WEEK5_V168_COMPOSITION.md`](PS1_WEEK5_V168_COMPOSITION.md).
+- Center the 256x192 stage plates at their 1.5x (384x288) draw size. The old
+  top-left offset `(-128,-96)` placed them at screen `(32,24)`; it is now
+  `(-192,-144)`, yielding the intended 32x24 overscan around 320x240.
+- Fill the Mall Evil viewport with the stage's official `#23062D` solid color
+  before drawing its alpha-transparent PNG; draw the omitted Evil Tree layer.
+- Restore the Mall's official layer order: background, upper crowd, escalator,
+  Christmas tree, lower crowd, snow fill/foreground, GF, opponent, Santa, BF.
+  Add the official `snowUnder` fill below the thin `fgSnow` strip.
+- Apply the pinned Dad/BF camera offsets, scaled from source coordinates to the
+  PS1 scene coordinate system, instead of aiming directly at character centers.
+  Keep the same character scale, scene assets, animations, charts, gameplay and
+  audio data.
 
+No visual assets were regenerated. `W5SCENE.BIN` is byte-identical to v167
+(SHA-256 `F728D0086461EFD649EED113D930CD33AE82CFA1F0BEE3CC7FB7D49F5846D840`);
+the four-channel music payload is also byte-identical. Static ISO verification
+places `SYSTEM.CNF` at root entry 1 and `FUNKIN.EXE` at entry 2.
 
+### Build and evidence
+
+- Build: `ps1-bopeebo-playable-disc`, PSn00bSDK 0.24 / GCC 12.3 / Ninja.
+- Dry-run: only `spu_probe.c`, SDK `stream.c`, link and ISO creation; no resource
+  conversion command was scheduled.
+- Compile/link/ISO: succeeded. Two existing SDK `volatile` qualifier warnings
+  appeared in `stream.c`; no project compile errors.
+- Delivered BIN: `C:\Users\Manau47\Documents\Codex\week5-scene-v168-delivery\funkin-ps1-week5-scene-v168.bin`
+  (339,708,768 bytes, SHA-256
+  `A9CBDD0133CAB85284925AC9D06F5C73261F39F9976AC141BB151A650352D908`).
+- CUE: adjacent file `funkin-ps1-week5-scene-v168.cue`.
+- DuckStation and real hardware: not run by Codex. The user must load this CUE;
+  the correction is not visually validated yet.
+
+The next check should compare Mall and Winter Horrorland in the normal build,
+then confirm the visible background coverage, evil tree placement, 4:3 crop,
+layer overlap and camera transition. See also `PS1_WEEK5_V168_COMPOSITION.md`.
 ## 2026-11-06 — Week 5 composition transform correction (v169)
 
-Retour utilisateur : la composition v168 reste très éloignée des références. L'audit du code a trouvé une cause concrète : le renderer appliquait l'échelle de chaque image au déplacement monde et plaçait les accessoires avec des coordonnées écran choisies à la main plutôt qu'avec les données mallXmas/mallEvil épinglées. v169 utilise une conversion commune 1:10, les positions, offsets caméra, parallaxes et profondeurs du JSON original, et dissocie zoom caméra et taille locale des images. Le fond 256×192 à 1,5× est centré avec 32×24 pixels d'overscan.
+Retour utilisateur : la composition v168 reste très éloignée des références.
+L'audit du code a trouvé une cause concrète : le renderer appliquait l'échelle
+de chaque image au déplacement monde, et plaçait les accessoires avec des
+coordonnées écran choisies à la main plutôt qu'avec les données mallXmas/
+mallEvil épinglées. v169 utilise une conversion commune 1:10, les positions,
+offsets caméra, parallaxes et profondeurs du JSON original, et dissocie
+zoom caméra et taille locale des images. Le fond 256×192 à 1,5× est centré
+avec 32×24 pixels d'overscan.
 
-Le paquet converti Week 5 est réutilisé octet pour octet; aucune conversion d'image, de chart ou d'audio n'a été lancée. Dry-run : compilation de `spu_probe.c`, édition de liens et création ISO uniquement. Compilation et création du disque réussies. BIN SHA-256 : `661CE1D91A73A7E7B417A07D32E0232867245F542594947E8B2E3B16145486C2`. La branche a reçu le correctif source équivalent dans le commit `bd55029eb5f04297521fb74189046475f4dac728`; le BIN local a été produit depuis le snapshot de build archivé et n'est pas déclaré identique à un checkout propre de ce commit. Essai DuckStation par l'utilisateur en attente; composition visuelle non validée. Voir `PS1_WEEK5_V169_COMPOSITION.md`.
+Le paquet converti Week 5 est réutilisé octet pour octet; aucune conversion
+d'image, de chart ou d'audio n'a été lancée. Dry-run : compilation de
+`spu_probe.c`, édition de liens et création ISO uniquement. Compilation et
+création du disque réussies. BIN SHA-256 :
+`661CE1D91A73A7E7B417A07D32E0232867245F542594947E8B2E3B16145486C2`.
+Essai DuckStation par l'utilisateur en attente; composition visuelle non
+validée par cet état. Voir `PS1_WEEK5_V169_COMPOSITION.md`.
 
-## 2026-11-06 — Week 5 v169b character anchors
+## 2026-11-06 — Week 5 v169b : correction finale des ancres
 
-Avant livraison, vérification finale : les macros de personnage générées étaient déjà dans l'espace monde PS1 adapté. Leur division par dix une seconde fois déplaçait les personnages. v169b prend les positions depuis mallXmas.json/mallEvil.json et les convertit une fois. Le paquet de scène existant est réutilisé; aucun asset n'est reconverti. Compilation/ISO réussies, invocation Ninja finale sans travail restant. BIN SHA-256 `8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`; CUE SHA-256 `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`. Snapshot source/configuration livré séparément. Test DuckStation par l'utilisateur en attente; aucune validation visuelle/console n'est revendiquée.
+Avant la livraison, comparaison de la source officielle et des macros
+converties : les macros `BOPEEBO_WEEK5_*_X/Y` décrivaient déjà l'espace monde
+PS1 adapté. Leur division supplémentaire par dix avait déplacé personnages et
+cibles caméra. La source utilise maintenant directement les positions brutes
+des personnages dans `mallXmas.json` / `mallEvil.json`, puis ne les convertit
+qu'une fois. Aucun asset reconverti ou gameplay/audio/chart n'a changé.
 
-## 2026-11-06 — v169b boot hang and v169c ISO root fix
+Build incremental depuis le cache v168 : dry-run limité à la compilation C,
+l'édition de liens et l'ISO ; aucune conversion. Le build s'est terminé avec
+succès et une seconde invocation Ninja a répondu `no work to do`. BIN SHA-256
+`8652835D4A2AB442C7298BE8431F0EF570920FB843F1159766D14B86F8D8BA4D`, CUE
+SHA-256 `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`.
+Livraison et snapshot source/cache dans
+`C:\Users\Manau47\Documents\Codex\week5-scene-v169b-delivery` ; le premier
+v169 préflight reste conservé séparément. Aucun test DuckStation par Codex et
+aucune validation visuelle utilisateur à ce stade.
 
-Retour utilisateur : v169b reste au logo Sony. L'ISO place `SYSTEM.CNF;1` en 93e entrée fichier du répertoire racine et `FUNKIN.EXE;1` en 36e. Les deux fichiers et leur contenu sont présents, mais cet ordre reproduit le défaut de démarrage déjà connu.
+## 2026-11-06 — v169b bloquée au logo Sony, v169c réordonnée
 
-v169c réordonne uniquement les enregistrements racine avec l'outil vérifié `reorder_iso_system_cnf.py --exe-after-system-cnf`. Le script vérifie les EDC/ECC, place SYSTEM.CNF puis FUNKIN.EXE en tête et confirme qu'aucun octet hors des secteurs du répertoire racine ne change. Pas de recompilation, code ou ressource modifié. BIN SHA-256 `AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`; CUE SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`. L'essai DuckStation est en attente; aucun démarrage réussi n'est revendiqué.
+Retour utilisateur : v169b reste au logo Sony/PlayStation. La vérification
+directe de l'ISO trouve `SYSTEM.CNF;1` en 93e entrée fichier et `FUNKIN.EXE;1`
+en 36e; les contenus sont présents et corrects, mais l'ordre racine répète le
+défaut de démarrage déjà rencontré sur les anciennes images. La v75 de référence
+et v168 plaçaient ces entrées dans le premier secteur du répertoire.
+
+v169c est dérivée de la v169b par le seul outil existant
+`reorder_iso_system_cnf.py --exe-after-system-cnf`. La vérification du script
+confirme EDC/ECC valides et aucun changement hors des quatre secteurs bruts
+contenant le répertoire racine. `SYSTEM.CNF`, PS-X EXE, code et ressources sont
+inchangés; la première entrée fichier est maintenant SYSTEM.CNF, la deuxième
+FUNKIN.EXE. Pas de compilation ni de reconversion. BIN SHA-256
+`AD82EA9B22ABA753EB0D2BFBC5592FC534FF9342EE187359DCB17B675A0C710A`; CUE
+SHA-256 `0FD36D0C8454C756C6AC70B9CD5AED0662FD5F4F0960072D0C54862F86EA1AD1`.
+Le nouveau disque est livré dans `week5-scene-v169c-rootfix`. Démarrage
+DuckStation à confirmer par l'utilisateur; aucune validation runtime n'est
+revendiquée.
+
+## 2026-11-07 — Week 5 v170b, échelle et palettes
+
+Retour v169c : placements jugés nettement meilleurs, mais échelles/détails de
+Mom/Dad et GF, étage supérieur du mall et foule encore insuffisants. v170b
+agrandit les cels Mom/Dad et GF de 80x96 à 96x112, garde BF/Monster en 80x96
+pour rester dans les neuf pages, attribue une CLUT par page et dessine la foule
+supérieure au-dessus de l'escalator avec une échelle de décor accrue. La taille
+du paquet W5 augmente de 4 Kio; les charts et pistes audio restent identiques.
+
+Dry-run : compilation des deux sources C, link et création ISO uniquement.
+Compilation/ISO réussies. Le réordonnancement racine place SYSTEM.CNF puis
+FUNKIN.EXE en premières entrées. BIN SHA-256
+`D7CC97424C98AF233D34B9EECEC2B7C85BE853F7F177017DEFBAC14CC2937709`, CUE
+SHA-256 `31992FEC0A7795285531EAEE3083F7DDE8D4D1BB4223D71B58F15AF6748FBC5A`.
+Pas d'essai DuckStation/console par Codex : le rendu, les transitions, l'audio
+et le gameplay attendent l'essai utilisateur. Détails et budgets dans
+[`PS1_WEEK5_V170B_SCALE_PALETTE.md`](PS1_WEEK5_V170B_SCALE_PALETTE.md).
+
+## 2026-11-07 — Week 5 v171, plans officiels et échelle
+
+Après retour v170b, comparaison des couches et tailles avec `mallXmas.json`,
+les rigs/XML épinglés et la vidéo de référence. La foule supérieure était
+beaucoup trop élargie par son facteur de rendu et l’ordre GPU mettait
+`bgEscalator` derrière `upperBoppers`, contrairement aux z officiels. v171
+ramène la foule à une projection calculée depuis sa largeur source de 2596 px,
+remet l’ordre des plans officiel, augmente les cels parents/GF de 96×112 à
+104×116 et leur échelle Q8 de 171 à 190. Le nombre/cadence des poses restent
+inchangés; BF, Monster, gameplay et audio ne sont pas retouchés.
+
+Pour tenir la VRAM, les pages communes sont séparées des pages Noël/Monster;
+les variantes réutilisent leurs emplacements physiques à tour de rôle.
+11 pages logiques (2 fonds alternatifs, 6 communes, 2 Noël, 1 Monster), au
+maximum 9 pages 8bpp simultanées pour Noël. Paquet graphique : 726 528 octets
+(+132 096 sur disque); les audios et charts sont repris sans modification du
+paquet v170b.
+
+Dry-run : code C, lien et image disque; aucune reconversion générale
+graphismes/audio/charts. Compilation et génération ISO réussies dans
+`week5-scene-v171-build`; BIN/CUE livrés séparément. Pas d’exécution
+DuckStation par Codex ni de test console : composition, transitions, audio et
+animations de cette version restent à vérifier par l’utilisateur. Rapport :
+[`PS1_WEEK5_V171_LAYERS_SCALE.md`](PS1_WEEK5_V171_LAYERS_SCALE.md).
+
+## 2026-11-07 — v171 écran Sony : correction du répertoire ISO
+
+L’utilisateur a signalé que v171 restait au logo Sony. L’inspection du BIN a révélé que l’ordre racine n’était pas celui annoncé dans le manifeste v171 : `FUNKIN.EXE;1` était à l’entrée fichier 36 et `SYSTEM.CNF;1` à l’entrée 93, car le générateur d’ISO les trie alphabétiquement. v171b reprend le BIN v171 sans recompiler ni régénérer de ressources et réordonne uniquement les enregistrements du répertoire racine. Les secteurs modifiés sont les secteurs 22–24; les payloads et extents de `SYSTEM.CNF` et `FUNKIN.EXE` restent identiques. Les entrées fichier sont désormais `SYSTEM.CNF` puis `FUNKIN.EXE`. Le correctif statique n’est pas encore validé en DuckStation ou sur console; l’essai manuel est requis. BIN SHA-256 `63995D898CE740053C741CE41F1E4DB510CEAD89F91C1AB7DB51E022CBF8F7DD`, CUE SHA-256 `BDA46FD0A026D16A0676E12571FB4D6AA20543D022A974902780EE999771D653`.
+
+## 2026-11-07 — Week 5 v172, repère commun du décor
+
+Après le retour v171, l’audit a trouvé une incohérence de repère : les fonds `bgWalls`/`evilBG` étaient recadrés au centre en 4:3 puis dessinés comme des plaques plein écran, alors que les couches et personnages utilisaient les coordonnées de scène officielles. v172 préserve l’aspect source, applique les positions, échelles de sprite et scrolls officiels dans le même mapping/caméra que les autres couches. Seules les deux pages d’arrière-plan et leurs CLUT sont reconstruites; les autres pages, charts, catalogues et pistes sont réutilisés byte-à-byte. Le dry-run n’indiquait que deux compilations C, le lien et l’ISO. Compilation et vérifications statiques d’ordre ISO réussies. Aucun essai DuckStation/console : validation de l’image, composition et alignement reste attendue de l’utilisateur. BIN SHA-256 `28A5345E31163CF6FA4E090227C19E77D7C6AE423A175AB9D5332A19BF7744E4`; CUE SHA-256 `BDA46FD0A026D16A0676E12571FB4D6AA20543D022A974902780EE999771D653`. Rapport : [`PS1_WEEK5_V172_BACKGROUND_TRANSFORM.md`](PS1_WEEK5_V172_BACKGROUND_TRANSFORM.md).
+# Week 5 v173 — échelle native des fonds
+
+- Retour utilisateur : v172 confondait encore débordement hors cadre et échelle du décor. Les bords hors écran sont attendus ; ils ne doivent pas servir à réduire l’image pour la faire tenir en 4:3.
+- Correction isolée : les fonds gardent leur position de scène et leur rapport d’aspect, mais leur taille de destination reprend l’échelle effective de la scène officielle 1280×720 réduite uniformément à 320×240. Noël : 661×392 px (contre 445×265 en v172). Mall Evil : 698×428 px (contre environ 376×230). Les débordements sont donc rognés naturellement par le viewport.
+- Seul le facteur d’échelle de destination du fond change (`bg_art_scale` : Noël 248→368, Evil 210→389). Pages, CLUT, audio, charts, caméra, personnages et gameplay restent identiques à v172.
+- Dry-run après réutilisation des poses BF : compilation de `spu_probe.c`, lien et image disque uniquement ; aucune conversion de graphismes, audio ou charts. Build réussi avec PSn00bSDK 0.24 / GCC 12.3. Root ISO réordonné : SYSTEM.CNF entrée 1, FUNKIN.EXE entrée 2 ; secteurs modifiés EDC/ECC recalculés.
+- Aucune observation DuckStation ni console pour v173. Le rendu et la composition restent à valider par l’utilisateur.
+- Livraison et empreintes : `C:/Users/Manau47/Documents/Codex/week5-scene-v173-delivery/build-manifest.md`.
+
+## 2026-11-07 — Week 5 v174, éditeur temporaire de composition
+
+Après plusieurs passes de composition qui ne correspondaient pas au modèle,
+l’utilisateur a demandé un éditeur en jeu comparable au tuner temporaire de
+Week 4. v174 expose séparément les couches des variantes Mall de Noël et Evil,
+y compris la caméra. Select ouvre l’éditeur, Haut/Bas choisit une couche,
+Gauche/Droite modifie X, L1/R1 modifie Y, Croix/Rond règle l’échelle, R2
+accélère, Carré remet la couche à zéro, Start met la musique et l’horloge de
+scène en pause, Triangle affiche toutes les valeurs. Les réglages restent
+temporaires et indépendants entre variantes. Le build de démonstration suit les
+charts visuellement mais neutralise score, santé, pénalités et game over afin
+que la navigation ne juge pas les notes.
+
+La compilation incrémentale et l’ISO ont réussi. Le dry-run ciblé ne planifiait
+que la compilation de `spu_probe.c` et du `stream.c` du SDK, le lien et la
+création disque; aucune conversion d’assets/audio/charts. Les paquets Week 5
+et poses BF sont byte-identiques à v173. L’ISO place statiquement SYSTEM.CNF
+et FUNKIN.EXE aux entrées racine 1 et 2. Deux avertissements `volatile`
+existants proviennent du `stream.c` SDK. L’éditeur n’a pas encore été exécuté
+dans DuckStation; l’essai utilisateur est requis avant d’adopter des valeurs.
+Console réelle non testée. Détails, commandes, SHA-256 et snapshot source :
+[`PS1_WEEK5_SCENE_EDITOR_V174.md`](PS1_WEEK5_SCENE_EDITOR_V174.md) et le dossier
+de livraison externe `C:/Users/Manau47/Documents/Codex/week5-scene-editor-v174-delivery/`.
+
+## 2026-11-07 — Week 5 v175, premier jet repris de l’éditeur
+
+L’utilisateur a fourni un premier placement réglé dans le tuner v174. Les onze
+couches Christmas Mall ont été relevées par lecture du scanner mémoire DuckStation
+sur les symboles de la map v174, puis installées comme valeurs de départ du build.
+Carré restaure maintenant ce premier jet pour le calque choisi ; le mode éditeur
+reste disponible. La rangée Evil Mall est restée à ses valeurs neutres.
+
+Les cibles de caméra suivent déjà les ancrages édités BF/Dad/GF dans le code v174.
+La caméra a donc repris son déplacement indépendant relevé dans le même tableau,
+sans ajout d’un offset de correction supplémentaire. La composition et le focus
+avec ces valeurs dans v175 restent à valider par l’utilisateur. L’escalator et la
+foule sont inclus aux tailles réglées ; l’amélioration de leurs détails est différée.
+
+Build incrémental terminé avec les options v174. Dry-run limité à deux unités C,
+lien et image disque ; aucun asset, chart ou audio reconverti. Le paquet Week 5 et
+le flux musical sont inchangés. BIN SHA-256
+`C50264FFB7CDD08848A7DFC1E981FCEAE5C7CFAB05E5F8F48B696DB759CD7D90`, CUE
+`65A155397AB1B2F21B6525C8734953826EF9CD9384AD28DB7751C7CEE03EC126`. L’image
+est préparée pour l’essai utilisateur ; elle n’a pas encore été exécutée dans
+DuckStation ni sur console. Snapshot, configuration, ELF/MAP et image sont
+archivés dans `C:/Users/Manau47/Documents/Codex/week5-first-pass-v175-delivery/`.
+Rapport : [`PS1_WEEK5_FIRST_PASS_V175.md`](PS1_WEEK5_FIRST_PASS_V175.md).
+## 2026-11-08 — Week 5, correction ciblée du focus caméra BF (v176)
+
+La capture v175 montre BF au bord droit et inférieur. En appliquant la formule de projection au focus BF, la cible codée (`BF -30 X`, `-20 -28 Y`) combinée aux décalages d’édition v175 place l’ancre théorique autour de `(259,242)` à 1,8×. J’ai modifié uniquement la cible caméra BF : elle devient `BF X`, `BF Y -20`, ce qui donne une projection estimée `(205,192)`. Les focus Dad/GF, les positions d’acteurs, le décor et les autres réglages restent inchangés.
+
+Le dry-run ciblé prévoyait uniquement recompilation de `spu_probe.c`, lien de l’ELF et création du BIN/CUE. Build réussi ; aucune reconversion des graphismes, charts ou audio. Le disque v176 est livré séparément. Le changement de cadrage n’a pas encore été vérifié par l’utilisateur dans DuckStation : attendre son essai avant de le déclarer validé. Détails et hashes dans `docs/PS1_WEEK5_BF_CAMERA_V176.md` et le dossier d’archive local v176.
+
+Essai utilisateur v176 : blocage observé au logo Sony/PlayStation, donc ce build est refusé. Aucun correctif ni nouveau disque n’a été produit pendant le diagnostic.
+
+Comparaison statique avec v175 : le CUE v176 référence bien son BIN. Les secteurs `SYSTEM.CNF` et l’en-tête PS-X EXE (entrée `0x80022314`, chargement `0x80010000`, taille texte `0x000F7800`) correspondent ; l’exécutable embarqué est identique au FUNKIN.EXE livré. Le désassemblage du point d’entrée `0x80022314–0x80022400` est identique. Les seules différences de code sont trois constantes dans `camera_target_for_focus()`.
+
+Essai direct autorisé dans DuckStation sur le FUNKIN.EXE v176 extrait : le programme s’exécute et atteint `FUNKIN PS1 ERROR / CODE 4`, avec 59 IPS et zéro secteur reçu, résultat attendu sans disque monté pour cette voie de lancement. Cela confirme que l’exécutable extrait s’exécute, mais ne valide ni le démarrage BIOS par CUE ni l’accès CD. Le gel spécifique au démarrage depuis le disque reste inexpliqué. L’émulateur a été laissé sur cet écran d’erreur CD ; aucun test console réelle.
+
+## 2026-11-08 — v176 BIOS boot-order diagnostic image
+
+After the user reported that v176 remained at the Sony/PlayStation logo, static ISO inspection found a packaging difference from v175: both discs have 117 root files, but v175 places `SYSTEM.CNF` and `FUNKIN.EXE` at root records 1 and 2, while v176 places them at 93 and 36. The PSn00bSDK 0.24 ISO template warns that the PS1 BIOS root directory is limited to 30 entries. This is a strong candidate cause, not yet confirmed by an emulator run.
+
+A targeted image was created from the exact v176 BIN, without rebuilding code or converting assets. It moves only the two boot records to positions 1 and 2 and recalculates EDC/ECC for root-directory sectors LBA 22–25. The source and embedded executable hashes remain unchanged. An initial `mkpsxiso`-only repack did not fix the ordering: it emitted alphabetical root records again, so that intermediate image is not the test CUE.
+
+Test CUE: `C:/Users/Manau47/Documents/Codex/v176-boot-record-fix/funkin-ps1-v176-bootfixed.cue`; BIN SHA-256 `C7BC524922143849F3DAE34457F69BD7E4C3D1D712AAA0A6CD684DF214640E96`. Static checks show SYSTEM record 1 and FUNKIN record 2, with unchanged file extents. DuckStation and console execution are still pending user confirmation.
+
+
+## 2026-11-08 — Week 5 second-pass capture (v177)
+
+See [PS1_WEEK5_SECOND_PASS_V177.md](PS1_WEEK5_SECOND_PASS_V177.md) for captured Memory Analyzer offsets, camera change, VRAM feasibility calculations, build configuration and pending validation.
+
+## 2026-11-08 — Week 5 background sprite detail (v178)
+
+Clarification utilisateur : BF est déjà convaincant et les sprites Mom/Dad/GF ne sont pas la cible de cette passe. Le besoin porte sur les sprites de décor, en priorité la foule du balcon et l’escalator. Les quatre poses de foule et l’animation existante sont conservées; aucune nouvelle frame ni modification de cadence.
+
+Le nouveau générateur `ps1/rebuild_week5_backdrop_detail.py` repart du paquet converti v171 et ne relit que les sources officielles `upperBop` et `bgEscalator`. Il reconstruit la foule du balcon et l’escalator à 1,5× de densité, les découpe en rectangles compatibles avec les pages 256×256, conserve les offsets alpha, puis compense leur taille d’affichage pour garder les ancres et dimensions v177. BF, Mom, Dad, GF, compositions, cibles caméra, gameplay, charts et audio restent inchangés.
+
+Le paquet passe de 11 à 12 pages logiques : +66 048 octets sur disque (une page texture et une CLUT). Les pages 0–7, 9 et l’ancienne page Evil 10 déplacée en page 11 sont identiques par hash, de même que leurs palettes. Les deux nouvelles pages réutilisent la CLUT Christmas existante. Le chargement Christmas occupe toujours 10 pages VRAM physiques; le tampon temporaire reste 64 Kio, sans chargement des PNG haute résolution dans la RAM du jeu. La foule et l’escalator utilisent trois quads chacun, soit +4 quads par frame active et 10 entrées de frame dans le tableau. La CLUT de 12 pages tient exactement dans les 3 secteurs déjà lus. Les UV et dimensions des 79 entrées ont été vérifiés pour tenir dans les limites 256×256.
+
+Dry-run du disque : recompilation de `spu_probe.c` et du module cdstream SDK, lien ELF puis génération BIN/CUE; aucune reconversion hors des deux sprites de décor. Compilation PSn00bSDK 0.24 et création ISO réussies. Deux avertissements `volatile` préexistants proviennent du `stream.c` du SDK. Le BIN brut de mkpsxiso avait des entrées racine alphabétiques; il n’est pas le disque livré. Le CUE final utilise ensuite `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf`, vérifie les EDC/ECC et place `SYSTEM.CNF` puis `FUNKIN.EXE` en entrées 1 et 2; les octets hors répertoire racine sont inchangés. L’exécutable du disque final correspond octet pour octet au PS-X EXE compilé.
+
+Le CUE final (répertoire racine corrigé) est livré séparément dans `C:/Users/Manau47/Documents/Codex/week5-backdrop-hires-v178-rootfixed-delivery/`. Le build n’a pas encore été observé dans DuckStation ni sur console; le gain de détail et l’absence de régression audio restent à valider par l’utilisateur. Détails et procédure dans [PS1_WEEK5_BACKDROP_DETAIL_V178.md](PS1_WEEK5_BACKDROP_DETAIL_V178.md). L’état local avait HEAD `7057882fa4c481fb878de4cc27d3a827179f7ddd` et contenait des modifications de travail préexistantes; les hashes du code construit et le CMakeCache sont archivés avec le disque.
+
+## 2026-11-08 — Week 5 v178 composition regression and v179 correction
+
+L’utilisateur a signalé que le build haute densité v178 avait dégradé la composition. Comparaison du générateur et du paquet : la page texture Evil d’origine (page logique 10 en v177) n’était pas recopiée à la nouvelle page logique 11; une seconde copie de la page Christmas remplaçait ses pixels. L’extraction personnalisée des danseurs recentrait aussi verticalement les cadres alors que le convertisseur v177 les enregistrait par le bas; enfin les pixels alpha <128 étaient rognés même si le moteur les traite comme transparents. Ces différences sont maintenant corrigées dans le générateur v179, sans toucher aux personnages, caméras ou placements.
+
+Contrôles statiques v179 : le hash de la page Evil logique 11 égale celui de la page v177 déplacée; les rectangles escalator/foule reprojetés à l’échelle v177 sont à moins de 0,34 pixel d’écart sur dimensions et offsets. Le CUE v179 doit encore être observé par l’utilisateur dans DuckStation. v178 demeure archivé comme variante rejetée; aucune validation visuelle ni console réelle n’est revendiquée.
+
+Le précédent compte rendu v178 indiquait à tort que l’ancienne page Evil était déplacée à l’identique. La vérification après le retour utilisateur a établi que les pixels de cette page avaient été remplacés; cette erreur est réparée en v179 et documentée ici.
+
+Build v179 : Ninja dry-run limité à `spu_probe.c`, `stream.c` du SDK, lien et disque. Aucun nouvel encodage audio/chart et aucune conversion générale. Le build a réussi sous PSn00bSDK 0.24 (deux avertissements `volatile` déjà présents dans le SDK). Vérification ISO : SYSTEM.CNF/FUNKIN.EXE en entrées visibles 1/2, chaîne BOOT correcte, exécutable PS-X EXE embarqué identique à celui compilé. BIN SHA-256 `9F3880640E755407E9DBE01271F85B56FF14E2DDD72F1582A0C345C6EDCAB45B`; CUE SHA-256 `BDA46FD0A026D16A0676E12571FB4D6AA20543D022A974902780EE999771D653`. Fichiers et configuration exacts archivés dans le dossier local `week5-backdrop-hires-v179-delivery/source-snapshot`. Exécution DuckStation en attente; rendu non validé, console non testée.
+## 2026-11-08 — Week 5 scene editor restored (v180)
+
+The user reported that the Week 5 composition was unacceptable and asked to restore the level editor. Prepared a separate Week 5 scene-editor build on the corrected v179 package, without changing scene coordinates, assets, charts, gameplay art, or audio. CMake enables `FUNKIN_PS1_WEEK5_COMPOSITION_EDITOR=ON` and `FUNKIN_PS1_SCENE_DEMO_DEFAULT=ON`; dry-run listed only the gameplay source/SDK stream compiles, link, and ISO creation. No asset conversion was scheduled. The Week 5 package and generated visual-data header match v179 byte-for-byte.
+
+The editor is hidden at boot and toggled by Select in a Week 5 song. D-pad selects/moves layers; L1/R1 changes Y; Cross/Circle scales; R2 increases step; Square resets; Triangle prints the transform summary; Start pauses/resumes. Scene-demo bypasses scoring, health, misses, and game over while keeping chart animation for safe editing. Changes are temporary and not saved to disc.
+
+Build and root-order repair completed; static checks put `SYSTEM.CNF;1` first and `FUNKIN.EXE;1` second. Delivery: `week5-scene-editor-v180-delivery`. DuckStation execution and user validation are pending; no runtime behavior is claimed as verified.
+
+## 2026-11-08 — Week 5 memory capture and BF camera correction (v181)
+
+The user performed another DuckStation Memory Scanner pass on the Week 5
+Christmas Mall editor. I copied the eleven signed X/Y offsets, in the
+`W5_EDIT_*` layer order, into both the baked scene defaults and the editor's
+initial state. The Evil variant and existing layer scales remain unchanged.
+The user clarified that the earlier camera request was reversed: raising the
+BF camera should move BF down on screen. I changed only the BF-focus camera
+target by -11 world units. At zoom 460/256, the projected displacement is
+approximately 20 screen pixels downward; this is a calculation pending the
+user's visual confirmation.
+
+Build v181 used a separate copy of the v180 build directory. Dry-run scheduled
+only the game source, PSn00bSDK cdstream source, link, and disc generation; no
+resource conversions. All 133 checked generated BIN/VAG/header resource files
+match v180. The raw image put SYSTEM.CNF at root record 93, so the existing
+root-order repair created a separate delivered BIN/CUE with SYSTEM.CNF and
+FUNKIN.EXE at root records 1 and 2. Build succeeded; two existing SDK
+`volatile` warnings remain. The user has not loaded this CUE yet. DuckStation
+visual validation and console testing remain pending. Hashes, exact config,
+source diff, and snapshot are in `PS1_WEEK5_MEMORY_PASS_V181.md` and
+`C:/Users/Manau47/Documents/Codex/week5-memory-pass-v181-delivery/`.
+
+## Week 5 GF zoom and crowd registration v182 — 2026-11-08
+
+The user clarified that Christmas GF looked too small and supplied the
+current enlarged value from the scene editor. DuckStation Memory Scanner
+value `0x0160` (352 Q8) is now the baked normal-build GF scale as well as the
+editor default. The global Weeks 1–5 detail-matching pass remains deferred.
+
+The four official upper-crowd cels and their 24 fps sequence are unchanged.
+Their independently trimmed source rectangles had heights 52–55 and vertical
+offsets 8–5. The targeted packer now uses one 384×55 canvas and y offset 5 for
+each cel, then splits it into the same page-safe strips. This addresses
+per-pose dimension/rounding differences; whether this removes the user's
+observed crowd jump still requires the CUE test.
+
+The package remains 12 logical pages / 792,576 bytes. SHA comparisons against
+v181 found all matching VAG and chart files identical; only the Week 5 scene
+payload/header changed. Ninja dry-run listed only the main source, SDK
+`stream.c`, link and ISO. Build and root-order repair succeeded; 117 ISO root
+files were checked, with SYSTEM.CNF and FUNKIN.EXE first. The CUE was not run
+in DuckStation in this pass, and console hardware was not tested. See
+[`PS1_WEEK5_GF_CROWD_V182.md`](PS1_WEEK5_GF_CROWD_V182.md) and the external
+`week5-gf-crowd-v182-delivery` directory for hashes, configuration and source
+snapshot.
+# 2026-11-08 — v183 : correction ciblée de la foule basse Week 5
+
+L’utilisateur a précisé que le défaut de clipping concerne la foule basse derrière Mom, Dad, GF et BF, et non la foule supérieure. La v182 précédente avait ciblé le mauvais groupe.
+
+Le diagnostic statique des rectangles `CROWD_LOWER_0..3` dans le paquet v182 montrait des tailles recadrées de 158×53/54 et des offsets différents (`+9,+1`, `+9,+1`, `-9,0`, `+9,0`). Le cel 2 avait donc un écart de 18 px. v183 extrait les quatre cels officiels sur un canevas commun 176×54, réempaquette uniquement les rectangles de la page 9 et conserve sa CLUT, l’animation, l’échelle et la cadence. Les autres pages, ressources, gameplay et audio restent réutilisés.
+
+Compilation et création du disque réussies ; dry-run final limité à compilation, lien et ISO. L’image n’a pas été lancée dans DuckStation. Le clipping et le mouvement de la foule basse restent à confirmer par l’essai utilisateur. Rapport détaillé : `docs/PS1_WEEK5_LOWER_CROWD_V183.md`.
+
+## 2026-11-08 — Asset harmonization line, v183 baseline and v1 build
+
+L’utilisateur désigne v183 comme base validée. Son BIN/CUE et son snapshot source restent conservés dans `C:/Users/Manau47/Documents/Codex/week5-lower-crowd-v183-delivery/`; hashes de référence : BIN `63EAD9541EA8690C40DD2866E3DA976EC115BAC4D967C6F063D6DB52011C5B6E`, CUE `B86117223C353E77BF7AD9312C9835D65DA7A30986B3A1DCCB7A17D785BE33A6`. La confirmation utilisateur remplace l’état « essai en attente » noté lors de la livraison initiale; aucun nouvel essai DuckStation ni test console n’est affirmé.
+
+Nouvelle ligne dédiée `ps1-asset-harmonization-v1`, avec numérotation de livraison repartant à v1. Le premier build reprend les paquets convertis v183 et désactive uniquement les éditeurs temporaires de scène et le mode démo dans sa configuration de livraison. Aucun redimensionnement, recoloration ou réempaquetage graphique supplémentaire n’est appliqué : l’audit statique ne révèle pas de réduction de page sûre au-delà des réempaquetages W4/W7 déjà présents. Les espaces transparents dispersés ne libèrent pas une page et les UV/CLUT ne peuvent pas être dissociées.
+
+Les résultats de dry-run, compilation, tailles et hashes du nouveau BIN/CUE sont ajoutés après le build. L’essai utilisateur dans DuckStation reste requis avant toute validation de cette nouvelle image. Rapport et commandes : `PS1_ASSET_HARMONIZATION_V1.md`.
+
+### Résultats de compilation — harmonisation v1
+
+Dry-run Ninja : quatre tâches uniquement (compilation du jeu, compilation de `cdstream/stream.c` du SDK, lien ELF, création disque). Aucun convertisseur de ressource. La compilation réelle réussit avec deux avertissements `volatile` préexistants dans le lecteur du SDK. 133 fichiers produits `.bin`/`.vag`/`.h` comparés au build v183 : 0 différence de hash.
+
+La sortie fait 1 388 652 octets ELF et 1 017 856 octets EXE. Sections ELF : text 1 013 048, data 2 638, BSS 40 120 octets. Le ELF archivé v183 comptait text 1 008 920, data 2 766, BSS 40 104 : le total text+data+BSS est supérieur de 4 016 octets en v1. La désactivation éditeur/démo n’a donc pas prouvé de gain mémoire, et aucun gain RAM n’est revendiqué.
+
+Le BIN brut plaçait `SYSTEM.CNF` à l’entrée racine 93. La réparation ISO existante a produit une copie distincte où `SYSTEM.CNF` et `FUNKIN.EXE` sont aux entrées 1 et 2. L’EXE embarqué extrait du disque a le même SHA-256 que le résultat du lien. BIN final 339 939 264 octets, SHA `DDF9FF1782A6D6286EEB9A427BB33180F739CC20134D74AA2E4D7F67BC338E55`; CUE SHA `5684CE682125CF690946107B8B1F299CC49D6385E6CCB62D7118162CBA5B1E5D`. Livraison hors dépôt : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-delivery/`.
+
+La v1 n’a pas été exécutée dans DuckStation ni sur console. La v183 demeure la référence validée par l’utilisateur; l’essai de la v1 reste en attente.

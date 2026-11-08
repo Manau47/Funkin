@@ -35,4 +35,3 @@ Le CMake relance seulement le générateur ciblé, compile le code du jeu, lie l
 La compilation et les contrôles statiques du paquet ont réussi. Le générateur a conservé la taille de scène à 655 360 octets et n’a modifié que la page BF. `SYSTEM.CNF;1` et `FUNKIN.EXE;1` occupent les deux premières entrées du répertoire ISO.
 
 Le CUE n’a pas été lancé par l’agent. L’essai utilisateur dans DuckStation doit vérifier la fluidité des chants de BF, les quatre directions, les holds, Week 3 et les cycles de retour/retry. v141 n’est pas encore validée par l’utilisateur et n’a pas été testée sur console réelle.
-

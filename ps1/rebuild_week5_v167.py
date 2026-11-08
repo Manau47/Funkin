@@ -144,7 +144,7 @@ def make_assets(assets: pathlib.Path, output: pathlib.Path, header: pathlib.Path
     # Dedicated full-bleed background plates, one per mall variant.
     for page, source in enumerate(("bgWalls.png", "evilBG.png")):
         sw, sh = png_size(christmas / source)
-        filters = ("scale=256:192:force_original_aspect_ratio=increase:flags=area," 
+        filters = ("scale=256:192:force_original_aspect_ratio=increase:flags=area,"
                    "crop=256:192:(iw-ow)/2:(ih-oh)/2,format=rgba")
         plate = run_ffmpeg(FFMPEG, christmas / source, filters, 256, 192)
         fixed_pages[page][:256 * 4 * 192] = plate[:256 * 4 * 192]
@@ -199,9 +199,9 @@ def make_assets(assets: pathlib.Path, output: pathlib.Path, header: pathlib.Path
 
     # Regenerate every official character cel at higher source resolution,
     # then trim transparent margins while keeping the common foot/center anchor.
-    # 80x96 is a 25% larger, tall character cell than the old square 64x64,
-    # while remaining within the seven leased character/prop pages.
-    cell_w, cell_h = 80, 96
+    # Preserve more of the official high-resolution character linework before
+    # 8bpp conversion. The retained pose set and common anchors are unchanged.
+    cell_w, cell_h = 96, 112
     parents = Rig(assets / "shared/images/characters/parents-christmas", FFMPEG)
     parent_base = [112, 0, 28, 54, 83, 14, 41, 68, 97]
     parent_alt = [116, 7, 34, 61, 89, 21, 47, 75, 102]
@@ -269,17 +269,24 @@ def make_assets(assets: pathlib.Path, output: pathlib.Path, header: pathlib.Path
         records.append((item["name"], page_index, u, v,
                         item["w"], item["h"], (item["dx"] & 0xFFFF) << 16 | (item["dy"] & 0xFFFF)))
 
-    palette = median_palette(rgba_pages, 255)
-    indexed_pages = [quantize(page, palette) for page in rgba_pages]
-    clut = [0] + [rgb555(color) for color in palette[:255]]
-    clut += [0] * (256 - len(clut))
+    # A single 255-color CLUT for all nine pages made unrelated stage and
+    # character colors compete. Give each texture page its own 8bpp CLUT.
+    indexed_pages = []
+    clut_words: list[int] = []
+    for page in rgba_pages:
+        palette = median_palette([page], 255)
+        indexed_pages.append(quantize(page, palette))
+        page_clut = [0] + [rgb555(color) for color in palette[:255]]
+        page_clut += [0] * (256 - len(page_clut))
+        clut_words.extend(page_clut)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(b"".join(indexed_pages) + struct.pack("<256H", *clut))
+    output.write_bytes(b"".join(indexed_pages) + struct.pack(f"<{len(clut_words)}H", *clut_words))
 
     names = [r[0] for r in records]
     lines = ["/* Generated from pinned classic Week 5 assets by rebuild_week5_v167.py. */",
              "#ifndef PS1_WEEK5_VISUAL_DATA_H", "#define PS1_WEEK5_VISUAL_DATA_H",
              f"#define BOPEEBO_WEEK5_PAGE_COUNT {len(all_pages)}u",
+             f"#define BOPEEBO_WEEK5_PALETTE_SECTORS {((len(all_pages) * 512 + 2047) // 2048)}u",
              "#define BOPEEBO_WEEK5_CAMERA_ZOOM_Q8 460u",
              "#define BOPEEBO_WEEK5_CHARACTER_SCALE_Q8 171u",
              "#define BOPEEBO_WEEK5_BF_X 203", "#define BOPEEBO_WEEK5_BF_Y 163",
@@ -319,4 +326,3 @@ def main() -> None:
 if __name__ == "__main__":
     FFMPEG = "ffmpeg"
     main()
-

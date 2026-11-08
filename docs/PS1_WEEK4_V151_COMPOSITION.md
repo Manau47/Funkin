@@ -70,4 +70,3 @@ not a screenshot from the executable.
 No DuckStation execution or console test is claimed for v151. The user must
 load the CUE to judge the composition; this correction is not visually
 validated until that test.
-

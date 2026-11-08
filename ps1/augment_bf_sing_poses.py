@@ -161,4 +161,3 @@ if __name__ == "__main__":
     except Exception as exc:  # pragma: no cover - CLI diagnostic
         print(f"BF pose augmentation failed: {exc}", file=sys.stderr)
         raise SystemExit(1)
-
