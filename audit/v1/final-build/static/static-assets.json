@@ -1,0 +1,68 @@
+[
+  {
+    "name": "menu-buttons",
+    "symbol": "bopeebo_menu_button_frames",
+    "width": 128,
+    "height": 36,
+    "frames": 12,
+    "words_per_frame": 2304,
+    "bytes": 55296,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  },
+  {
+    "name": "menu-row-backgrounds",
+    "symbol": "bopeebo_menu_row_backgrounds",
+    "width": 128,
+    "height": 36,
+    "frames": 4,
+    "words_per_frame": 2304,
+    "bytes": 18432,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  },
+  {
+    "name": "gameover-death-frames",
+    "symbol": "bopeebo_death_frames",
+    "width": 80,
+    "height": 96,
+    "frames": 22,
+    "words_per_frame": 3840,
+    "bytes": 168960,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  },
+  {
+    "name": "freeplay-dj-page",
+    "symbol": "bopeebo_menu_dj_pages",
+    "width": 256,
+    "height": 256,
+    "frames": 1,
+    "words_per_frame": 32768,
+    "bytes": 65536,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  },
+  {
+    "name": "menu-title-pages",
+    "symbol": "bopeebo_menu_screen_pages",
+    "width": 256,
+    "height": 256,
+    "frames": 5,
+    "words_per_frame": 32768,
+    "bytes": 327680,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  },
+  {
+    "name": "freeplay-character-icons",
+    "symbol": "bopeebo_menu_character_icons",
+    "width": 28,
+    "height": 28,
+    "frames": 11,
+    "words_per_frame": 392,
+    "bytes": 8624,
+    "palette_entries": 256,
+    "transparent_index0_policy": "rendered transparent in contact sheet"
+  }
+]
