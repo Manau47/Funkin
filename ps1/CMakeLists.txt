@@ -280,10 +280,13 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		message(FATAL_ERROR "Set FUNKIN_PS1_FFMPEG to an ffmpeg executable for deterministic art conversion")
 	endif()
 	set(_playable_visual_header "${CMAKE_CURRENT_BINARY_DIR}/bopeebo_visual_data.h")
+	set(_week2_visual_source_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene-base.bin")
 	set(_week2_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene.bin")
 	set(_week1_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene.bin")
 	set(_bf_pose_header "${CMAKE_CURRENT_BINARY_DIR}/bf_sing_pose_data.h")
 	set(_week1_bf_pose_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene-bf-poses.bin")
+	set(_week2_bf_overlay_header "${CMAKE_CURRENT_BINARY_DIR}/week2_bf_overlay_data.h")
+	set(_week2_bf_overlay_payload "${_week2_visual_payload}")
 	set(_week3_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week3-scene.bin")
 	set(_week4_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week4_visual_data.h")
 	set(_week4_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week4-scene.bin")
@@ -418,17 +421,22 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			if(NOT EXISTS "${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
 				message(FATAL_ERROR "Missing reusable base package file: ${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}")
 			endif()
+			if(_base_package_file STREQUAL "week2-scene.bin")
+				set(_base_package_destination "${_week2_visual_source_payload}")
+			else()
+				set(_base_package_destination "${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}")
+			endif()
 			configure_file("${FUNKIN_PS1_PRECONVERTED_BASE_DIR}/${_base_package_file}"
-				"${CMAKE_CURRENT_BINARY_DIR}/${_base_package_file}" COPYONLY)
+				"${_base_package_destination}" COPYONLY)
 		endforeach()
 	else()
 		add_custom_command(
-			OUTPUT "${_playable_visual_header}" "${_week2_visual_payload}" "${_week1_visual_payload}" "${_week3_visual_payload}"
+			OUTPUT "${_playable_visual_header}" "${_week2_visual_source_payload}" "${_week1_visual_payload}" "${_week3_visual_payload}"
 			COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_visuals.py"
 				--assets "${FUNKIN_PS1_ASSETS_DIR}"
 				--ffmpeg "${FUNKIN_PS1_FFMPEG}"
 				${_options_art_args}
-				--week2-pages-output "${_week2_visual_payload}"
+				--week2-pages-output "${_week2_visual_source_payload}"
 				--week1-pages-output "${_week1_visual_payload}"
 				--week3-pages-output "${_week3_visual_payload}"
 				--output "${_playable_visual_header}"
@@ -467,6 +475,22 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		)
 		add_custom_target(funkin-ps1-bf-sing-poses DEPENDS "${_bf_pose_header}" "${_week1_bf_pose_payload}")
 	endif()
+	# Week 2 overlays every shared 8bpp page while active, including the base
+	# BF atlas on page 7. Copy the exact indexed BF pixels into unused bottom
+	# strips in the Week 2 character pages, keeping both CLUTs and page count.
+	add_custom_command(
+		OUTPUT "${_week2_bf_overlay_header}" "${_week2_bf_overlay_payload}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/relocate_week2_bf_atlas.py"
+			--visual-header "${_playable_visual_header}"
+			--bf-pose-header "${_bf_pose_header}"
+			--week1-scene "${_week1_bf_pose_payload}"
+			--week2-scene "${_week2_visual_source_payload}"
+			--output-header "${_week2_bf_overlay_header}"
+			--output-scene "${_week2_bf_overlay_payload}"
+		DEPENDS relocate_week2_bf_atlas.py "${_playable_visual_header}"
+			"${_bf_pose_header}" "${_week1_bf_pose_payload}" "${_week2_visual_source_payload}"
+		VERBATIM
+	)
 	set(_song_catalog_dependencies
 		"${CMAKE_CURRENT_SOURCE_DIR}/generate_ps1_song_catalog.py"
 		"${CMAKE_CURRENT_SOURCE_DIR}/convert_bopeebo_to_vagi.py")
@@ -987,6 +1011,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	psn00bsdk_add_executable(funkin-ps1-bopeebo-playable GPREL
 		${_playable_sources}
 		"${_playable_chart_header}" "${_playable_visual_header}" "${_bf_pose_header}"
+		"${_week2_bf_overlay_header}"
 		"${_menu_audio_header}" "${_week4_header}" "${_week4_visual_header}"
 		"${_week5_header}" "${_week5_visual_header}"
 		"${_week6_header}" "${_week6_visual_header}"
@@ -1037,7 +1062,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		bopeebo_playable_iso.xml
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
-			"${_week2_visual_payload}"
+			"${_week2_bf_overlay_payload}"
 			"${_week1_bf_pose_payload}"
 			"${_week3_visual_payload}"
 			"${_week4_visual_payload}"

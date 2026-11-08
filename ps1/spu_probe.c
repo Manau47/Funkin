@@ -62,6 +62,7 @@
 #include "week4_catalog.h"
 #include "bopeebo_visual_data.h"
 #include "bf_sing_pose_data.h"
+#include "week2_bf_overlay_data.h"
 #include "week4_visual_data.h"
 #include "menu_audio_data.h"
 #include "week5_catalog.h"
@@ -2787,6 +2788,36 @@ static void draw_week2_gf_frame(unsigned frame, int world_x, int world_y,
 		camera_x, camera_y, zoom_q8, 256u, BOPEEBO_VISUAL_PAGE_COUNT);
 }
 
+/* Week 2 replaces the base 8bpp page 7. Use bit-identical copies of BF's
+   existing indexed cels from the free bottom strips of Week 2 pages instead. */
+static const BopeeboVisualFrame *week2_bf_overlay_frame(unsigned source_frame)
+{
+	for (unsigned i = 0; i < BOPEEBO_WEEK2_BF_OVERLAY_COUNT; i++) {
+		if (bopeebo_week2_bf_source_frames[i] == source_frame)
+			return &bopeebo_week2_bf_overlay_frames[i];
+	}
+	return 0;
+}
+
+static void draw_week2_bf_frame(unsigned source_frame, int center_x, int floor_y,
+	int camera_x, int camera_y, unsigned zoom_q8)
+{
+	const BopeeboVisualFrame *visual = week2_bf_overlay_frame(source_frame);
+	/* BF miss frames use a separate 4bpp page, which Week 2 does not replace. */
+	if (!visual) {
+		draw_visual_frame(source_frame,
+			center_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
+			floor_y - (int)BOPEEBO_BF_FRAME_H,
+			camera_x, camera_y, zoom_q8, 256u);
+		return;
+	}
+	draw_visual_record_scaled_on_page(visual,
+		center_x - (int)(BOPEEBO_BF_FRAME_W / 2u),
+		floor_y - (int)BOPEEBO_BF_FRAME_H,
+		BOPEEBO_BF_FRAME_W, BOPEEBO_BF_FRAME_H,
+		camera_x, camera_y, zoom_q8, 256u, BOPEEBO_VISUAL_PAGE_COUNT);
+}
+
 /* Week 3's composition camera is wider than the prior test scene. Keep the
    already-approved character pixel sizes while moving their anchors with the
    new camera: compensate the world-space frame dimensions for the zoom ratio. */
@@ -2824,10 +2855,12 @@ static void draw_week3_character_frame(unsigned frame, int center_x, int floor_y
 }
 
 static void draw_bf_sing_extra_frame(unsigned extra_index, int center_x, int floor_y,
-	int camera_x, int camera_y, unsigned zoom_q8, bool week3)
+	int camera_x, int camera_y, unsigned zoom_q8, bool week3, bool week2)
 {
 	if (extra_index >= BOPEEBO_BF_SING_EXTRA_COUNT) return;
-	const BopeeboVisualFrame *visual = &bopeebo_bf_sing_extra_frames[extra_index];
+	const BopeeboVisualFrame *visual = week2 ?
+		&bopeebo_week2_bf_sing_extra_frames[extra_index] :
+		&bopeebo_bf_sing_extra_frames[extra_index];
 	unsigned width = visual->w;
 	unsigned height = visual->h;
 	unsigned full_width = BOPEEBO_BF_FRAME_W;
@@ -4505,7 +4538,10 @@ static void draw_scene(uint32_t samples)
 			week5_scene_edit_scale(variant, W5_EDIT_BF, BOPEEBO_WEEK5_CHARACTER_SCALE_Q8));
 	} else if (bf_extra_pose >= 0)
 		draw_bf_sing_extra_frame((unsigned)bf_extra_pose,
-			bf_world_x, bf_world_y, camera_x, camera_y, zoom_q8, week3);
+			bf_world_x, bf_world_y, camera_x, camera_y, zoom_q8, week3, week2);
+	else if (week2)
+		draw_week2_bf_frame(bf_frame, bf_world_x, bf_world_y,
+			camera_x, camera_y, zoom_q8);
 	else if (week3)
 		draw_week3_character_frame(bf_frame, bf_world_x, bf_world_y,
 			camera_x, camera_y, zoom_q8);

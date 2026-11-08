@@ -1259,3 +1259,29 @@ Les positions de Dad/GF/BF et leurs offsets caméra sont dérivés de `spookyMan
 Le dry-run du seul target disque `ps1-bopeebo-playable-disc` annonce quatre tâches : compile jeu, compile `cdstream`, lien ELF, ISO; aucune conversion d’image, audio ou chart. Le build normal réussit, avec deux avertissements `volatile` préexistants du code SDK. ELF : text 1 013 012 B, data 2 630 B, BSS 40 120 B. ISO réparé : 117 fichiers, SYSTEM.CNF/FUNKIN.EXE premiers fichiers nommés, EXE embarqué identique au lien. Les fichiers audio, charts et les autres scènes comparés à la base immédiate r3 sont identiques; le header non-W2 est identique après normalisation.
 
 **État :** compilation et contrôles statiques réussis; BIN/CUE fourni hors Git dans `ps1-asset-harmonization-v1-week2-quality-v3-delivery`. Aucun essai DuckStation/console n’a été exécuté. Le cadrage et la lisibilité à l’écran restent à confirmer par l’utilisateur. Les planches de comparaison sont des prévisualisations des conversions, non une capture du jeu. Rapport détaillé `docs/PS1_WEEK2_QUALITY_PASS_V1.md`, hashes et mesures `audit/v1/week2-quality-v3/`.
+
+## 2026-11-08 — correction ciblée des sprites BF de Week 2
+
+L'utilisateur indique que GF, Spooky Kids et Monster de Week 2 lui conviennent,
+mais que BF est corrompu. Le diagnostic statique trouve que le paquet W2 charge
+ses neuf pages 8bpp dans les emplacements partagés, écrasant la page 7 de
+l'atlas BF de base. La CLUT BF restait disponible, mais ses indices pointaient
+sur les texels d'autres dessins. Un outil reproductible copie donc les pixels
+indexés BF existants vers des rectangles libres des pages personnage W2, et le
+rendu BF de W2 utilise ces nouveaux descripteurs. Aucun pixel n'est
+requantifié ; les poses ratées 4bpp et les autres semaines ne changent pas.
+
+Le paquet W2 reste à 9 pages et 590 336 octets. 17 cels de 52×52 sont placés
+dans des zones précédemment inutilisées du paquet, sans nouvelle page, CLUT,
+lecture CD ni transfert VRAM. Comparaison SHA-256 : les 118 fichiers `.vag` et
+`.bin` correspondants hors paquet W2 sont identiques. Le dry-run incrémental
+n'incluait aucune conversion globale de graphismes, audio ou charts. Compilation
+et contrôles statiques ISO réussis ; les deux avertissements SDK `volatile`
+préexistants subsistent.
+
+Nouveau CUE d'essai :
+`C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-week2-bf-fix-v1-final-delivery/funkin-ps1-week2-bf-fix-v1.cue`.
+BIN SHA-256 `6539B6D5B3FC1137B2B8F7A79DF62DD117272A1C9810C3DAD150B0C3D977D4F6` ;
+CUE `FBF29B4A907E93D10B311036CBE88BEB6EEFB5D6C46B585BFF59369485547BDF`.
+L'essai DuckStation et la validation BF restent en attente ; aucune validation
+console n'est revendiquée. Détails et budgets dans `PS1_WEEK2_BF_ATLAS_FIX_V1.md`.
