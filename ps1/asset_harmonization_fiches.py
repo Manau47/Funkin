@@ -163,26 +163,25 @@ def main() -> None:
                         "source_width": dims[0], "source_height": dims[1]})
 
     jobs = [
-        ("base-w1", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week1-scene.bin", 11, [8]*9+[4]*2),
-        ("week2", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week2-scene.bin", 7, [8]*7),
-        ("week3", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week3-scene.bin", 8, [8]*8),
-        ("week4", "week4_visual_data.h", "week4_visual_frames", "week4-scene.bin", 9, [8]*9),
-        ("week5", "week5_visual_data.h", "week5_visual_frames", "week5-scene.bin", 12, [8]*12),
-        # Week 6 may be losslessly repacked; use the page count recorded in its header.
-        ("week6", "week6_visual_data.h", "week6_visual_frames", "week6-scene.bin", None, None),
-        ("week7", "week7_visual_data.h", "week7_visual_frames", "week7-scene.bin", 4, [8]*4),
-        ("weekend1", "weekend1_visual_data.h", "weekend1_visual_frames", "weekend1-scene.bin", 9, [8]*9),
+        ("base-w1", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week1-scene.bin", 11, [8]*9+[4]*2, None),
+        ("week2", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week2-scene.bin", None, None, "BOPEEBO_WEEK2_PAGE_COUNT"),
+        ("week3", "bopeebo_visual_data.h", "bopeebo_visual_frames", "week3-scene.bin", None, None, "BOPEEBO_WEEK3_PAGE_COUNT"),
+        ("week4", "week4_visual_data.h", "week4_visual_frames", "week4-scene.bin", None, None, "BOPEEBO_WEEK4_PAGE_COUNT"),
+        ("week5", "week5_visual_data.h", "week5_visual_frames", "week5-scene.bin", None, None, "BOPEEBO_WEEK5_PAGE_COUNT"),
+        ("week6", "week6_visual_data.h", "week6_visual_frames", "week6-scene.bin", None, None, "BOPEEBO_WEEK6_PAGE_COUNT"),
+        ("week7", "week7_visual_data.h", "week7_visual_frames", "week7-scene.bin", None, None, "BOPEEBO_WEEK7_PAGE_COUNT"),
+        ("weekend1", "weekend1_visual_data.h", "weekend1_visual_frames", "weekend1-scene.bin", None, None, "BOPEEBO_WEEKEND1_PAGE_COUNT"),
     ]
     all_rows = []
     actual_counts = {}
-    for name, header_name, array, package_name, count, depths in jobs:
+    for name, header_name, array, package_name, count, depths, page_macro in jobs:
         header = a.build_dir / header_name
         package = a.build_dir / package_name
-        if count is None:
+        if page_macro is not None:
             text = header.read_text(encoding="utf-8")
-            count_match = re.search(r"^#define\s+BOPEEBO_WEEK6_PAGE_COUNT\s+(\d+)u?\s*$", text, re.M)
+            count_match = re.search(rf"^#define\s+{re.escape(page_macro)}\s+(\d+)u?\s*$", text, re.M)
             if not count_match:
-                raise ValueError(f"missing Week 6 page count in {header}")
+                raise ValueError(f"missing {page_macro} in {header}")
             count = int(count_match.group(1))
             depths = [8] * count
         actual_counts[name] = count
@@ -208,8 +207,7 @@ def main() -> None:
     # Quantify what exact duplicate aliases alone could recover. The sorted
     # shelf estimate ignores fixed page roles/slots, so it is only a packing
     # experiment; it is not claimed as a build/runtime saving.
-    package_counts = {"base-w1": 11, "week2": 7, "week3": 8, "week4": 9,
-                      "week5": 12, "week6": actual_counts["week6"], "week7": 4, "weekend1": 9}
+    package_counts = actual_counts.copy()
     simulation = []
     for package in package_counts:
         prows = [r for r in all_rows if r["package"] == package]

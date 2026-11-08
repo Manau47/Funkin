@@ -1,115 +1,72 @@
-# Harmonisation des assets PS1 — v1
+# Harmonisation des assets PS1 — v1 corrigée
 
 Date : 2026-11-08
 Branche : `ps1-asset-harmonization-v1`
-Référence utilisateur : v183, commit `7057882fa4c481fb878de4cc27d3a827179f7ddd`
-Commit parent de cette passe : `b5f22bcc76bb8be8dd06c16f3079412ec9fb9e93`
+Base validée par l’utilisateur : v183, commit `7057882fa4c481fb878de4cc27d3a827179f7ddd`
+Assets épinglés : `724eba9de9e76761d9cefd52169926bc51c760a5`
 
-## But et périmètre de cette version
+## Périmètre réellement livré
 
-Cette branche applique la méthode d’harmonisation au nouveau build v1. Elle ne se limite pas à réutiliser les ressources v183 : elle établit un inventaire reproductible des ressources converties, compare les couches source et les frames PS1, puis applique une optimisation **sans perte** au paquet Week 6. La scène W1 v183 est la référence de lisibilité et reste inchangée.
+Cette v1 applique l’audit global demandé, avec deux réempaquetages sans perte : **Week 2 et Weekend 1**. W1 est conservée sans modification comme référence de lisibilité. W3, W4, W5, W6 et W7 restent strictement aux données converties v183. Un premier candidat de travail avait réempaqueté W6 ; cette cible était hors périmètre et a été abandonnée. Le BIN/CUE livré ici ne contient pas ce changement W6 : son paquet et son header sont restaurés byte pour byte depuis v183.
 
-La passe ne change ni les scènes/placements, ni les échelles d’affichage, palettes, couleurs, poses, séquences, cadences, charts, règles de jeu ou audio. Aucun asset officiel brut ni SDK n’est ajouté au dépôt. Les éditeurs temporaires de composition et le mode démo restent désactivés au démarrage comme sur le candidat v1 précédent.
+Aucune taille affichée, palette, couleur, pose, durée d’animation, composition, ancrage, caméra, chart, règle de jeu ou donnée audio n’est changée. Les cels indexées identiques sont mutualisées sans supprimer de descripteur ni raccourcir de séquence. Aucun fichier source officiel ni SDK propriétaire n’est ajouté à Git.
 
-## Référence visuelle W1
+## Référence W1 et couverture de l’audit
 
-La fiche source est dans [`PS1_ASSET_SCENE_AUDIT_V183.md`](PS1_ASSET_SCENE_AUDIT_V183.md). W1 reste le point de comparaison, pas une cible de réduction automatique : scène d’origine à zoom caméra 1,1 ; stageback 2560×1400 en (-600,-200), scale 1, scroll 0,9, z=10 ; stagefront 2560×581 en (-650,600), scale 1,1, scroll 0,9, z=20 ; rideaux 2560×1400 en (-500,-300), scale 0,9, scroll 1,3, z=30.
+W1 demeure la référence visuelle inchangée. Les fiches source et converties, planches d’atlas par paquet, données statiques des menus/HUD et l’audit des budgets sont conservés sous `audit/v1/`. Elles recensent la résolution source, canevas, trims, UV/pages, CLUT, transparence, doublons et transformations de scène disponibles. Les captures de planches sont des outils d’inspection, pas des ressources de jeu.
 
-Exemples de tailles d’images converties dans l’atlas commun/W1 : Dad idle 53×96, GF idle 87×79, BF idle 52×52 texels. Avec les facteurs d’échelle actuels, les rectangles nominaux projetés sont respectivement d’environ 133×240, 218×198 et 130×130 pixels, avant transparence, ancrages, clipping et caméra. Ce sont des calculs de dimensions, pas une mesure de lisibilité en mouvement. Le tableau des frames montre aussi que plusieurs grandes cels officielles sont ajustées dans des canevas PS1 plus petits : cela peut coûter du détail, contrairement au réempaquetage, qui ne modifie pas les texels.
+La simulation de réempaquetage est dans `audit/v1/corrected-build/repack-simulation.csv`. Elle indique une page de moins pour W2 et Weekend 1 ; W3/W4/W5/W7 n’ont pas de réduction estimée par cette stratégie et ne sont pas modifiées. Les fiches de frames et les planches annotées de toutes les pages du build corrigé sont sous `audit/v1/corrected-build/atlases/`. Les tableaux d’occupation et de transparence sont recalculés depuis les pages réellement empaquetées. Le rapport de chaque paquet documente le contrôle pixel indexé et CLUT. Le script reproductible `ps1/repack_lossless_scene.py` ne convertit pas les PNG et refuse d’écraser les sorties.
 
-## Fiches et planches reproductibles
+## Résultats statiques des deux paquets modifiés
 
-Les résultats se trouvent sous `audit/v1/` :
+| Paquet | Pages 8bpp avant → après | Descripteurs | Cels exactes mutualisées | Paquet CD avant → après | Gain |
+|---|---:|---:|---:|---:|---:|
+| W2 | 7 → 6 | 45 conservés | 2 | 459 264 → 393 728 B | 65 536 B / 32 secteurs |
+| Weekend 1 | 9 → 8 | 48 conservés | 3 | 590 336 → 524 800 B | 65 536 B / 32 secteurs |
 
-- `source-layer-fiches.csv` : 76 couches des stages épinglés, avec fichier PNG source, dimensions, zoom de caméra, position, échelle, scroll et ordre Z.
-- `converted-frame-fiches.csv` : rectangles/cels convertis, dimensions et UV, page, profondeur, CLUT, pixels index 0, boîte opaque, trim/anchor, hash indexé et doublons exacts.
-- `final-build/converted-frame-fiches.csv` : mêmes fiches contre les données du build v1 final.
-- `final-build/atlases/` : planches annotées par famille (base/W1, Weeks 2–7, Weekend 1), légendes et `atlas-audit.json`.
-- `final-build/static/` : planches des pages fixes de menus, titre, Freeplay, DJ, game over et icônes, quand ces données existent dans le build.
-- `dedup-pack-simulation.csv` : simulation d’alias exacts; c’est un indicateur de potentiel, pas une preuve qu’un repack complet de chaque atlas tient dans les rôles VRAM actuels.
-- `final-build/resource-hashes.csv` : comparaison des artefacts générés v183/v1.
+Pages actives du build corrigé par ensemble : W1 = 9 pages 8bpp + 2 pages 4bpp ; W2 = 6 pages 8bpp ; W3 = 8 ; W4 = 9 ; W5 = 12 ; W6 = 7 ; W7 = 4 ; Weekend 1 = 8. Chaque semaine est chargée indépendamment. Les CLUT sont comptées à part dans les fiches ; le framebuffer PS1 reste hors de ces nombres.
 
-La fiche couche source et la fiche frame convertie sont liées par les labels de la chaîne de génération, mais ne constituent pas encore une trace image-par-image de chaque transformation source. La résolution/rectangle/canevas des atlas officiels animés et les marges alpha sont consultables dans les sources épinglées et les extraits convertis ; les coordonnées affichées exactes de chaque quad dépendent des transformations d’exécution. Elles sont documentées au niveau de la scène dans l’audit v183. Une capture 320×240 de chaque pose animée exigerait une exécution et une mesure de quads en runtime, non réalisées ici.
+Les deux pages de scène fixes restent épinglées à leurs emplacements initiaux. Les autres cels sont réempaquetées avec des UV/pages actualisés ; le vérificateur recopie et compare chaque rectangle d’indices source/cible, et confirme que la CLUT finale reste byte-identique. Les palettes et pixels indexés ne sont jamais recalculés.
 
-### Lecture correcte des mesures
+**Gain disque statique cumulé :** 131 072 B, soit 64 secteurs.
 
-- Une page PS1 représente 256×256 texels : 65 536 octets en 8bpp ou 32 768 en 4bpp. Les CLUT sont comptées à part.
-- « transparent index 0 » compte des texels, pas de la mémoire libre. « trous » sont les espaces non couverts dans les rectangles; ils ne sont récupérables qu’après repack démontré.
-- Les pages de paquets CD sont une mesure de stockage/transfert. Les ressources de toutes les semaines ne sont pas résidentes simultanément en VRAM.
-- La VRAM totale est 1 MiB; les deux framebuffers 320×240×16bpp utilisent 307 200 octets. Pages et palettes partagent le reste et sont remplacées entre écrans/scènes.
-- Les PNG de planches servent à l’inspection humaine, pas au jeu.
+**Gain VRAM/transfert texture statique par scène :** une page 256×256 8bpp, soit 65 536 B pour W2 ou Weekend 1. Ce n’est pas un gain simultané de 131 072 B puisque les semaines ne résident pas ensemble.
 
-## Optimisation sans perte appliquée : Week 6
+**Gain RAM :** aucun. Le tampon de chargement de page reste 65 536 B, et le tampon secteur séparé reste 2 048 B.
 
-Le paquet converti v183 avait 7 pages 256×256 en 8bpp plus une CLUT de 512 octets. La transformation `ps1/repack_indexed_scene.py` conserve les deux premières pages aux mêmes emplacements, puis repacke les rectangles restants en pages compatibles. Elle détecte 13 cels indexées strictement identiques et leur fait partager les mêmes texels; les 77 références/frame IDs et l’ordre des animations restent présents. Palette/CLUT copiée byte-à-byte. Le script relit le paquet produit et compare les pixels source/cible avant de réussir.
+**CLUT :** inchangée ; les palettes restent hors des pages de texture.
+**Framerate :** aucun gain de performance n’est inféré de la seule diminution du nombre de pages.
 
-| Mesure Week 6 | Référence v183 | v1 | Écart |
-|---|---:|---:|---:|
-| Pages 8bpp | 7 (458 752 B) | 6 (393 216 B) | −1 page, −65 536 B |
-| CLUT | 512 B | 512 B | 0 |
-| Paquet CD | 459 264 B | 393 728 B | −65 536 B, soit 32 secteurs de 2 048 B |
-| Descripteurs de frames | 77 | 77 | 0 |
-| Cels exactes aliasées | — | 13 | texels partagés, aucun changement de séquence/cadence |
-| RAM de staging à l’exécution | 65 536 B page + lecture séparée de 2 048 B CLUT | identique | aucun gain RAM |
-| Transfert texture vers GPU | 7 pages = 458 752 B | 6 pages = 393 216 B | −65 536 B pour cette scène |
+Les changements de ressources comparés à v183 sont exactement W2 (`week2-scene.bin`, `bopeebo_visual_data.h`) et Weekend 1 (`weekend1-scene.bin`, `weekend1_visual_data.h`). Les fichiers W1/W3–W7, y compris `week6-scene.bin` et `week6_visual_data.h`, sont identiques. Les hashes complets sont dans `audit/v1/corrected-build/resource-hashes.csv`.
 
-La formule du runtime charge une page par 32 secteurs, puis lit la CLUT après le compteur de pages : Week 6 utilise donc 224 secteurs de texture + 1 secteur de palette dans v183, contre 192 + 1 en v1. Le débit n’est pas mesuré en exécution; ce sont les tailles/offsets statiques du lecteur. Le réempaquetage ne change pas le maximum du tampon page (64 Kio), n’abaisse pas la consommation de framebuffer et ne garantit pas une hausse de framerate.
+## Budgets et durée de vie
 
-Le contrôle de la géométrie issue de l’atlas v1 donne 6 pages (393 216 texels alloués), union des rectangles de 291 344 texels, 101 872 texels hors union et 249 782 texels index 0 sur les pages. Les rectangles peuvent se chevaucher lorsqu’ils sont des alias vérifiés; la somme d’aires des références est donc supérieure à l’union. Les pixels transparents conservés ne sont pas déclarés comme gain récupéré.
+Les groupes sont chargés indépendamment par scène ; les atlases de toutes les semaines ne sont pas résidents en même temps. Le repack réduit le nombre de pages de texture à transférer/charger pour les deux scènes ciblées. Les surfaces transparentes et les trous dispersés restent comptés dans l’audit, mais ne sont pas revendiqués comme mémoire récupérée. W3, W4, W5 et W7 gardent leurs pages et compositions propres.
 
-## Autres groupes et budgets statiques
+Les mesures RAM code/data/BSS sont issues de l’ELF compilé, et ne sont pas déduites des tailles de paquets : text 1 013 048 B, data 2 638 B, BSS 40 120 B, total 1 055 806 B. Par rapport à l’ELF v183 archivé (1 051 790 B pour ces sections), l’exécutable est supérieur de 4 016 B ; ce travail ne prétend donc à aucune économie RAM. Le rapport de build consigne les sections et hashes du binaire. Les lectures CD de scène terminent toujours avant le flux musical ; aucun streaming graphique ni accès CD concurrent n’est ajouté.
 
-Seule Week 6 est modifiée dans le contenu converti. Les tailles suivantes sont les paquets v183 réutilisés, avec Week 6 remplacée par sa taille v1 :
+## Reproduction
 
-| Groupe chargé indépendamment | Pages et format | Paquet CD v1 |
-|---|---:|---:|
-| Commun + W1 | 9×8bpp + 2×4bpp, CLUTs incluses | 655 360 B |
-| W2 | 7×8bpp | 459 264 B |
-| W3 | 8×8bpp | 524 800 B |
-| W4 | 9×8bpp | 590 336 B |
-| W5 Christmas/Mall | 12×8bpp, 6 144 B de CLUT | 792 576 B |
-| W6 | 6×8bpp, 512 B de CLUT | 393 728 B |
-| W7 | 4×8bpp | 262 656 B |
-| Weekend 1 | 9×8bpp | 590 336 B |
+Environnement déjà configuré hors dépôt : PSn00bSDK 0.24, GCC MIPS 12.3.0, CMake et Ninja. Le cache du build utilisé est `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-lossless-build/CMakeCache.txt`; son SHA-256 figure dans `audit/v1/corrected-build/build-manifest.csv`.
 
-Total stockage paquet des scènes listées : 4 269 056 B contre 4 334 592 B v183 (−65 536 B). Cette somme est une mesure disque, pas un ensemble résident. Les pages communes et de scène nécessaires ensemble sont gérées dans les emplacements VRAM partagés; leurs budgets exacts et transferts par transition sont récapitulés dans l’audit v183. Pages 4bpp supplémentaires : seules celles qui conservent exactement chaque couleur après validation palette/index sont éligibles; aucune conversion 8→4bpp nouvelle n’est tentée ici.
+Les conversions v183 ont été réutilisées. Les deux paquets repackés proviennent de BIN/header convertis existants. Dry-run Ninja : compilation du programme, lien ELF et fabrication de l’image disque ; aucun convertisseur d’images, audio ou charts ne s’exécute. La sortie de fabrication ISO copie/emballe les ressources déjà converties dans le disque, sans les reconvertir. Après le build, `ps1/diagnostics/reorder_iso_system_cnf.py --exe-after-system-cnf` crée une image distincte avec SYSTEM.CNF puis FUNKIN.EXE en tête du répertoire racine.
 
-RAM code/data/BSS est mesurée via les sections ELF, et non déduite de la taille des images. ELF v1 : text 1 013 048 B, data 2 638 B, BSS 40 120 B (1 055 806 B au total). ELF v183 : 1 008 920 + 2 766 + 40 104 = 1 051 790 B; v1 est donc +4 016 B, sans économie RAM revendiquée. Les PNG sources, outils de conversion et disques restent hors du binaire Git.
+Le nouveau build incrémental a réussi. Les vérifications de disque confirment 117 fichiers visibles dans la racine et SYSTEM.CNF/FUNKIN.EXE aux positions 1/2. Le CUE est livré dans un dossier distinct, sans écraser le précédent candidat v1.
 
-## Reproductibilité
+## Résultats observés et limites
 
-Références : dépôt de travail `Funkin`, commit source v183 `7057882fa4c481fb878de4cc27d3a827179f7ddd`; sous-module assets `724eba9de9e76761d9cefd52169926bc51c760a5`. Outils externes : PSn00bSDK 0.24, GCC MIPS 12.3.0, CMake et Ninja. L’archive/SDK ne sont pas dans Git.
+**Inspecté/calculé statiquement :** atlas et fiches de toutes les familles intégrées ; simulation de packing ; comparaison exacte des paquets finaux à v183 ; hashes des ressources et binaires ; ordre ISO.
 
-Le transformateur prend les BIN/header déjà convertis v183 en entrée; il ne lance pas de conversion PNG/audio/chart :
+**Implémenté :** repack sans perte de W2 et Weekend 1, outil source reproductible, rapports corrigés. Le paquet W6 du build correspond à v183.
 
-```powershell
-python ps1\asset_harmonization_fiches.py --help
-python ps1\repack_indexed_scene.py --help
-```
+**Compilé :** build normal avec ressources converties réutilisées ; aucune conversion globale relancée.
 
-Le build distinct est `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-lossless-build/`; son CMakeCache SHA-256 est `09739237C46EAE06A4A165DEA802F05DC8D62415040E5C3917CA68CAF1A4BF68`. Ninja dry-run pour `ps1-bopeebo-playable-disc` a listé quatre actions : compile `spu_probe.c`, compile SDK `cdstream/stream.c`, link ELF, création ISO. Aucune tâche de conversion de ressource. Build réel réussi; deux avertissements `volatile` préexistants dans le `stream.c` du SDK.
+**Non exécuté/validé :** aucune interaction DuckStation dans cette passe et aucun test console. Les visuels en mouvement, navigations multi-semaines, retour Freeplay, pause, game over/retry et stabilité audio doivent être vérifiés par l’utilisateur avant de déclarer cette optimisation validée.
 
-L’ISO brut a ensuite été copié dans un dossier distinct et réparé par l’outil existant `ps1/diagnostics/reorder_iso_system_cnf.py` pour conserver `SYSTEM.CNF` en entrée racine 1 et `FUNKIN.EXE` en 2. L’exécutable extrait de l’ISO final a le même hash que le PS-X EXE lié. La référence v183 n’a pas été modifiée. Le détail de la configuration et les hashes se trouvent dans `audit/v1/final-build/build-manifest.csv` et les manifestes voisins.
+## Artefacts
 
-Livraison hors dépôt : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-lossless-delivery/`.
+Le manifeste et hashes sont dans `audit/v1/corrected-build/`. Le BIN/CUE normal est conservé hors Git dans :
 
-| Artefact | Taille | SHA-256 |
-|---|---:|---|
-| BIN final | 339 864 000 B | `87F1B210D1625BB5EED91E82084C94CCB8DC4B28476AF817291806DD5CD0E833` |
-| CUE final | 96 B | `476CA379B459A8354FA7E278BB22958435F94775329428ED61AF8A20D31CC1AA` |
-| PS-X EXE | 1 017 856 B | `A3F912124738F150A33133FFE27E0BB50A38BFA2785FC37419816A9935712C4E` |
-| ELF | 1 388 672 B | `14522567F15C8B69747261E2778062D745E7BB92A927AA437CBF2CB0037B7E49` |
-| Week 6 package | 393 728 B | `CBA20A8090A8C54D432405766CB53158D08B49F6A424171A9EEE68F3D46DECCD` |
-| Week 6 visual header | 6 758 B | `38F46AE39849053A8F3E37CBEED0BBF5142777E69A8DB4A0F9357D6F7E289150` |
+`C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-scenes-delivery/`
 
-## Ce qui est établi et ce qui reste à tester
-
-**Établi statiquement / à la compilation :** W1 reste byte-identique; 129 des 131 produits `.bin/.vag/.h` comparés sont byte-identiques; les deux différences sont le paquet Week 6 et son header visuel optimisés. Les pixels indexés/couleurs/CLUT de Week 6 sont identiques et tous les UV/descripteurs restent référencés. Le build et les contrôles ISO/EXE ont réussi.
-
-**Non observé dans cette passe :** rendu comparatif des poses dans DuckStation, navigation multi-semaines, retour Freeplay, game over/retry, stabilité audio, performances/framerate et console réelle. v183 reste la version validée par l’utilisateur. La nouvelle v1 est livrée pour essai; ne pas considérer l’optimisation comme validée visuellement avant son retour.
-
-## Étapes suivantes
-
-1. Attendre l’essai manuel de cette v1 et comparer W1 de référence aux poses Week 2–Weekend 1.
-2. Ne commencer qu’ensuite la prochaine famille cohérente, avec mêmes fiches avant/après, preuve pixel-identique et mesure des pages réellement utilisables simultanément.
-3. Toute amélioration de détail, recadrage, changement de palette ou animation supplémentaire nécessitera une passe distincte et une validation graphique; ce n’est pas inclus dans ce réempaquetage.
+La livraison précédente `ps1-asset-harmonization-v1-lossless-delivery/` reste intacte pour comparaison, mais elle correspond au candidat W6 hors périmètre et ne doit pas être confondue avec le présent v1 corrigé.

@@ -1,0 +1,17 @@
+package,bpp,currently_allocated_pages,frames_in_source_header,exact_unique_images,shelf_pages_after_exact_aliasing,note
+base-w1,4,2,77,72,2,static shelf experiment; fixed runtime page roles and UV references not modeled
+base-w1,8,9,63,57,8,static shelf experiment; fixed runtime page roles and UV references not modeled
+week2,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week2,8,6,45,43,7,static shelf experiment; fixed runtime page roles and UV references not modeled
+week3,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week3,8,8,40,37,8,static shelf experiment; fixed runtime page roles and UV references not modeled
+week4,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week4,8,9,66,63,11,static shelf experiment; fixed runtime page roles and UV references not modeled
+week5,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week5,8,12,79,79,13,static shelf experiment; fixed runtime page roles and UV references not modeled
+week6,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week6,8,7,77,64,5,static shelf experiment; fixed runtime page roles and UV references not modeled
+week7,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+week7,8,4,34,34,4,static shelf experiment; fixed runtime page roles and UV references not modeled
+weekend1,4,0,0,0,0,static shelf experiment; fixed runtime page roles and UV references not modeled
+weekend1,8,8,48,45,9,static shelf experiment; fixed runtime page roles and UV references not modeled

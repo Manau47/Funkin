@@ -1,5 +1,7 @@
 # Asset harmonization v1 audit outputs
 
+**Historical candidate only — superseded.** This first candidate changed Week 6 outside the requested scope. The corrected v1 and its authoritative metrics are under `audit/v1/corrected-build/`; the delivered BIN/CUE uses W2 + Weekend 1 repacks and restores W6 to v183.
+
 These reports are generated from the pinned v183 converted data and the v1 Week 6 lossless repack. They are static analysis artifacts, not runtime captures.
 
 - `source-layer-fiches.csv`: source stage dimensions and transform metadata.

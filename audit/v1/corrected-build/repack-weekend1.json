@@ -1,0 +1,21 @@
+{
+  "package": "weekend1",
+  "input_v183_bytes": 590336,
+  "output_v1_bytes": 524800,
+  "input_v183_sha256": "8C253ACDCCEC577DBAC6D094AC842EFE6B1192E1843A364376D5AE26EC2A091E",
+  "output_v1_sha256": "AAAB9F30C0062CF8DB79314C0AA1BB3A5EAAB79D257A8407CEA07D769BBF3522",
+  "page_size_bytes": 65536,
+  "old_8bpp_pages": 9,
+  "new_8bpp_pages": 8,
+  "fixed_stage_pages": 2,
+  "frame_descriptors_preserved": 48,
+  "exact_duplicate_cels_aliased": 3,
+  "cd_bytes_saved": 65536,
+  "cd_sectors_saved": 32,
+  "texture_upload_bytes_saved": 65536,
+  "clut_bytes": 512,
+  "clut_sha256": "A12ABCA520ED2185CB39F475B210C8BD0CE120AD9F4A71B7816501E656D13261",
+  "clut_unchanged": true,
+  "indexed_pixels_verified_by_repacker": true,
+  "ram_saved_bytes": 0
+}

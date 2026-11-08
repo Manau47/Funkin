@@ -1,0 +1,21 @@
+{
+  "package": "week2",
+  "input_v183_bytes": 459264,
+  "output_v1_bytes": 393728,
+  "input_v183_sha256": "BA93EC25BDAEABFDC21AA4BF32D2E7910367517DD4CEF863A3EB9259137F11D4",
+  "output_v1_sha256": "084DCCC2548B0CD2765713BA2927E2E224764E4DACB889755892CB9DD14562D1",
+  "page_size_bytes": 65536,
+  "old_8bpp_pages": 7,
+  "new_8bpp_pages": 6,
+  "fixed_stage_pages": 2,
+  "frame_descriptors_preserved": 45,
+  "exact_duplicate_cels_aliased": 2,
+  "cd_bytes_saved": 65536,
+  "cd_sectors_saved": 32,
+  "texture_upload_bytes_saved": 65536,
+  "clut_bytes": 512,
+  "clut_sha256": "190F675A4B4F50FE7927A303A8FE7CE0F49982AA96EEED74042022D9A2D67CF3",
+  "clut_unchanged": true,
+  "indexed_pixels_verified_by_repacker": true,
+  "ram_saved_bytes": 0
+}
