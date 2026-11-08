@@ -1285,3 +1285,13 @@ BIN SHA-256 `6539B6D5B3FC1137B2B8F7A79DF62DD117272A1C9810C3DAD150B0C3D977D4F6` ;
 CUE `FBF29B4A907E93D10B311036CBE88BEB6EEFB5D6C46B585BFF59369485547BDF`.
 L'essai DuckStation et la validation BF restent en attente ; aucune validation
 console n'est revendiquée. Détails et budgets dans `PS1_WEEK2_BF_ATLAS_FIX_V1.md`.
+
+## 2026-11-08 — cycle complet de danse GF en Week 2
+
+L'utilisateur confirme BF correct et signale qu'il manque des poses à GF. Comparaison avec les ressources officielles épinglées : l'Idle comporte 30 frames, divisées en `danceLeft` 0–14 et `danceRight` 15–29. L'ancienne conversion n'avait stocké que 0–9, alors que le moteur sélectionnait déjà 0–4 pour un côté et 5–9 pour l'autre ; la danse droite était donc absente.
+
+La conversion réutilise les dix rectangles existants, avec cinq poses clés échantillonnées dans chaque moitié : 0, 3, 6, 9, 12 puis 15, 18, 21, 24, 27. Le moteur alterne gauche/droite par beat et parcourt cinq cels pendant chaque beat depuis la position calculée sur l'horloge audio/BPM. Cela conserve un cycle complet avec une réduction à cinq poses par côté adaptée à l'atlas PS1. L'ancrage commun à toutes les 30 frames évite les changements de taille ou de hauteur.
+
+Le script `ps1/update_week2_gf_animation.py` régénère uniquement les pixels des dix rectangles GF depuis le rig officiel, en réutilisant la CLUT W2 existante ; assertions sur pages, UV, chevauchement, taille et pixels externes. Le paquet W2 reste à 9 pages et 590 336 octets. Aucune reconversion générale, modification audio, chart, BF ou gameplay. Le dry-run annonçait relocation BF, génération GF ciblée, compilation/link et image disque ; toutes ces étapes ont été exécutées avec succès. Diagnostics/démo désactivés par défaut. Deux avertissements `volatile` du lecteur CDstream SDK restent présents.
+
+Un nouveau CUE est prêt dans `ps1-asset-harmonization-v1-week2-gf-cycle-v1-delivery`. L'essai DuckStation et la validation utilisateur sont en attente. La compilation n'est pas présentée comme une validation du rendu. Rapport : `PS1_WEEK2_GF_ANIMATION_V1.md`.

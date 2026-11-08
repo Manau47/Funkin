@@ -4197,8 +4197,9 @@ static void draw_scene(uint32_t samples)
 			VIS_WEEK2_GF_DANCE_6, VIS_WEEK2_GF_DANCE_7,
 			VIS_WEEK2_GF_DANCE_8, VIS_WEEK2_GF_DANCE_9
 		};
-		/* Five source poses per direction, with the left/right cycle changing
-		   each beat exactly as the pinned Week 1 GF rig does. */
+		/* The atlas stores five evenly-spaced key poses from each of the
+		   official 15-frame danceLeft/danceRight segments. Select a direction
+		   each beat and advance its five poses across that audio-clocked beat. */
 		unsigned gf_side = (beat & 1u) ? 0u : 5u;
 		unsigned gf_pose = (unsigned)((uint64_t)beat_phase * 5u >> 16);
 		if (gf_pose > 4u) gf_pose = 4u;

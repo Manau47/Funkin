@@ -286,7 +286,8 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 	set(_bf_pose_header "${CMAKE_CURRENT_BINARY_DIR}/bf_sing_pose_data.h")
 	set(_week1_bf_pose_payload "${CMAKE_CURRENT_BINARY_DIR}/week1-scene-bf-poses.bin")
 	set(_week2_bf_overlay_header "${CMAKE_CURRENT_BINARY_DIR}/week2_bf_overlay_data.h")
-	set(_week2_bf_overlay_payload "${_week2_visual_payload}")
+	set(_week2_bf_overlay_payload "${CMAKE_CURRENT_BINARY_DIR}/week2-scene-bf-overlay.bin")
+	set(_week2_gf_animation_manifest "${CMAKE_CURRENT_BINARY_DIR}/week2-gf-animation-manifest.txt")
 	set(_week3_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week3-scene.bin")
 	set(_week4_visual_header "${CMAKE_CURRENT_BINARY_DIR}/week4_visual_data.h")
 	set(_week4_visual_payload "${CMAKE_CURRENT_BINARY_DIR}/week4-scene.bin")
@@ -489,6 +490,25 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 			--output-scene "${_week2_bf_overlay_payload}"
 		DEPENDS relocate_week2_bf_atlas.py "${_playable_visual_header}"
 			"${_bf_pose_header}" "${_week1_bf_pose_payload}" "${_week2_visual_source_payload}"
+		VERBATIM
+	)
+	# Keep the already-converted W2 CLUT and every other sprite. Replace only
+	# the ten GF dance rectangles from key poses across both official 15-frame
+	# Idle halves, quantized against that same W2 palette.
+	add_custom_command(
+		OUTPUT "${_week2_visual_payload}" "${_week2_gf_animation_manifest}"
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/update_week2_gf_animation.py"
+			--assets "${FUNKIN_PS1_ASSETS_DIR}"
+			--ffmpeg "${FUNKIN_PS1_FFMPEG}"
+			--visual-header "${_playable_visual_header}"
+			--input-scene "${_week2_bf_overlay_payload}"
+			--output-scene "${_week2_visual_payload}"
+			--manifest "${_week2_gf_animation_manifest}"
+		DEPENDS update_week2_gf_animation.py animate_preview.py convert_bopeebo_visuals.py
+			"${_playable_visual_header}" "${_week2_bf_overlay_payload}"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/Animation.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/spritemap1.json"
+			"${FUNKIN_PS1_ASSETS_DIR}/shared/images/characters/gf/spritemap1.png"
 		VERBATIM
 	)
 	set(_song_catalog_dependencies
@@ -1062,7 +1082,7 @@ if(DEFINED FUNKIN_PS1_BOPEEBO_CHART_JSON AND EXISTS "${FUNKIN_PS1_BOPEEBO_CHART_
 		bopeebo_playable_iso.xml
 		DEPENDS funkin-ps1-bopeebo-playable system.cnf
 			"${CMAKE_CURRENT_BINARY_DIR}/stream-playable.vag"
-			"${_week2_bf_overlay_payload}"
+			"${_week2_visual_payload}"
 			"${_week1_bf_pose_payload}"
 			"${_week3_visual_payload}"
 			"${_week4_visual_payload}"

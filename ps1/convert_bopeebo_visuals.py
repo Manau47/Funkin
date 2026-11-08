@@ -1081,10 +1081,15 @@ def build(args: argparse.Namespace) -> None:
     # Week 2 uses its own CLUT for the additional character atlas. Keep the
     # complete five-pose left/right dance cycle so changing to the Week 2
     # palette cannot recolor GF or collapse her dance to two repeated poses.
+    # The official Idle timeline is 30 frames: danceLeft uses 0..14, then
+    # danceRight uses 15..29. Keep five evenly-spaced key poses from each
+    # half so the runtime's five-cel-per-beat sequence covers a complete turn.
+    week2_gf_source_frames = (0, 3, 6, 9, 12, 15, 18, 21, 24, 27)
     week2_gf_names = []
-    week2_gf_anchored = fit_anchored_rig(gf_rig, list(range(10)),
-                                         WEEK2_GF_TEX_W, WEEK2_GF_TEX_H)
-    for pose, source_index in enumerate(range(10)):
+    week2_gf_anchored = fit_anchored_rig(
+        gf_rig, list(week2_gf_source_frames), WEEK2_GF_TEX_W, WEEK2_GF_TEX_H,
+        anchor_frame_ids=list(range(30)))
+    for pose, source_index in enumerate(week2_gf_source_frames):
         name = f"week2_gf_dance_{pose}"
         temp_images[name] = week2_gf_anchored[source_index]
         frame_sizes[name] = (WEEK2_GF_TEX_W, WEEK2_GF_TEX_H)
