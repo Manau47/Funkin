@@ -1,8 +1,8 @@
 # Passe visuelle Week 2 — build de première vérification
 
-Date : 2026-11-08  
-Branche : `ps1-asset-harmonization-v1`  
-Base de code avant cette passe : `fd91745c72ff7149d76dfd83d9e71cad3e30dc17`  
+Date : 2026-11-08
+Branche : `ps1-asset-harmonization-v1`
+Base de code avant cette passe : `fd91745c72ff7149d76dfd83d9e71cad3e30dc17`
 Base de contenu : conversion v183 archivée, assets épinglés `724eba9de9e76761d9cefd52169926bc51c760a5`.
 
 ## Portée
