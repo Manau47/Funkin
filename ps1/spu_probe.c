@@ -6114,7 +6114,21 @@ int main(void)
 						for (;;) VSync(0);
 					}
 					STARTUP_MARKER(255, 128, 255); /* pink: menu stream start returned */
-					if (Stream_IsActive(&stream)) Stream_Stop();
+					(void)feed_stream();
+					if (read_ctx.read_error || underruns) {
+						STARTUP_MARKER(255, 128, 0);
+						for (;;) VSync(0);
+					}
+					unsigned startup_rate = (unsigned)stream.config.sample_rate;
+				uint32_t startup_samples = Stream_GetSamplesPlayed(&stream);
+				STARTUP_MARKER(255, 64, 0); /* orange-red: first frontend feed returned */
+				/* Run the real title renderer once, including its first menu-art upload. */
+				game_screen = SCREEN_TITLE;
+				draw_menu_screen(startup_samples, startup_rate);
+				STARTUP_MARKER(64, 0, 255); /* indigo: title draw and art upload returned */
+				display_frame();
+				STARTUP_MARKER(255, 0, 128); /* fuchsia: first title frame presented */
+				if (Stream_IsActive(&stream)) Stream_Stop();
 				} else {
 					STARTUP_MARKER(255, 128, 0); /* amber: load returned failure */
 				}
