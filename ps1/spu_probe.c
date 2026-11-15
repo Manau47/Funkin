@@ -6047,14 +6047,24 @@ int main(void)
 		if (hold_at_main_entry) {
 			volatile uint32_t *const gp0 = (volatile uint32_t *)0x1f801810;
 			/* Persistent color checkpoints show the last completed startup call. */
+			/* Paint both 320x240 framebuffer pages directly with GP0(02h).
+			   The earlier FILL marker used the current DRAWENV; display_frame()
+			   swaps that environment, so the checkpoint could be left on the
+			   hidden page while DuckStation showed the other, still-dark page.
+			   Updating both pages makes each checkpoint persistent across a swap. */
 			#define STARTUP_MARKER(r, g, b) do { \
-				FILL stage_fill; \
-				setFill(&stage_fill); \
-				setRGB0(&stage_fill, (r), (g), (b)); \
-				setXY0(&stage_fill, 0, 0); \
-				setWH(&stage_fill, SCREEN_W, SCREEN_H); \
-				DrawPrim((uint32_t *)&stage_fill); \
+				uint32_t marker_color = 0x02000000u | \
+					((uint32_t)(b) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(r); \
 				DrawSync(0); \
+				gp0[0] = marker_color; \
+				gp0[0] = 0x00000000u; \
+				gp0[0] = 0x00f00140u; /* 320x240 at framebuffer y=0 */ \
+				gp0[0] = marker_color; \
+				gp0[0] = 0x00f00000u; /* 320x240 at framebuffer y=240 */ \
+				gp0[0] = 0x00f00140u; \
+				DrawSync(0); \
+				PutDispEnv(&frames[draw_index].display); \
+				SetDispMask(1); \
 				VSync(0); \
 			} while (0)
 			gp0[0] = 0x02ffffffu; /* GP0(02h): white fill rectangle */
