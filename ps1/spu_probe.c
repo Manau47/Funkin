@@ -6088,10 +6088,36 @@ int main(void)
 				/* Gray brackets the first real startup resource operation: the
 				   Week 1 atlas CD reads followed by texture/CLUT VRAM uploads. */
 				STARTUP_MARKER(128, 128, 128);
-				if (load_bopeebo_visuals())
+				if (load_bopeebo_visuals()) {
 					STARTUP_MARKER(128, 255, 0); /* lime: base atlas load returned */
-				else
+					if (!load_menu_visuals()) {
+						STARTUP_MARKER(255, 128, 0);
+						for (;;) VSync(0);
+					}
+					STARTUP_MARKER(0, 128, 128); /* teal: menu resource state ready */
+					/* Match the non-rendering setup at the top of the real frontend. */
+					reset_game_state();
+					game_screen = SCREEN_TITLE;
+					menu_ticks = 0;
+					menu_selection = 1;
+					freeplay_song_selection = 0u;
+					freeplay_difficulty_selection = 1u;
+					active_song_index = freeplay_song_selection;
+					active_song = ps1_song_at(active_song_index);
+					if (!upload_menu_sfx()) {
+						STARTUP_MARKER(255, 128, 0);
+						for (;;) VSync(0);
+					}
+					STARTUP_MARKER(128, 0, 128); /* purple: menu SFX uploaded */
+					if (!start_stream_file("\\MENU.VAG", MENU_MUSIC_CHANNELS, true, true)) {
+						STARTUP_MARKER(255, 128, 0);
+						for (;;) VSync(0);
+					}
+					STARTUP_MARKER(255, 128, 255); /* pink: menu stream start returned */
+					if (Stream_IsActive(&stream)) Stream_Stop();
+				} else {
 					STARTUP_MARKER(255, 128, 0); /* amber: load returned failure */
+				}
 			} else {
 				STARTUP_MARKER(255, 128, 0);
 			}
