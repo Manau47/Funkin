@@ -1363,3 +1363,15 @@ Source diagnostic v4 : commit local `963fec9cf26bcc2a73978774d5824fded76e5a03`. 
 Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-menu-audio-v4-delivery/`. BIN SHA-256 `EECBBF291FC751BD9A4DDB9970A70CFE85ADD5E7F3224769706825768EECBEA3`; CUE SHA-256 `23573AB1D031524834C8011F4EABAAE8C624074CAFAA2AC926CDDBAF967A91FE`; PS-X EXE SHA-256 `643D73918ACC89DAE865B65C14DE78FBF9D5A31CC9A9F4CF84939956F96DAE61`. ISO ordonné et contrôlé : 117 fichiers, `SYSTEM.CNF;1` en entrée 1, `FUNKIN.EXE;1` en entrée 2. Le BIN/CUE v3 reste conservé.
 
 **Statut :** v3 vert citron observé par l’utilisateur; v4 attend son essai DuckStation. Les étapes menu/stream, la boucle frontend et le démarrage complet ne sont pas encore validés. Aucun essai console n’est revendiqué. Manifeste : `ps1/diagnostics/manifests/startup-menu-audio-v4.md`.
+
+### 2026-11-15 — v4 : démarrage du flux menu observé, première frame titre isolée
+
+L’utilisateur confirme le repère rose de v4. Cela confirme que le programme trouve `MENU.VAG`, lit/valide son en-tête et que `start_stream_file()` revient après initialisation et démarrage du flux. Le test arrête ensuite le flux; le résultat ne valide pas la lecture musicale continue ni l’écran titre.
+
+La sonde v5 conserve les mêmes étapes et exécute ensuite une seule itération de rendu titre. Orange-rouge indique que le premier `feed_stream()` revient; indigo que `draw_menu_screen()` revient après le chargement éventuel de l’image titre et le dessin de ses éléments; fuchsia que `display_frame()` revient après présentation de la première frame. Un échec CD géré reste orange; un blocage conserve le repère précédent. Le flux est arrêté après cette frame, puis le programme attend. Le parcours navigation/Freeplay et le gameplay restent désactivés.
+
+Source diagnostic v5 : commit local `c7124f0ffb43302a358559df81c8195573a0549b`. Cache/configuration v4 conservés. Dry-run et build réel : compile `spu_probe.c`, lien, génération ISO; aucune conversion d’asset. Compilation réussie. ISO réparé et statiquement contrôlé : 117 entrées, `SYSTEM.CNF;1` entrée 1, `FUNKIN.EXE;1` entrée 2.
+
+Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-title-frame-v5-delivery/`. BIN SHA-256 `CB19337AB49F780F0437E7BBFD7350A7A142CA05DE7BF0C81C43ADE7DCF23455`; CUE SHA-256 `6C315ACF29AA77E5C453324A61C0B5CDD8E513EC500B7EEEDC28CEA8B67B9092`; PS-X EXE SHA-256 `B5A31F16E903E978AC79FD37DACB3176BC97DF5F9DE04A53E6EAEFE9685E84A6`. Les livraisons v1–v4 sont conservées dans leurs dossiers.
+
+**Statut :** v4 rose observé par l’utilisateur; v5 attend le test DuckStation. Aucun résultat de première frame titre, démarrage normal ou console réelle n’est revendiqué. Manifeste : `ps1/diagnostics/manifests/startup-title-frame-v5.md`.
