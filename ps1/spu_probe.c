@@ -6046,18 +6046,48 @@ int main(void)
 		static volatile uint8_t hold_at_main_entry = 1;
 		if (hold_at_main_entry) {
 			volatile uint32_t *const gp0 = (volatile uint32_t *)0x1f801810;
+			/* Persistent color checkpoints show the last completed startup call. */
+			#define STARTUP_MARKER(r, g, b) do { \
+				FILL stage_fill; \
+				setFill(&stage_fill); \
+				setRGB0(&stage_fill, (r), (g), (b)); \
+				setXY0(&stage_fill, 0, 0); \
+				setWH(&stage_fill, SCREEN_W, SCREEN_H); \
+				DrawPrim((uint32_t *)&stage_fill); \
+				DrawSync(0); \
+				VSync(0); \
+			} while (0)
 			gp0[0] = 0x02ffffffu; /* GP0(02h): white fill rectangle */
 			gp0[0] = 0x00000000u; /* x=0, y=0 */
 			gp0[0] = 0x00f00140u; /* 320 x 240 */
-			/* Isolate init_video after the observed BIOS-mode white marker. */
+			/* Green: same post-init_video state confirmed by the user. */
 			init_video();
-			FILL stage_fill;
-			setFill(&stage_fill);
-			setRGB0(&stage_fill, 0, 255, 0);
-			setXY0(&stage_fill, 0, 0);
-			setWH(&stage_fill, SCREEN_W, SCREEN_H);
-			DrawPrim((uint32_t *)&stage_fill);
-			DrawSync(0);
+			STARTUP_MARKER(0, 255, 0);
+			/* Blue: loading card and font flush returned. */
+			show_loading_screen("LOADING GAME");
+			STARTUP_MARKER(0, 0, 255);
+			/* Yellow: SPU initialization returned. */
+			SpuInit();
+			STARTUP_MARKER(255, 255, 0);
+			/* Magenta: SPU channel reset returned. */
+			reset_spu_channels();
+			STARTUP_MARKER(255, 0, 255);
+			/* Cyan: CD subsystem initialization returned. */
+			CdInit();
+			STARTUP_MARKER(0, 255, 255);
+#if TEST_CHANNELS >= 4
+			/* White: controller initialization and polling setup returned. */
+			InitPAD(pad_buffers[0], PAD_BYTES, pad_buffers[1], PAD_BYTES);
+			StartPAD();
+			ChangeClearPAD(0);
+			STARTUP_MARKER(255, 255, 255);
+#endif
+			/* Red means the first CD command succeeded; amber means it did not. */
+			if (CdControlB(CdlPause, 0, 0) == 1)
+				STARTUP_MARKER(255, 0, 0);
+			else
+				STARTUP_MARKER(255, 128, 0);
+			#undef STARTUP_MARKER
 			for (;;) VSync(0);
 		}
 	}
