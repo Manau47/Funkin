@@ -1315,3 +1315,16 @@ Le second essai retire `ResetGraph()` et les appels graphiques SDK : il envoie d
 Dry-run incrémental : compilation de `spu_probe.c`, lien et génération de l’image disque. Aucune conversion de scène, sprite, chart ou audio n’a été prévue/exécutée. L’image produite contient l’exécutable dont le SHA-256 correspond au fichier externe. Les sorties de la sonde précédente ont été copiées avant reconstruction dans `ps1-asset-harmonization-v1-startup-main-marker-resetgraph-v1-archive`.
 
 BIN SHA-256 `D0E7D75F31F2E2B7414B11EAF90BB66693C6E195C3A628A47E34D6FDA1B7B26A`; CUE SHA-256 `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`; PS-X EXE SHA-256 `FBFAD55E35B834B30F5785B55748B0CBD2B630DA02E34E837B143312F0FFBE61`. Compilation et contrôles statiques ISO réussis. Cette nouvelle sonde n’a pas encore été essayée par l’utilisateur dans DuckStation et ne valide pas le démarrage normal.
+
+
+## 2026-11-15 — Démarrage du diagnostic écran
+
+L’utilisateur a chargé le BIN/CUE diagnostique `main-entry direct GP0 marker v2` et observé un rectangle blanc couvrant la partie supérieure gauche, tandis que les éléments du logo Sony restaient visibles derrière et autour. Ce résultat confirme que le BIOS charge l’exécutable et que le code atteint le repère brut placé au début de `main()`. Il ne confirme pas que le mode vidéo PS1 du jeu a été initialisé. L’interprétation la plus probable est que le repère dessine dans le mode vidéo laissé par le BIOS; la résolution n’est pas conclue à partir de la capture seule.
+
+Le premier CUE de cette sonde avait `FUNKIN.EXE` en entrée 36 et `SYSTEM.CNF` en entrée 93. Le BIN corrigé a replacé uniquement ces entrées en positions 1 et 2; l’utilisateur a alors vu l’aplat blanc. Le payload EXE et les ressources n’ont pas changé.
+
+Le test `startup video init v1` a ensuite conservé le build et les options de v2. Le dry-run du build d’origine n’a prévu que la compilation de `spu_probe.c`, le lien et la fabrication de l’image disque; aucune génération d’asset n’a été prévue ni exécutée. Les quatre produits Week 2 contrôlés ont les mêmes SHA-256 avant/après. La sonde appelle `init_video()` immédiatement après le repère GP0 blanc; son retour est suivi d’un aplat vert 320×240 et d’une attente VSync. Le désassemblage confirme l’appel à `init_video` dans le chemin contrôlé de `main()`. Une comparaison des 117 fichiers de l’ISO avec v2 ne trouve qu’un payload différent : `FUNKIN.EXE;1`. Le disque corrigé garde `SYSTEM.CNF` en entrée 1 et `FUNKIN.EXE` en entrée 2.
+
+Build livré hors Git dans `ps1-asset-harmonization-v1-startup-video-init-v1-delivery`. BIN SHA-256 `4F01E1076E82C3638EAA800D4653E3B1DE795B5B14BFE2BFBE3EDFAD626FDF43`; CUE SHA-256 `3AD9FE35CDFDEC3EE78B3AFDA49DE5EA604663C29512A677610C6876ECA74B6F`; PS-X EXE SHA-256 `9F700BE27716BDAE232E8C7C0A00B9ACAB7FB09343517AA694594E262B29EC40`. Compilation, lien, génération ISO et vérifications statiques réussis. Le BIN/CUE attend l’essai utilisateur : le vert confirmerait que `init_video()` revient; blanc persistant localiserait l’arrêt avant ce repère. Aucun test DuckStation de cette v1 n’est encore observé.
+
+Le code correspondant a été publié sur cette branche via le plugin GitHub, commit `6e099c7d2f3c7a915b4d622945256b0278f14438`. Le manifeste de build est versionné avec ce journal; aucun SDK, asset officiel ou binaire généré n’est ajouté au dépôt.
