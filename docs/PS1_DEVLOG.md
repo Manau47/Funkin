@@ -1375,3 +1375,13 @@ Source diagnostic v5 : commit local `c7124f0ffb43302a358559df81c8195573a0549b`. 
 Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-title-frame-v5-delivery/`. BIN SHA-256 `CB19337AB49F780F0437E7BBFD7350A7A142CA05DE7BF0C81C43ADE7DCF23455`; CUE SHA-256 `6C315ACF29AA77E5C453324A61C0B5CDD8E513EC500B7EEEDC28CEA8B67B9092`; PS-X EXE SHA-256 `B5A31F16E903E978AC79FD37DACB3176BC97DF5F9DE04A53E6EAEFE9685E84A6`. Les livraisons v1–v4 sont conservées dans leurs dossiers.
 
 **Statut :** v4 rose observé par l’utilisateur; v5 attend le test DuckStation. Aucun résultat de première frame titre, démarrage normal ou console réelle n’est revendiqué. Manifeste : `ps1/diagnostics/manifests/startup-title-frame-v5.md`.
+
+### 2026-11-15 — v5 écran sombre, sonde persistante framebuffer v6b
+
+L’utilisateur a fourni une capture v5 : écran bleu nuit strié, sans repère de couleur net. Elle ne permet pas de déterminer quelle étape du rendu titre est atteinte. L’inspection du chemin révèle une faiblesse possible de la sonde : ses marqueurs FILL utilisent le DRAWENV courant, alors que `display_frame()` bascule entre deux framebuffers. La capture ne prouve pas que ce soit la cause, mais elle rend le résultat v5 inexploitable pour localiser le point d’arrêt.
+
+Le build v6b conserve exactement les étapes de démarrage de v5 et ne change que le mécanisme de repère : commandes GP0(02h) remplissent les deux zones 320×240 des framebuffers en VRAM (Y=0 et Y=240), puis GPU-sync, configuration de l’environnement d’affichage actif et VSync. Le dernier repère devrait donc persister même après le basculement de `display_frame()`. Le gameplay, les scènes, charts, sons et données ne sont pas modifiés.
+
+Dry-run ciblé : 3 actions — compilation de `spu_probe.c`, lien, génération ISO. Aucune reconversion de ressources. Build réel réussi. La première image ISO locale avait SYSTEM.CNF en premier mais n’avait pas l’exécutable en deuxième ; elle est conservée, mais non livrée comme CUE de test. Le CUE livré a été recréé avec le réordonnancement validé : `SYSTEM.CNF;1` entrée 1, `FUNKIN.EXE;1` entrée 2. Manifeste/hashes dans le dossier de livraison v6b.
+
+Statut : compilation et contrôles de structure ISO réussis ; v6b attend le test manuel DuckStation. Aucun résultat de runtime ni de console réelle n’est revendiqué.
