@@ -6049,7 +6049,16 @@ int main(void)
 			gp0[0] = 0x02ffffffu; /* GP0(02h): white fill rectangle */
 			gp0[0] = 0x00000000u; /* x=0, y=0 */
 			gp0[0] = 0x00f00140u; /* 320 x 240 */
-			for (;;) { }
+			/* Isolate init_video after the observed BIOS-mode white marker. */
+			init_video();
+			FILL stage_fill;
+			setFill(&stage_fill);
+			setRGB0(&stage_fill, 0, 255, 0);
+			setXY0(&stage_fill, 0, 0);
+			setWH(&stage_fill, SCREEN_W, SCREEN_H);
+			DrawPrim((uint32_t *)&stage_fill);
+			DrawSync(0);
+			for (;;) VSync(0);
 		}
 	}
 #endif
