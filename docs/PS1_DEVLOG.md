@@ -1316,7 +1316,6 @@ Dry-run incrémental : compilation de `spu_probe.c`, lien et génération de l�
 
 BIN SHA-256 `D0E7D75F31F2E2B7414B11EAF90BB66693C6E195C3A628A47E34D6FDA1B7B26A`; CUE SHA-256 `8579EEF0E6966AFD78659F364593E560C8384148E9258D14FA88B196A842B340`; PS-X EXE SHA-256 `FBFAD55E35B834B30F5785B55748B0CBD2B630DA02E34E837B143312F0FFBE61`. Compilation et contrôles statiques ISO réussis. Cette nouvelle sonde n’a pas encore été essayée par l’utilisateur dans DuckStation et ne valide pas le démarrage normal.
 
-
 ## 2026-11-15 — Démarrage du diagnostic écran
 
 L’utilisateur a chargé le BIN/CUE diagnostique `main-entry direct GP0 marker v2` et observé un rectangle blanc couvrant la partie supérieure gauche, tandis que les éléments du logo Sony restaient visibles derrière et autour. Ce résultat confirme que le BIOS charge l’exécutable et que le code atteint le repère brut placé au début de `main()`. Il ne confirme pas que le mode vidéo PS1 du jeu a été initialisé. L’interprétation la plus probable est que le repère dessine dans le mode vidéo laissé par le BIOS; la résolution n’est pas conclue à partir de la capture seule.
@@ -1327,4 +1326,5 @@ Le test `startup video init v1` a ensuite conservé le build et les options de v
 
 Build livré hors Git dans `ps1-asset-harmonization-v1-startup-video-init-v1-delivery`. BIN SHA-256 `4F01E1076E82C3638EAA800D4653E3B1DE795B5B14BFE2BFBE3EDFAD626FDF43`; CUE SHA-256 `3AD9FE35CDFDEC3EE78B3AFDA49DE5EA604663C29512A677610C6876ECA74B6F`; PS-X EXE SHA-256 `9F700BE27716BDAE232E8C7C0A00B9ACAB7FB09343517AA694594E262B29EC40`. Compilation, lien, génération ISO et vérifications statiques réussis. Le BIN/CUE attend l’essai utilisateur : le vert confirmerait que `init_video()` revient; blanc persistant localiserait l’arrêt avant ce repère. Aucun test DuckStation de cette v1 n’est encore observé.
 
-Le code correspondant a été publié sur cette branche via le plugin GitHub, commit `6e099c7d2f3c7a915b4d622945256b0278f14438`. Le manifeste de build est versionné avec ce journal; aucun SDK, asset officiel ou binaire généré n’est ajouté au dépôt.
+Le code correspondant a été publié sur la branche GitHub `ps1-asset-harmonization-v1` via le plugin GitHub, commit `6e099c7d2f3c7a915b4d622945256b0278f14438`. Le manifeste de build est versionné avec ce journal; aucun SDK, asset officiel ou binaire généré n’est ajouté au dépôt.
+
