@@ -1328,3 +1328,14 @@ Build livré hors Git dans `ps1-asset-harmonization-v1-startup-video-init-v1-del
 
 Le code correspondant a été publié sur la branche GitHub `ps1-asset-harmonization-v1` via le plugin GitHub, commit `6e099c7d2f3c7a915b4d622945256b0278f14438`. Le manifeste de build est versionné avec ce journal; aucun SDK, asset officiel ou binaire généré n’est ajouté au dépôt.
 
+### Suite du diagnostic démarrage — v1 vidéo observée, v2 sous-systèmes
+
+L’utilisateur confirme que le CUE `startup-video-init-v1` affiche un aplat vert. Cela valide que le véritable exécutable atteint `main()`, que `init_video()` revient et que l’affichage graphique fonctionne après son initialisation. Le démarrage complet du jeu n’est toujours pas validé.
+
+Le test suivant conserve la sonde au début de `main()` et ajoute les initialisations une par une, avec un aplat persistant après chaque étape : vert après vidéo (déjà observé en v1), bleu après retour de l’écran de chargement, jaune après `SpuInit()`, magenta après `reset_spu_channels()`, cyan après `CdInit()`, blanc après initialisation manette, puis rouge si `CdControlB(CdlPause)` réussit ou orange en cas d’échec. Chaque état attend sur place. La sonde ne lance aucune lecture de scène, chart, asset ou musique.
+
+Build v2 : source de la sonde au commit local `ecd4139394cbed622ba779c8cf901a8d1d0147fc` (commit de code avant mise à jour de cette entrée documentaire); branche `ps1-asset-harmonization-v1`; cache CMake/Ninja existant conservé; marqueur `FUNKIN_PS1_STARTUP_MAIN_MARKER=ON`, marqueurs avant/après BSS `OFF`, diagnostics, démo et éditeurs `OFF`, Dad lanes `ON`. Le dry-run incrémental ne prévoyait que compilation de `spu_probe.c`, lien et génération ISO; aucune conversion de ressources. Ces trois étapes ont été compilées/exécutées par le build. Le désassemblage confirme l’ordre des appels et des repères dans `main()`.
+
+Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-subsystems-v2-delivery/`. BIN SHA-256 `2896E4199DAC98AA856B208FE47007F229C360D6FF9FD69F82945ED008DBED81`; CUE SHA-256 `74E40A5374250428F9BD382F9DB5A174E4389A483D09F65C8C216B71D41CF0DA`; EXE SHA-256 `AE7DFC9D2C11FC977C45671330625FDBF3E2F7E3BB27483FAAFFD0E1AA231681`. L’ISO conserve `SYSTEM.CNF` et `FUNKIN.EXE` en entrées racine 1 et 2. Comparaison des 117 payloads de l’ISO avec v1 : seul `FUNKIN.EXE;1` diffère. Détails dans `ps1/diagnostics/manifests/startup-subsystems-v2.md`.
+
+**Statut d’exécution :** la couleur verte après vidéo est confirmée par l’utilisateur. Le nouveau CUE v2 n’a pas encore été chargé dans DuckStation; les repères bleu/jaune/magenta/cyan/blanc/rouge-orange restent à observer. Aucun démarrage normal, aucune scène, aucun gameplay et aucune validation console ne sont revendiqués.
