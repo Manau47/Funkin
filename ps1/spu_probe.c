@@ -6083,10 +6083,18 @@ int main(void)
 			STARTUP_MARKER(255, 255, 255);
 #endif
 			/* Red means the first CD command succeeded; amber means it did not. */
-			if (CdControlB(CdlPause, 0, 0) == 1)
+			if (CdControlB(CdlPause, 0, 0) == 1) {
 				STARTUP_MARKER(255, 0, 0);
-			else
+				/* Gray brackets the first real startup resource operation: the
+				   Week 1 atlas CD reads followed by texture/CLUT VRAM uploads. */
+				STARTUP_MARKER(128, 128, 128);
+				if (load_bopeebo_visuals())
+					STARTUP_MARKER(128, 255, 0); /* lime: base atlas load returned */
+				else
+					STARTUP_MARKER(255, 128, 0); /* amber: load returned failure */
+			} else {
 				STARTUP_MARKER(255, 128, 0);
+			}
 			#undef STARTUP_MARKER
 			for (;;) VSync(0);
 		}
