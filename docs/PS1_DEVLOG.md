@@ -1385,3 +1385,13 @@ Le build v6b conserve exactement les étapes de démarrage de v5 et ne change qu
 Dry-run ciblé : 3 actions — compilation de `spu_probe.c`, lien, génération ISO. Aucune reconversion de ressources. Build réel réussi. La première image ISO locale avait SYSTEM.CNF en premier mais n’avait pas l’exécutable en deuxième ; elle est conservée, mais non livrée comme CUE de test. Le CUE livré a été recréé avec le réordonnancement validé : `SYSTEM.CNF;1` entrée 1, `FUNKIN.EXE;1` entrée 2. Manifeste/hashes dans le dossier de livraison v6b.
 
 Statut : compilation et contrôles de structure ISO réussis ; v6b attend le test manuel DuckStation. Aucun résultat de runtime ni de console réelle n’est revendiqué.
+
+### 2026-11-15 — v6b fuchsia observé, livraison jouable v7
+
+L’utilisateur confirme visuellement l’aplat fuchsia de v6b. Ce repère est placé après `draw_menu_screen()` et `display_frame()` : le vrai exécutable est donc parti du BIOS, a traversé les initialisations jusqu’au flux menu et a rendu/présenté sa première image titre. v6b s’arrête volontairement à cet endroit; ce n’est pas le build jouable.
+
+La v7 reprend la configuration et les ressources de v6b, en désactivant uniquement `FUNKIN_PS1_STARTUP_MAIN_MARKER`. Les diagnostics, la démo et les éditeurs restent désactivés; la configuration jouable 4 canaux est conservée. Le CUE garde l’ordre de démarrage validé : `SYSTEM.CNF;1` entrée 1, `FUNKIN.EXE;1` entrée 2. Aucun code de scène, gameplay, audio, chart ou asset n’a été modifié.
+
+Dry-run ciblé : compilation `spu_probe.c`, recompilation de `stream.c` SDK après régénération de la configuration, édition de liens et empaquetage ISO; aucune conversion de ressource. Build réussi. Le CUE v7 est livré dans `ps1-asset-harmonization-v1-playable-bootfix-v7-delivery`; hashes et configuration reproductible : `ps1/diagnostics/manifests/startup-playable-bootfix-v7.md`.
+
+Statut : v6b a atteint le premier rendu titre d’après la capture utilisateur. La v7 est compilée et ordonnée pour le démarrage BIOS; l’essai jouable dans DuckStation attend le chargement du CUE par l’utilisateur. Aucun test console réelle n’est revendiqué.
