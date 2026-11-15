@@ -1351,3 +1351,15 @@ Source diagnostic v3 : commit local `60baf8af4b319b45b2458da9d025e8a9367dd623`. 
 Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-base-atlas-v3-delivery/`. BIN SHA-256 `77F5F950264472EFE4C0C092E35696098833B86324947CB97068AC52C1CEF80A`; CUE SHA-256 `58E8D0E7D012312AEBF990D03962951AFB32BED6C0B072A3AF76B4A564CEEF38`; PS-X EXE SHA-256 `4241B17E17923656B786A7CC520B75729AE263B19C570C5ED227C676D4DEFEF4`. ISO : 117 entrées, `SYSTEM.CNF;1` en entrée 1 et `FUNKIN.EXE;1` en entrée 2. La v2 est conservée séparément.
 
 **Statut :** le repère rouge de v2 a été observé par l’utilisateur; le test v3 attend son essai DuckStation. Aucun résultat d’exécution de `load_bopeebo_visuals()`, aucun démarrage normal et aucune validation console ne sont encore revendiqués. Manifeste détaillé : `ps1/diagnostics/manifests/startup-base-atlas-v3.md`.
+
+### 2026-11-15 — v3 : atlas W1 chargé, préparation du flux de menu isolée
+
+L’utilisateur confirme le repère vert citron de v3. Cela confirme que `load_bopeebo_visuals()` revient après ses lectures de `W1SCENE.BIN`, uploads des pages et CLUT, et synchronisations GPU. Le gel de démarrage se produit donc après la commande CD initiale et après le chargement complet de l’atlas de base; ce test ne permet pas encore de conclure sur la musique du menu ou la boucle de rendu.
+
+Le test v4 ajoute l’initialisation de présentation du menu déjà utilisée par le programme : validation de l’état des ressources menu (turquoise), initialisation de l’état titre/Freeplay puis upload DMA du bank de sons menu (violet), et ouverture/démarrage de `MENU.VAG` (rose). Une erreur retournée affiche orange; si une étape se bloque, le dernier repère précédent reste visible. Après le retour réussi du démarrage du flux, celui-ci est arrêté immédiatement et la sonde attend. Elle ne lance pas encore la boucle d’affichage/navigation du frontend. Aucun asset, chart ou audio n’est reconverti.
+
+Source diagnostic v4 : commit local `963fec9cf26bcc2a73978774d5824fded76e5a03`. Cache et options v3 conservés. Dry-run et compilation réelle : compilation de `spu_probe.c`, lien et génération ISO; aucune tâche de conversion. Le code du test copie le même état initial du front-end ainsi que `upload_menu_sfx()` et `start_stream_file("\\MENU.VAG", ...)` du démarrage normal.
+
+Livraison hors Git : `C:/Users/Manau47/Documents/Codex/ps1-asset-harmonization-v1-startup-menu-audio-v4-delivery/`. BIN SHA-256 `EECBBF291FC751BD9A4DDB9970A70CFE85ADD5E7F3224769706825768EECBEA3`; CUE SHA-256 `23573AB1D031524834C8011F4EABAAE8C624074CAFAA2AC926CDDBAF967A91FE`; PS-X EXE SHA-256 `643D73918ACC89DAE865B65C14DE78FBF9D5A31CC9A9F4CF84939956F96DAE61`. ISO ordonné et contrôlé : 117 fichiers, `SYSTEM.CNF;1` en entrée 1, `FUNKIN.EXE;1` en entrée 2. Le BIN/CUE v3 reste conservé.
+
+**Statut :** v3 vert citron observé par l’utilisateur; v4 attend son essai DuckStation. Les étapes menu/stream, la boucle frontend et le démarrage complet ne sont pas encore validés. Aucun essai console n’est revendiqué. Manifeste : `ps1/diagnostics/manifests/startup-menu-audio-v4.md`.
